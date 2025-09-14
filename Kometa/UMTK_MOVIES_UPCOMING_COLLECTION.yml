@@ -1,8 +1,0 @@
-collections:
-  ComingSoon:
-    summary: Movies releasing within 30 days or already released but not yet available
-    item_label: Coming Soon
-    non_item_remove_label: Coming Soon
-    build_collection: false
-    sync_mode: sync
-    tmdb_movie: 957121, 1215020, 1242404, 1290879

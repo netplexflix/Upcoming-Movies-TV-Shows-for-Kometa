@@ -74,15 +74,12 @@ text_upcoming_movies_future:
 ##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########
 ################################################################################  
 backdrop_upcoming_movies_released:
-  enable: false
+  enable: true
   name: red_frame
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame.png
 
 text_upcoming_movies_released:
-  file: config\overlays\red_frame.png
   use_text: "COMING SOON"
-  date_format: "d mmm"
-  capitalize_dates: true
   horizontal_align: center
   horizontal_offset: 0
   vertical_align: top
@@ -91,14 +88,17 @@ text_upcoming_movies_released:
   font_color: "#FFFFFF"
 
 ################################################################################
-##########                     UPCOMING SHOWS:                        ##########
+##########                UPCOMING SHOWS COLLECTION:                  ##########
 ################################################################################
 collection_upcoming_shows:
   collection_name: "ComingSoon"
   item_label: Coming Soon
   non_item_remove_label: Coming Soon
   build_collection: false
-  
+
+################################################################################
+##########                  UPCOMING SHOWS OVERLAY:                   ##########
+################################################################################  
 backdrop_upcoming_shows:
   enable: true
   name: red_frame_bottom
