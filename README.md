@@ -55,7 +55,7 @@ This will:
 - Run the script on a daily schedule (by default at 2AM)
 - Mount your configuration and output directories into the container
 
-You can customize the run schedule by modifying the `CRON` environment variable in `docker-compose.yml`.
+You can customize the run schedule by modifying the `CRON` environment variable in `docker-compose.yml`. It is recommended to schedule UMTK right before your Kometa runs.
 
 > [!TIP]
 > You can point the UMTK script to write overlays/collections directly into your Kometa folders by adjusting the volume mounts.
