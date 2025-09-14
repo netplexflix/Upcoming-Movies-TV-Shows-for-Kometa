@@ -127,7 +127,12 @@ Rename ```config.example.yml``` to ```config.yml``` and update your settings:
 ### Overlay & Collection Settings:
 The remaining settings customize the output .yml files for Kometa.
 >[!TIP]
->You can enter any other Kometa variables in this block and they will be automatically added in the generated .yml files.</br>
+>You can enter any Kometa variables in this block and they will be automatically added in the generated .yml files.</br>
+
+>[!NOTE]
+> There are two different overlays for Movies:<br>
+> * One for movies with a release date in the future. This overlay will append the release date.<br>
+> * One for movies that have already been released but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
 
 
 >[!NOTE]
