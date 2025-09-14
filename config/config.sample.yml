@@ -57,7 +57,7 @@ collection_upcoming_movies:
 backdrop_upcoming_movies_future:
   enable: true
   name: red_frame
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-for-Kometa/refs/heads/main/config/overlays/red_frame.png
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame.png
 
 text_upcoming_movies_future:
   use_text: "EXPECTED"
@@ -76,7 +76,7 @@ text_upcoming_movies_future:
 backdrop_upcoming_movies_released:
   enable: false
   name: red_frame
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-for-Kometa/refs/heads/main/config/overlays/red_frame.png
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame.png
 
 text_upcoming_movies_released:
   file: config\overlays\red_frame.png
@@ -102,7 +102,7 @@ collection_upcoming_shows:
 backdrop_upcoming_shows:
   enable: true
   name: red_frame_bottom
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
 
 text_upcoming_shows:
   use_text: "PREMIERES"
