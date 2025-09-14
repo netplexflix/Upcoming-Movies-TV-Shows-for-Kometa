@@ -1,0 +1,46 @@
+overlays:
+  backdrop_future:
+    overlay:
+      name: red_frame
+      url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-for-Kometa/refs/heads/main/config/overlays/red_frame.png
+    tmdb_movie: 957121, 1215020, 1242404, 1290879
+  UMTK_future_18 SEP:
+    overlay:
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: top
+      vertical_offset: 20
+      font_size: 70
+      font_color: '#FFFFFF'
+      name: text(EXPECTED 18 SEP)
+    tmdb_movie: '1215020'
+  UMTK_future_25 SEP:
+    overlay:
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: top
+      vertical_offset: 20
+      font_size: 70
+      font_color: '#FFFFFF'
+      name: text(EXPECTED 25 SEP)
+    tmdb_movie: '957121'
+  UMTK_future_2 OCT:
+    overlay:
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: top
+      vertical_offset: 20
+      font_size: 70
+      font_color: '#FFFFFF'
+      name: text(EXPECTED 2 OCT)
+    tmdb_movie: '1242404'
+  UMTK_future_9 OCT:
+    overlay:
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: top
+      vertical_offset: 20
+      font_size: 70
+      font_color: '#FFFFFF'
+      name: text(EXPECTED 9 OCT)
+    tmdb_movie: '1290879'

@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  umtk:
+    image: netplexflix/umtk:latest
+    container_name: umtk
+    environment:
+      - CRON=0 2 * * *  # every day at 2am
+      - DOCKER=true     # important for path reference
+      - TZ=America/New_York  # Set your timezone
+    volumes:
+      - /your/local/config/umtk:/app/config
+      - /your/local/kometa/config:/output
+      - /your/local/video:/video
+      - /path/to/media:/media  # Mount your media directories
+    restart: unless-stopped

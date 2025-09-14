@@ -1,0 +1,26 @@
+overlays:
+  backdrop:
+    overlay:
+      back_color: '#EB3233'
+      back_height: 90
+      back_width: 950
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: bottom
+      vertical_offset: 20
+      group: TSSK_backdrop
+      weight: 50
+      name: backdrop
+    tvdb_show: '449706'
+  UMTK_new_shows:
+    overlay:
+      horizontal_align: center
+      horizontal_offset: 0
+      vertical_align: bottom
+      vertical_offset: 35
+      font_size: 70
+      font_color: '#FFFFFF'
+      group: TSSK_text
+      weight: 50
+      name: text(RECENTLY ADDED)
+    tvdb_show: '449706'
