@@ -40,10 +40,11 @@ services:
     volumes:
       - ./config:/app/config
       - ./kometa:/output
-      - ./video:/video  # Only needed for placeholder method
+      - ./video:/video
       - /path/to/media:/media  # Mount your media directories
     restart: unless-stopped
 ```
+Change /path/to/media with your actual path
 
 3. Run the container:
 ```bash
@@ -54,10 +55,10 @@ This will:
 - Run the script on a daily schedule (by default at 2AM)
 - Mount your configuration and output directories into the container
 
-You can customize the run schedule by modifying the `CRON` environment variable in `docker-compose.yml`.
+You can customize the run schedule by modifying the `CRON` environment variable in `docker-compose.yml`. It is recommended to schedule UMTK right before your Kometa runs.
 
 > [!TIP]
-> You can point the TSSK script to write overlays/collections directly into your Kometa folders by adjusting the volume mounts.
+> You can point the UMTK script to write overlays/collections directly into your Kometa folders by adjusting the volume mounts.
 
 ### Option 2: Manual Installation
 
@@ -215,14 +216,10 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 
 **Trailer Method (1):**
 - ✅ Provides actual trailers for upcoming content
-- ✅ More engaging preview experience
-- ❌ Requires internet bandwidth for downloads
 - ❌ May fail if no suitable trailer is found
-- ❌ Takes more storage space
 
 **Placeholder Method (2):**
 - ✅ Always works (no external dependencies)
-- ✅ Minimal storage usage
 - ✅ Faster processing
 - ❌ Some TV Shows may not have a Plex Pass Trailer
 
