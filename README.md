@@ -37,14 +37,13 @@ services:
     environment:
       - CRON=0 2 * * *  # Run daily at 2am
       - DOCKER=true
-    volumes:
-      - ./config:/app/config
-      - ./kometa:/output
-      - ./video:/video
-      - /path/to/media:/media  # Mount your media directories
+      - TZ=America/New_York  # Set your timezone
+    volumes: # Mount your media directories
+      - /mnt/media/movies:/media/movies
+      - /mnt/media/tv:/media/tv
     restart: unless-stopped
 ```
-Change /path/to/media with your actual path
+Change the volume paths with your actual paths.
 
 3. Run the container:
 ```bash
