@@ -8,9 +8,7 @@ services:
       - CRON=0 2 * * *  # every day at 2am
       - DOCKER=true     # important for path reference
       - TZ=America/New_York  # Set your timezone
-    volumes:
-      - /your/local/config/umtk:/app/config
-      - /your/local/kometa/config:/output
-      - /your/local/video:/video
-      - /path/to/media:/media  # Mount your media directories
+    volumes: # Mount your media directories
+      - /mnt/media/movies:/media/movies
+      - /mnt/media/tv:/media/tv
     restart: unless-stopped

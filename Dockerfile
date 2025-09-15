@@ -26,8 +26,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY UMTK.py .
+# Copy files
+COPY . /app
 
 # Copy and prepare the entrypoint
 COPY docker-entrypoint.sh /entrypoint.sh
