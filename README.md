@@ -38,9 +38,23 @@ services:
       - CRON=0 2 * * *  # Run daily at 2am
       - DOCKER=true
       - TZ=America/New_York  # Set your timezone
-    volumes: # Mount your media directories
-      - /mnt/media/movies:/media/movies
-      - /mnt/media/tv:/media/tv
+    volumes: # Mount your media directories to match Sonarr/Radarr paths
+      # IMPORTANT: Match these paths to what Sonarr/Radarr use
+      # If Sonarr/Radarr use /data/media/movies, mount to /data/media/movies
+      # If Sonarr/Radarr use /media/movies, mount to /media/movies
+      # Examples:
+      
+      # Example 1: If your Sonarr/Radarr use /data/media paths
+      - /mnt/media/movies:/data/media/movies
+      - /mnt/media/tv:/data/media/tv
+      
+      # Example 2: If your Sonarr/Radarr use /media paths  
+      # - /mnt/media/movies:/media/movies
+      # - /mnt/media/tv:/media/tv
+      
+      # Example 3: If your Sonarr/Radarr use /mnt/media paths
+      # - /mnt/media/movies:/mnt/media/movies
+      # - /mnt/media/tv:/mnt/media/tv
     restart: unless-stopped
 ```
 Change the volume paths with your actual paths.
