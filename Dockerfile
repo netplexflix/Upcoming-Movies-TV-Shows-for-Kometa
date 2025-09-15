@@ -34,7 +34,7 @@ COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Create necessary directories
-RUN mkdir -p /config /output /video /media
+RUN mkdir -p /output /media
 
 # Start with the entrypoint script (sets up cron)
 ENTRYPOINT ["/entrypoint.sh"]
