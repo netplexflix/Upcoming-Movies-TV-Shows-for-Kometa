@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2509152215"
+VERSION = "2509171440"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -87,7 +87,7 @@ def process_sonarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=10)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
             if response.status_code == 200:
                 print(f"Successfully connected to Sonarr at: {test_url}")
                 return test_url
@@ -118,7 +118,7 @@ def process_radarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=10)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
             if response.status_code == 200:
                 print(f"Successfully connected to Radarr at: {test_url}")
                 return test_url
@@ -135,7 +135,7 @@ def get_sonarr_series(sonarr_url, api_key):
     try:
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=45)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -147,7 +147,7 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id):
     try:
         url = f"{sonarr_url}/episode?seriesId={series_id}"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=45)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -159,7 +159,7 @@ def get_radarr_movies(radarr_url, api_key):
     try:
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=45)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -580,7 +580,7 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
                 print(f"{BLUE}[DEBUG] Trying search term: '{term}'{RESET}")
 
             cmd = ['yt-dlp','--dump-json','--no-warnings','--flat-playlist', f'ytsearch15:{term}']
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
             if res.returncode != 0 or not res.stdout.strip():
                 if debug:
