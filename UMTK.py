@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2509171440"
+VERSION = "2509181320"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1678,7 +1678,7 @@ def main():
     
     # Check if running in Docker and adjust output path
     if os.environ.get('DOCKER') == 'true':
-        kometa_folder = Path('/output') / "kometa"
+        kometa_folder = Path('/app') / "kometa"
     else:
         kometa_folder = Path(__file__).parent / "kometa"
     
