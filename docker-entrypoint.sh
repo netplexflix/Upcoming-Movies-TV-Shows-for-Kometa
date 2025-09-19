@@ -21,8 +21,8 @@ mkdir -p /app/config /app/video /app/kometa /app/config/overlay
 # Check if config exists, if not copy sample
 if [ ! -f /app/config/config.yml ]; then
     log "${YELLOW}config.yml not found, checking for sample config...${NC}"
-    if [ -f /app/config.sample.yml ]; then
-        cp /app/config.sample.yml /app/config/config.yml
+    if [ -f /app/config/config.sample.yml ]; then
+        cp /app/config/config.sample.yml /app/config/config.yml
         log "${GREEN}Copied config.sample.yml to config.yml${NC}"
         log "${YELLOW}Please edit /app/config/config.yml with your settings${NC}"
     else
@@ -47,6 +47,8 @@ if grep -E "^(tv|movies):\s*2" /app/config/config.yml > /dev/null 2>&1; then
     else
         log "${GREEN}UMTK video file found for placeholder method${NC}"
     fi
+else
+    log "${GREEN}Video files check completed${NC}"
 fi
 
 # Copy overlay images if they don't exist
@@ -103,8 +105,8 @@ else:
 
 # Setup cron job as non-root user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /var/log/cron.log" > /tmp/umtk-cron
-sudo crontab -u umtk /tmp/umtk-cron
+echo "$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log" > /tmp/umtk-cron
+crontab /tmp/umtk-cron
 rm /tmp/umtk-cron
 
 # Get next scheduled run time
@@ -116,11 +118,35 @@ log "${GREEN}Running UMTK on startup...${NC}"
 cd /app && DOCKER=true /usr/local/bin/python UMTK.py
 
 # Start cron and tail logs
-log "${BLUE}Starting cron daemon...${NC}"
+log "${BLUE}Starting scheduled execution...${NC}"
 log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
 log "${BLUE}Use 'docker logs -f umtk' to follow the logs${NC}"
 
-sudo touch /var/log/cron.log
-sudo chmod 666 /var/log/cron.log
-sudo cron
-tail -f /var/log/cron.log
+# Create log file in user's home directory
+mkdir -p /app/logs
+touch /app/logs/cron.log
+
+# Function to run UMTK
+run_umtk() {
+    log "${GREEN}Running scheduled UMTK execution...${NC}"
+    cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
+}
+
+# Start cron daemon in background (if possible)
+cron -f 2>/dev/null &
+
+# If cron fails, fall back to sleep-based scheduling
+if [ $? -ne 0 ]; then
+    log "${YELLOW}Cron daemon failed, using sleep-based scheduling${NC}"
+    while true; do
+        sleep 3600  # Check every hour
+        current_hour=$(date +%H)
+        cron_hour=$(echo "$CRON" | awk '{print $2}')
+        if [ "$current_hour" = "$cron_hour" ]; then
+            run_umtk
+        fi
+    done &
+fi
+
+# Keep container running and show logs
+tail -f /app/logs/cron.log
