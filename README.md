@@ -37,65 +37,86 @@ Docker is the easiest way to run UMTK. It automatically handles all the technica
 2. **Install and start Docker Desktop** on your computer
 3. **Verify installation**: Open a terminal/command prompt and type `docker --version` - you should see a version number
 
-#### Step 2: Download UMTK
+#### Step 2: Create Docker Compose File
 
-1. **Download this project** by clicking the green "Code" button above, then "Download ZIP"
-2. **Extract the ZIP file** to a folder on your computer (e.g., `C:\UMTK` or `/home/user/UMTK`)
-
-#### Step 3: Create Docker Configuration
-
-1. **Open the UMTK folder** you just extracted
-2. **Create a new file** called `docker-compose.yml` (make sure it has no extension like .txt)
+1. **Create a new folder** for UMTK on your computer (e.g., `C:\UMTK` or `/home/user/UMTK`)
+2. **Create a new file** called `docker-compose.yml` in that folder
 3. **Copy and paste this content** into the file:
 
 ```yaml
-version: "3.8"
-
 services:
   umtk:
     image: netplexflix/umtk:latest
     container_name: umtk
+    network_mode: "host" # Use host network to access localhost services
     environment:
-      - CRON=0 2 * * * # Runs daily at 2 AM
+      - CRON=0 2 * * * # Run daily at 2am
       - DOCKER=true
-      - TZ=America/New_York # Change to your timezone
+      - TZ=America/New_York # Set your timezone
+      - PUID=1000 # Set to your user ID (run `id -u` in terminal)
+      - PGID=1000 # Set to your group ID (run `id -g` in terminal)
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Alternative way to access host
     volumes:
-      # Configuration folder (required)
+      # Configuration directory (required)
       - ./config:/app/config
 
-      # Video folder for placeholder method (required)
+      # Video directory for placeholder method (optional - only needed if using method 2)
       - ./video:/video
 
-      # Output folder where YAML files will be created (required)
+      # Output directory for generated YAML files (required)
       - ./kometa:/app/kometa
 
-      # Your media folders - IMPORTANT: Change these paths!
-      # Replace /mnt/media with your actual media folder paths
-      - /mnt/media/movies:/data/media/movies
-      - /mnt/media/tv:/data/media/tv
+      # Media directories - MUST match your Sonarr/Radarr paths exactly
+      # Example 1: If your Sonarr/Radarr use /data/media paths
+      # - /mnt/media/movies:/data/media/movies
+      # - /mnt/media/tv:/data/media/tv
+
+      # Example 2: If your Sonarr/Radarr use /media paths
+      # - /mnt/media/movies:/media/movies
+      # - /mnt/media/tv:/media/tv
+
+      # Example 3: If your Sonarr/Radarr use /mnt/media paths
+      # - /mnt/media/movies:/mnt/media/movies
+      # - /mnt/media/tv:/mnt/media/tv
     restart: unless-stopped
 ```
 
+4. **Update the timezone** in the `TZ` environment variable to match your location (e.g., `America/New_York`, `Europe/London`, `Asia/Tokyo`)
+
+#### Step 3: Create Required Directories
+
+1. **Create the required folders** in your UMTK directory:
+
+   - `config` folder (for configuration files)
+   - `video` folder (for placeholder videos)
+   - `kometa` folder (for generated YAML files)
+
+2. **Download the required files**:
+   - Go to the [GitHub repository](https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa)
+   - Download `config/config.sample.yml` and save it as `config/config.yml` in your UMTK folder
+   - Download `video/UMTK.mp4` and save it in your `video` folder (if using placeholder method)
+
 #### Step 4: Configure Your Settings
 
-1. **Find the `config` folder** in your UMTK directory
-2. **Rename `config.sample.yml` to `config.yml`**
-3. **Open `config.yml`** in a text editor
-4. **Update these important settings**:
-   - `radarr_url`: Your Radarr web address (e.g., `http://192.168.1.100:7878`)
+1. **Open the `config.yml` file** you just downloaded
+2. **Update these important settings**:
+   - `radarr_url`: Your Radarr web address (e.g., `http://localhost:7878` or `http://192.168.1.100:7878`)
    - `radarr_api_key`: Your Radarr API key (found in Radarr Settings → General → Security)
-   - `sonarr_url`: Your Sonarr web address (e.g., `http://192.168.1.100:8989`)
+   - `sonarr_url`: Your Sonarr web address (e.g., `http://localhost:8989` or `http://192.168.1.100:8989`)
    - `sonarr_api_key`: Your Sonarr API key (found in Sonarr Settings → General → Security)
    - `utc_offset`: Your timezone (e.g., `-5` for New York, `+1` for London)
 
+> [!IMPORTANT] > **Make sure Sonarr and Radarr are running** before starting UMTK! The container needs to connect to these services.
+
 #### Step 5: Update Media Paths
 
-**IMPORTANT**: You must update the media paths in `docker-compose.yml` to match your Sonarr/Radarr setup:
+**IMPORTANT**: You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup:
 
 1. **Check your Sonarr/Radarr** to see what paths they use for your media
-2. **Update the volume paths** in `docker-compose.yml`:
-   - If Sonarr uses `/media/movies`, change `/mnt/media/movies:/data/media/movies` to `/media/movies:/media/movies`
-   - If Radarr uses `/data/media/movies`, keep it as is
+2. **Edit the volume paths** in `docker-compose.yml` (uncomment and modify the appropriate lines):
+   - If Sonarr uses `/media/movies`, uncomment and modify: `- /media/movies:/media/movies`
+   - If Radarr uses `/data/media/movies`, uncomment and modify: `- /mnt/media/movies:/data/media/movies`
    - **The format is**: `your-actual-path:container-path`
 
 #### Step 6: Run UMTK
@@ -114,6 +135,31 @@ services:
 - You can check the logs anytime with: `docker-compose logs -f`
 
 > [!TIP] > **Need Help?** If something goes wrong, check the logs with `docker-compose logs` to see what's happening.
+
+#### Troubleshooting Common Issues:
+
+**❌ "Connection refused" to Sonarr/Radarr:**
+
+- **First**: Make sure Sonarr and Radarr are actually running on your computer
+- Check that the URLs in `config.yml` are correct (e.g., `http://localhost:8989` for Sonarr)
+- If using `localhost`, make sure the services are running on the same computer as Docker
+- If using IP addresses (e.g., `192.168.1.100`), make sure they're correct and accessible
+- The container uses `network_mode: "host"` to access localhost services
+
+**❌ "Permission denied" errors:**
+
+- Make sure Docker Desktop is running
+- Try running: `docker-compose down && docker-compose up -d`
+
+**❌ "No config.yml found":**
+
+- Make sure you renamed `config.sample.yml` to `config.yml`
+- Check that the `config` folder is properly mounted
+
+**❌ Container keeps restarting:**
+
+- Check logs: `docker-compose logs umtk`
+- Verify your `config.yml` settings are correct
 
 ### Option 2: Manual Installation
 
