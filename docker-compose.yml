@@ -1,34 +1,32 @@
-version: "3.8"
-
 services:
   umtk:
     image: netplexflix/umtk:latest
     container_name: umtk
     environment:
-      - CRON=0 2 * * *  # Run daily at 2am
+      - CRON=0 2 * * * # Run daily at 2am
       - DOCKER=true
-      - TZ=America/New_York  # Set your timezone
-      - PUID=1000  # Set to your user ID (run `id -u` in terminal)
-      - PGID=1000  # Set to your group ID (run `id -g` in terminal)
+      - TZ=America/New_York # Set your timezone
+      - PUID=1000 # Set to your user ID (run `id -u` in terminal)
+      - PGID=1000 # Set to your group ID (run `id -g` in terminal)
     volumes:
       # Configuration directory (required)
       - ./config:/app/config
-      
+
       # Video directory for placeholder method (optional - only needed if using method 2)
-      - ./video:/app/video
-      
+      - ./video:/video
+
       # Output directory for generated YAML files (required)
       - ./kometa:/app/kometa
-      
+
       # Media directories - MUST match your Sonarr/Radarr paths exactly
       # Example 1: If your Sonarr/Radarr use /data/media paths
       - /mnt/media/movies:/data/media/movies
       - /mnt/media/tv:/data/media/tv
-      
-      # Example 2: If your Sonarr/Radarr use /media paths  
+
+      # Example 2: If your Sonarr/Radarr use /media paths
       # - /mnt/media/movies:/media/movies
       # - /mnt/media/tv:/media/tv
-      
+
       # Example 3: If your Sonarr/Radarr use /mnt/media paths
       # - /mnt/media/movies:/mnt/media/movies
       # - /mnt/media/tv:/mnt/media/tv
