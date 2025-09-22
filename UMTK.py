@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2509181320"
+VERSION = "2025.09.22"
 
 # ANSI color codes
 GREEN = '\033[32m'
