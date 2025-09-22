@@ -83,6 +83,7 @@ services:
 ```
 
 4. **Update the timezone** in the `TZ` environment variable to match your location (e.g., `America/New_York`, `Europe/London`, `Asia/Tokyo`)
+5. **Update PUID/PGID** to match your system user (optional - defaults to 1000:1000)
 
 #### Step 3: Create Required Directories
 
@@ -160,6 +161,12 @@ services:
 
 - Check logs: `docker-compose logs umtk`
 - Verify your `config.yml` settings are correct
+
+**✅ Permission Issues Fixed:**
+
+- The container now automatically handles PUID/PGID environment variables
+- No need to manually set folder ownership - the container handles this automatically
+- Simply set your PUID/PGID in the docker-compose.yml and the container will create the appropriate user
 
 ### Option 2: Manual Installation
 

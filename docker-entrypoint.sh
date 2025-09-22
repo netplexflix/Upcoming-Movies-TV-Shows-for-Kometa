@@ -14,6 +14,36 @@ log() {
     echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Handle PUID/PGID environment variables
+log "${BLUE}Setting up user permissions...${NC}"
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+
+# Check if we need to create/modify user
+if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
+    log "${BLUE}Creating user with PUID:${PUID} PGID:${PGID}${NC}"
+    
+    # Create group if it doesn't exist
+    if ! getent group $PGID > /dev/null 2>&1; then
+        groupadd -g $PGID umtk
+        log "${GREEN}Created group with GID:${PGID}${NC}"
+    fi
+    
+    # Create user if it doesn't exist
+    if ! getent passwd $PUID > /dev/null 2>&1; then
+        useradd -u $PUID -g $PGID -d /app -s /bin/bash umtk
+        log "${GREEN}Created user with UID:${PUID}${NC}"
+    else
+        # Update existing user's group
+        usermod -g $PGID umtk
+        log "${GREEN}Updated user group to GID:${PGID}${NC}"
+    fi
+    
+    # Fix ownership of app directory
+    chown -R $PUID:$PGID /app
+    log "${GREEN}Updated ownership of /app to ${PUID}:${PGID}${NC}"
+fi
+
 # Check and setup directories
 log "${BLUE}Setting up directories...${NC}"
 mkdir -p /app/config /app/video /app/kometa /app/config/overlay
@@ -132,21 +162,27 @@ run_umtk() {
     cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
 }
 
-# Start cron daemon in background (if possible)
-cron -f 2>/dev/null &
+# Switch to umtk user for the main process
+log "${BLUE}Switching to umtk user (${PUID}:${PGID})...${NC}"
 
-# If cron fails, fall back to sleep-based scheduling
-if [ $? -ne 0 ]; then
-    log "${YELLOW}Cron daemon failed, using sleep-based scheduling${NC}"
-    while true; do
-        sleep 3600  # Check every hour
-        current_hour=$(date +%H)
-        cron_hour=$(echo "$CRON" | awk '{print $2}')
-        if [ "$current_hour" = "$cron_hour" ]; then
-            run_umtk
-        fi
-    done &
-fi
+# Start the main process as umtk user
+exec gosu umtk bash -c "
+    # Start cron daemon in background (if possible)
+    cron -f 2>/dev/null &
 
-# Keep container running and show logs
-tail -f /app/logs/cron.log
+    # If cron fails, fall back to sleep-based scheduling
+    if [ \$? -ne 0 ]; then
+        echo -e \"\${YELLOW}Cron daemon failed, using sleep-based scheduling\${NC}\"
+        while true; do
+            sleep 3600  # Check every hour
+            current_hour=\$(date +%H)
+            cron_hour=\$(echo \"$CRON\" | awk '{print \$2}')
+            if [ \"\$current_hour\" = \"\$cron_hour\" ]; then
+                run_umtk
+            fi
+        done &
+    fi
+
+    # Keep container running and show logs
+    tail -f /app/logs/cron.log
+"
