@@ -1,17 +1,12 @@
-# IN DEVELOPMENT! Please join the Discord for testing feedback
-
-# 🎬📺 Upcoming Movies & TV Shows for Kometa
+# Upcoming Movies & TV Shows for Kometa
 
 **UMTK** (Upcoming Movies & TV Shows for Kometa) creates 'coming soon' collections in your Plex server. It accomplishes this by:
 
 - Checking [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content within x days
 - Either downloading trailers using [yt-dlp](https://github.com/yt-dlp/yt-dlp) or creating placeholder video files
+  - For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account!)
+  - For TV Shows, the Trailer or placeholder file is saved as a "special"(S00E00)
 - Creating collection and overlay .yml files which can be used with [Kometa](https://kometa.wiki/en/latest/) (formerly Plex Meta Manager)
-
-This combines the functionality of both [UTSK](https://github.com/netplexflix/Upcoming-TV-Shows-for-Kometa) and [UMFK](https://github.com/netplexflix/Upcoming-Movies-for-Kometa) into a single, unified solution.
-
-> [!note]
-> For movies, Plex's 'editions' feature is used which requires a Plex Pass subscription for Server admin account.
 
 ## Examples:
 
@@ -27,9 +22,7 @@ This combines the functionality of both [UTSK](https://github.com/netplexflix/Up
 
 ## 🛠️ Installation
 
-### Option 1: Docker (Recommended for Beginners)
-
-Docker is the easiest way to run UMTK. It automatically handles all the technical setup for you.
+### Option 1: Docker
 
 #### Step 1: Install Docker
 
@@ -91,12 +84,13 @@ services:
 
    - `config` folder (for configuration files)
    - `video` folder (for placeholder videos)
-   - `kometa` folder (for generated YAML files)
+   - `kometa` folder (for generated YAML files) 
 
 2. **Download the required files**:
    - Go to the [GitHub repository](https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa)
    - Download `config/config.sample.yml` and save it as `config/config.yml` in your UMTK folder
    - Download `video/UMTK.mp4` and save it in your `video` folder (if using placeholder method)
+     - You can also use your own video file. Just make sure it is called `UMTK`.
 
 #### Step 4: Configure Your Settings
 
@@ -107,12 +101,15 @@ services:
    - `sonarr_url`: Your Sonarr web address (e.g., `http://localhost:8989` or `http://192.168.1.100:8989`)
    - `sonarr_api_key`: Your Sonarr API key (found in Sonarr Settings → General → Security)
    - `utc_offset`: Your timezone (e.g., `-5` for New York, `+1` for London)
+3. **Optionally edit any other variables**: See [⚙️ Configuration](#%EF%B8%8F-configuration)
 
-> [!IMPORTANT] > **Make sure Sonarr and Radarr are running** before starting UMTK! The container needs to connect to these services.
+> [!IMPORTANT]
+> **Make sure Sonarr and Radarr are running** before starting UMTK! The container needs to connect to these services.
 
 #### Step 5: Update Media Paths
 
-**IMPORTANT**: You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup:
+> [!IMPORTANT]
+> You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup:
 
 1. **Check your Sonarr/Radarr** to see what paths they use for your media
 2. **Edit the volume paths** in `docker-compose.yml` (uncomment and modify the appropriate lines):
@@ -135,38 +132,8 @@ services:
 - These files can be used with Kometa to create collections in Plex
 - You can check the logs anytime with: `docker-compose logs -f`
 
-> [!TIP] > **Need Help?** If something goes wrong, check the logs with `docker-compose logs` to see what's happening.
 
-#### Troubleshooting Common Issues:
 
-**❌ "Connection refused" to Sonarr/Radarr:**
-
-- **First**: Make sure Sonarr and Radarr are actually running on your computer
-- Check that the URLs in `config.yml` are correct (e.g., `http://localhost:8989` for Sonarr)
-- If using `localhost`, make sure the services are running on the same computer as Docker
-- If using IP addresses (e.g., `192.168.1.100`), make sure they're correct and accessible
-- The container uses `network_mode: "host"` to access localhost services
-
-**❌ "Permission denied" errors:**
-
-- Make sure Docker Desktop is running
-- Try running: `docker-compose down && docker-compose up -d`
-
-**❌ "No config.yml found":**
-
-- Make sure you renamed `config.sample.yml` to `config.yml`
-- Check that the `config` folder is properly mounted
-
-**❌ Container keeps restarting:**
-
-- Check logs: `docker-compose logs umtk`
-- Verify your `config.yml` settings are correct
-
-**✅ Permission Issues Fixed:**
-
-- The container now automatically handles PUID/PGID environment variables
-- No need to manually set folder ownership - the container handles this automatically
-- Simply set your PUID/PGID in the docker-compose.yml and the container will create the appropriate user
 
 ### Option 2: Manual Installation
 
@@ -253,7 +220,8 @@ The remaining settings customize the output .yml files for Kometa.
 > - One for movies with a release date in the future. This overlay will append the release date.<br>
 > - One for movies that have already been released but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
 
-> [!NOTE] > **Date format options:**
+> [!NOTE] 
+> **Date format options:**
 >
 > - `d`: 1 digit day (1)
 > - `dd`: 2 digit day (01)
@@ -373,6 +341,33 @@ The default schedule is `0 2 * * *` (2 AM daily). Common alternatives:
 - `0 4 * * 1,4` - Monday and Thursday at 4 AM
 
 Use [crontab.guru](https://crontab.guru/) to create custom schedules.
+
+---
+
+## 🩺 Troubleshooting Common Issues:
+
+**❌ "Connection refused" to Sonarr/Radarr:**
+
+- **First**: Make sure Sonarr and Radarr are actually running on your computer
+- Check that the URLs in `config.yml` are correct (e.g., `http://localhost:8989` for Sonarr)
+- If using `localhost`, make sure the services are running on the same computer as Docker
+- If using IP addresses (e.g., `192.168.1.100`), make sure they're correct and accessible
+- The container uses `network_mode: "host"` to access localhost services
+
+**❌ "Permission denied" errors:**
+
+- Make sure Docker Desktop is running
+- Try running: `docker-compose down && docker-compose up -d`
+
+**❌ "No config.yml found":**
+
+- Make sure you renamed `config.sample.yml` to `config.yml`
+- Check that the `config` folder is properly mounted
+
+**❌ Container keeps restarting:**
+
+- Check logs: `docker-compose logs umtk`
+- Verify your `config.yml` settings are correct
 
 ---
 
