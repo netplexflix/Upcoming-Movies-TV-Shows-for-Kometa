@@ -20,7 +20,8 @@ RUN apt-get update && \
     cron \
     tzdata \
     ffmpeg \
-    curl && \
+    curl \
+    gosu && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -46,8 +47,5 @@ RUN mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs &&
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Switch to non-root user
-USER umtk
-
-# Start with the entrypoint script (sets up cron)
+# Start with the entrypoint script (handles user creation and switches to umtk user)
 ENTRYPOINT ["/entrypoint.sh"]
