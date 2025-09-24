@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.09.22"
+VERSION = "2025.09.24"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -242,88 +242,109 @@ def check_video_file():
     return True
 
 # TV Show specific functions
-def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset=0, debug=False, exclude_tags=None):
-    """Find shows with 'upcoming' status that have their first episode airing within specified days"""
-    upcoming_shows = []
+def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False):
+    """Find shows with upcoming episodes that have their first episode airing within specified days"""
+    future_shows = []
+    aired_shows = []
     
     cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_shows)
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     
     if debug:
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
+        print(f"{BLUE}[DEBUG] Future only TV: {future_only_tv}{RESET}")
     
     all_series = get_sonarr_series(sonarr_url, api_key)
     
     if debug:
         print(f"{BLUE}[DEBUG] Found {len(all_series)} total series in Sonarr{RESET}")
-        upcoming_count = sum(1 for s in all_series if s.get('status') == 'upcoming')
-        print(f"{BLUE}[DEBUG] {upcoming_count} series have 'upcoming' status{RESET}")
     
     for series in all_series:
-        if series.get('status') == 'upcoming':
+        if debug:
+            print(f"{BLUE}[DEBUG] Processing show: {series['title']} (status: {series.get('status')}, monitored: {series.get('monitored', True)}){RESET}")
+        
+        # Always skip unmonitored shows
+        if not series.get('monitored', True):
             if debug:
-                print(f"{BLUE}[DEBUG] Processing upcoming show: {series['title']} (monitored: {series.get('monitored', True)}){RESET}")
-            
-            # Always skip unmonitored shows
-            if not series.get('monitored', True):
+                print(f"{ORANGE}[DEBUG] Skipping unmonitored show: {series['title']}{RESET}")
+            continue
+        
+        # Check for excluded tags
+        if exclude_tags:
+            series_tags = series.get('tags', [])
+            if any(tag in series_tags for tag in exclude_tags):
                 if debug:
-                    print(f"{ORANGE}[DEBUG] Skipping unmonitored show: {series['title']}{RESET}")
+                    print(f"{ORANGE}[DEBUG] Skipping show with excluded tags: {series['title']}{RESET}")
                 continue
-            
-            # Check for excluded tags
-            if exclude_tags:
-                series_tags = series.get('tags', [])
-                if any(tag in series_tags for tag in exclude_tags):
-                    if debug:
-                        print(f"{ORANGE}[DEBUG] Skipping show with excluded tags: {series['title']}{RESET}")
-                    continue
-            
-            episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
-            
+        
+        episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Found {len(episodes)} episodes for {series['title']}{RESET}")
+        
+        # Find S01E01 specifically
+        first_episode = None
+        
+        for ep in episodes:
+            if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
+                first_episode = ep
+                break
+        
+        if not first_episode:
             if debug:
-                print(f"{BLUE}[DEBUG] Found {len(episodes)} episodes for {series['title']}{RESET}")
-            
-            first_episode = None
-            for ep in episodes:
-                if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
-                    first_episode = ep
-                    break
-            
-            if not first_episode:
-                if debug:
-                    print(f"{ORANGE}[DEBUG] No Season 1 Episode 1 found for {series['title']}{RESET}")
-                continue
-            
-            air_date_str = first_episode.get('airDateUtc')
-            if not air_date_str:
-                if debug:
-                    print(f"{ORANGE}[DEBUG] No air date found for {series['title']} S01E01{RESET}")
-                continue
-            
-            air_date = convert_utc_to_local(air_date_str, utc_offset)
-            
+                print(f"{ORANGE}[DEBUG] No Season 1 Episode 1 found for {series['title']}{RESET}")
+            continue
+        
+        # Skip if S01E01 is not monitored
+        if not first_episode.get('monitored', False):
             if debug:
-                print(f"{BLUE}[DEBUG] {series['title']} air date: {air_date}, within range: {air_date > now_local and air_date <= cutoff_date}{RESET}")
+                print(f"{ORANGE}[DEBUG] S01E01 not monitored for {series['title']}{RESET}")
+            continue
+        
+        # Skip if S01E01 is already downloaded
+        if first_episode.get('hasFile', False):
+            if debug:
+                print(f"{ORANGE}[DEBUG] S01E01 already downloaded for {series['title']} - skipping{RESET}")
+            continue
+        
+        air_date_str = first_episode.get('airDateUtc')
+        if not air_date_str:
+            if debug:
+                print(f"{ORANGE}[DEBUG] No air date found for {series['title']} S01E01{RESET}")
+            continue
+        
+        air_date = convert_utc_to_local(air_date_str, utc_offset)
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] {series['title']} air date: {air_date}, within range: {air_date <= cutoff_date}{RESET}")
+        
+        # Check if air date is within our range
+        if air_date <= cutoff_date:
+            tvdb_id = series.get('tvdbId')
+            air_date_str_yyyy_mm_dd = air_date.date().isoformat()
             
-            if air_date > now_local and air_date <= cutoff_date:
-                tvdb_id = series.get('tvdbId')
-                air_date_str_yyyy_mm_dd = air_date.date().isoformat()
-                
-                show_dict = {
-                    'title': series['title'],
-                    'tvdbId': tvdb_id,
-                    'path': series.get('path', ''),
-                    'imdbId': series.get('imdbId', ''),
-                    'year': series.get('year', None),
-                    'airDate': air_date_str_yyyy_mm_dd
-                }
-                
-                upcoming_shows.append(show_dict)
-                
+            show_dict = {
+                'title': series['title'],
+                'tvdbId': tvdb_id,
+                'path': series.get('path', ''),
+                'imdbId': series.get('imdbId', ''),
+                'year': series.get('year', None),
+                'airDate': air_date_str_yyyy_mm_dd
+            }
+            
+            # Categorize based on whether it has aired or not
+            if air_date > now_local:
+                future_shows.append(show_dict)
                 if debug:
-                    print(f"{GREEN}[DEBUG] Added to upcoming shows: {series['title']}{RESET}")
+                    print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
+            elif not future_only_tv:  # Only add aired shows if future_only_tv is False
+                aired_shows.append(show_dict)
+                if debug:
+                    print(f"{GREEN}[DEBUG] Added to aired shows: {series['title']}{RESET}")
+            elif debug:
+                print(f"{ORANGE}[DEBUG] Skipping aired show due to future_only_tv=True: {series['title']}{RESET}")
     
-    return upcoming_shows
+    return future_shows, aired_shows
 
 def find_new_shows(sonarr_url, api_key, recent_days_new_show, utc_offset=0, debug=False):
     """Find shows where S01E01 has been downloaded and aired within specified past days"""
@@ -885,7 +906,7 @@ def create_placeholder_movie(movie, debug=False):
         return False
 
 # Cleanup functions
-def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0):
+def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False):
     """Cleanup TV show trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting TV content cleanup process (method: {tv_method}){RESET}")
@@ -896,8 +917,8 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
     all_series = get_sonarr_series(sonarr_url, api_key)
     
     # Get current upcoming shows to compare against
-    current_upcoming_shows = find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags)
-    current_upcoming_titles = {show['title'] for show in current_upcoming_shows}
+    current_future_shows, current_aired_shows = find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags, future_only_tv)
+    current_upcoming_titles = {show['title'] for show in current_future_shows + current_aired_shows}
     
     if debug:
         print(f"{BLUE}[DEBUG] Current upcoming shows: {current_upcoming_titles}{RESET}")
@@ -926,48 +947,42 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
             if series['title'] not in current_upcoming_titles:
                 # Additional checks to determine why it's not in the list
                 episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
-                s01e01_exists = any(
-                    ep.get('seasonNumber') == 1 and 
-                    ep.get('episodeNumber') == 1 and 
-                    ep.get('hasFile', False)
-                    for ep in episodes
-                )
                 
-                if s01e01_exists:
+                # Find S01E01 specifically
+                s01e01 = None
+                for ep in episodes:
+                    if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
+                        s01e01 = ep
+                        break
+                
+                if s01e01 and s01e01.get('hasFile', False):
                     should_remove = True
                     removal_reason = "S01E01 now available"
                 elif not series.get('monitored', True):
                     should_remove = True
                     removal_reason = "show is no longer monitored"
+                elif s01e01 and not s01e01.get('monitored', False):
+                    should_remove = True
+                    removal_reason = "S01E01 is no longer monitored"
                 elif exclude_tags and any(tag in series.get('tags', []) for tag in exclude_tags):
                     should_remove = True
                     removal_reason = "show has excluded tags"
-                elif series.get('status') != 'upcoming':
-                    should_remove = True
-                    removal_reason = "show status changed from upcoming"
                 else:
                     # Check if the air date is outside the range
-                    episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
-                    first_episode = None
-                    for ep in episodes:
-                        if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
-                            first_episode = ep
-                            break
-                    
-                    if first_episode and first_episode.get('airDateUtc'):
-                        air_date = convert_utc_to_local(first_episode.get('airDateUtc'), utc_offset)
+                    if s01e01 and s01e01.get('airDateUtc'):
+                        air_date = convert_utc_to_local(s01e01.get('airDateUtc'), utc_offset)
+                        cutoff_date = datetime.now(timezone.utc) + timedelta(hours=utc_offset) + timedelta(days=future_days_upcoming_shows)
                         now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
-                        cutoff_date = now_local + timedelta(days=future_days_upcoming_shows)
                         
-                        if air_date <= now_local:
-                            should_remove = True
-                            removal_reason = "first episode has already aired"
-                        elif air_date > cutoff_date:
+                        if air_date > cutoff_date:
                             should_remove = True
                             removal_reason = f"first episode is beyond {future_days_upcoming_shows} day range"
+                        elif future_only_tv and air_date <= now_local:
+                            should_remove = True
+                            removal_reason = "aired show excluded due to future_only_tv=True"
                     else:
                         should_remove = True
-                        removal_reason = "no valid air date found"
+                        removal_reason = "no valid S01E01 or air date found"
             elif debug:
                 print(f"{BLUE}[DEBUG] Keeping content for {series['title']} - still in upcoming shows list{RESET}")
             
@@ -1158,71 +1173,116 @@ def format_date(yyyy_mm_dd, date_format, capitalize=False):
         print(f"{RED}Error: Invalid date format '{date_format}'. Using default format.{RESET}")
         return yyyy_mm_dd
 
-def create_overlay_yaml_tv(output_file, shows, config_sections):
+def create_overlay_yaml_tv(output_file, future_shows, aired_shows, config_sections):
     """Create overlay YAML file for TV shows"""
     import yaml
 
-    if not shows:
+    if not future_shows and not aired_shows:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No matching shows found")
         return
     
-    date_to_tvdb_ids = defaultdict(list)
-    all_tvdb_ids = set()
-    
-    for s in shows:
-        if s.get("tvdbId"):
-            all_tvdb_ids.add(s['tvdbId'])
-        
-        if s.get("airDate"):
-            date_to_tvdb_ids[s['airDate']].append(s.get('tvdbId'))
-    
     overlays_dict = {}
     
-    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
-    enable_backdrop = backdrop_config.pop("enable", True)
+    # Process future shows (haven't aired yet)
+    if future_shows:
+        date_to_tvdb_ids = defaultdict(list)
+        all_future_tvdb_ids = set()
+        
+        for s in future_shows:
+            if s.get("tvdbId"):
+                all_future_tvdb_ids.add(s['tvdbId'])
+            
+            if s.get("airDate"):
+                date_to_tvdb_ids[s['airDate']].append(s.get('tvdbId'))
+        
+        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
 
-    if enable_backdrop and all_tvdb_ids:
-        if "name" not in backdrop_config:
-            backdrop_config["name"] = "backdrop"
-        all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
+        if enable_backdrop and all_future_tvdb_ids:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_future_tvdb_ids) if i)
+            
+            overlays_dict["backdrop_future"] = {
+                "overlay": backdrop_config,
+                "tvdb_show": all_tvdb_ids_str
+            }
         
-        overlays_dict["backdrop"] = {
-            "overlay": backdrop_config,
-            "tvdb_show": all_tvdb_ids_str
-        }
-    
-    text_config = deepcopy(config_sections.get("text", {}))
-    enable_text = text_config.pop("enable", True)
-    
-    if enable_text and all_tvdb_ids:
-        date_format = text_config.pop("date_format", "yyyy-mm-dd")
-        use_text = text_config.pop("use_text", "Coming Soon")
-        capitalize_dates = text_config.pop("capitalize_dates", True)
+        text_config = deepcopy(config_sections.get("text", {}))
+        enable_text = text_config.pop("enable", True)
         
-        if date_to_tvdb_ids:
-            for date_str in sorted(date_to_tvdb_ids):
-                formatted_date = format_date(date_str, date_format, capitalize_dates)
+        if enable_text and all_future_tvdb_ids:
+            date_format = text_config.pop("date_format", "yyyy-mm-dd")
+            use_text = text_config.pop("use_text", "Coming Soon")
+            capitalize_dates = text_config.pop("capitalize_dates", True)
+            
+            if date_to_tvdb_ids:
+                for date_str in sorted(date_to_tvdb_ids):
+                    formatted_date = format_date(date_str, date_format, capitalize_dates)
+                    sub_overlay_config = deepcopy(text_config)
+                    if "name" not in sub_overlay_config:
+                        sub_overlay_config["name"] = f"text({use_text} {formatted_date})"
+                    
+                    tvdb_ids_for_date = sorted(tvdb_id for tvdb_id in date_to_tvdb_ids[date_str] if tvdb_id)
+                    tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_date)
+                    
+                    block_key = f"UMTK_future_{formatted_date}"
+                    overlays_dict[block_key] = {
+                        "overlay": sub_overlay_config,
+                        "tvdb_show": tvdb_ids_str
+                    }
+            else:
                 sub_overlay_config = deepcopy(text_config)
                 if "name" not in sub_overlay_config:
-                    sub_overlay_config["name"] = f"text({use_text} {formatted_date})"
+                    sub_overlay_config["name"] = f"text({use_text})"
                 
-                tvdb_ids_for_date = sorted(tvdb_id for tvdb_id in date_to_tvdb_ids[date_str] if tvdb_id)
-                tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_date)
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(all_future_tvdb_ids) if i)
                 
-                block_key = f"UMTK_{formatted_date}"
-                overlays_dict[block_key] = {
+                overlays_dict["UMTK_upcoming_shows_future"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
-        else:
+    
+    # Process aired shows (have aired but not downloaded)
+    if aired_shows:
+        all_aired_tvdb_ids = set()
+        
+        for s in aired_shows:
+            if s.get("tvdbId"):
+                all_aired_tvdb_ids.add(s['tvdbId'])
+        
+        backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
+        
+        if enable_backdrop and all_aired_tvdb_ids:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            
+            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_aired_tvdb_ids) if i)
+            
+            overlays_dict["backdrop_aired"] = {
+                "overlay": backdrop_config,
+                "tvdb_show": all_tvdb_ids_str
+            }
+        
+        text_config = deepcopy(config_sections.get("text_aired", {}))
+        enable_text = text_config.pop("enable", True)
+        
+        if enable_text and all_aired_tvdb_ids:
+            use_text = text_config.pop("use_text", "Available Now")
+            # Remove date-related configs as they're not used for aired shows
+            text_config.pop("date_format", None)
+            text_config.pop("capitalize_dates", None)
+            
             sub_overlay_config = deepcopy(text_config)
+            
             if "name" not in sub_overlay_config:
                 sub_overlay_config["name"] = f"text({use_text})"
             
-            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
+            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_aired_tvdb_ids) if i)
             
-            overlays_dict["UMTK_upcoming_shows"] = {
+            overlays_dict["UMTK_aired"] = {
                 "overlay": sub_overlay_config,
                 "tvdb_show": tvdb_ids_str
             }
@@ -1286,7 +1346,7 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False)
 
-def create_collection_yaml_tv(output_file, shows, config):
+def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
     """Create collection YAML file for TV shows"""
     import yaml
     from yaml.representer import SafeRepresenter
@@ -1307,7 +1367,7 @@ def create_collection_yaml_tv(output_file, shows, config):
     
     future_days = config.get('future_days_upcoming_shows', 30)
     if "summary" not in collection_config:
-        summary = f"Shows with their first episode premiering within {future_days} days"
+        summary = f"Shows with their first episode premiering within {future_days} days or already aired but not yet available"
     else:
         summary = collection_config.pop("summary")
     
@@ -1319,7 +1379,9 @@ def create_collection_yaml_tv(output_file, shows, config):
 
     yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
 
-    if not shows:
+    all_shows = future_shows + aired_shows
+
+    if not all_shows:
         plex_search_config = {
             "all": {
                 "label": collection_name
@@ -1341,7 +1403,7 @@ def create_collection_yaml_tv(output_file, shows, config):
             yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
         return
     
-    tvdb_ids = [s['tvdbId'] for s in shows if s.get('tvdbId')]
+    tvdb_ids = [s['tvdbId'] for s in all_shows if s.get('tvdbId')]
     if not tvdb_ids:
         plex_search_config = {
             "all": {
@@ -1632,7 +1694,7 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
 
 def main():
     start_time = datetime.now()
-    print(f"{BLUE}{'*' * 50}\n{'*' * 5} Upcoming Movies & TV Shows for Kometa {VERSION} {'*' * 5}\n{'*' * 50}{RESET}")
+    print(f"{BLUE}{'*' * 50}\n{'*' * 1}Upcoming Movies & TV Shows for Kometa {VERSION}{'*' * 1}\n{'*' * 50}{RESET}")
     
     # Add Docker detection message
     if os.environ.get('DOCKER') == 'true':
@@ -1678,7 +1740,7 @@ def main():
     
     # Check if running in Docker and adjust output path
     if os.environ.get('DOCKER') == 'true':
-        kometa_folder = Path('/app') / "kometa"
+        kometa_folder = Path('/output') / "kometa"
     else:
         kometa_folder = Path(__file__).parent / "kometa"
     
@@ -1706,9 +1768,11 @@ def main():
             
             future_days_upcoming_shows = config.get('future_days_upcoming_shows', 30)
             recent_days_new_show = config.get('recent_days_new_show', 7)
+            future_only_tv = str(config.get("future_only_tv", "false")).lower() == "true"
             
             print(f"future_days_upcoming_shows: {future_days_upcoming_shows}")
             print(f"recent_days_new_show: {recent_days_new_show}")
+            print(f"future_only_tv: {future_only_tv}")
             if exclude_sonarr_tag_names:
                 print(f"exclude_sonarr_tags: {', '.join(exclude_sonarr_tag_names)}")
             print()
@@ -1716,20 +1780,29 @@ def main():
             # Cleanup TV content
             if cleanup:
                 print(f"{BLUE}Checking for TV content to cleanup...{RESET}")
-                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset)
+                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv)
                 print()
             
             # Find upcoming shows
-            upcoming_shows = find_upcoming_shows(
-                sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids
+            future_shows, aired_shows = find_upcoming_shows(
+                sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
             )
             
-            if upcoming_shows:
-                print(f"{GREEN}Found {len(upcoming_shows)} upcoming shows with first episodes within {future_days_upcoming_shows} days:{RESET}")
-                for show in upcoming_shows:
+            if future_shows:
+                print(f"{GREEN}Found {len(future_shows)} future shows with first episodes within {future_days_upcoming_shows} days:{RESET}")
+                for show in future_shows:
                     print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode: {show['airDate']}")
             else:
-                print(f"{RED}No upcoming shows found with first episodes within {future_days_upcoming_shows} days.{RESET}")
+                print(f"{ORANGE}No future shows found with first episodes within {future_days_upcoming_shows} days.{RESET}")
+            
+            if aired_shows:
+                print(f"\n{GREEN}Found {len(aired_shows)} aired shows not yet available:{RESET}")
+                for show in aired_shows:
+                    print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode aired: {show['airDate']}")
+            elif not future_only_tv:
+                print(f"{ORANGE}No aired shows found that are not yet available.{RESET}")
+            else:
+                print(f"{ORANGE}Aired shows excluded due to future_only_tv=True.{RESET}")
             
             # Find new shows
             print(f"\n{BLUE}Finding new shows with S01E01 downloaded...{RESET}")
@@ -1745,13 +1818,14 @@ def main():
                 print(f"{ORANGE}No new shows found with S01E01 aired within the past {recent_days_new_show} days.{RESET}")
             
             # Process TV content based on method
-            if upcoming_shows:
+            all_shows = future_shows + aired_shows
+            if all_shows:
                 print(f"\n{BLUE}Processing content for upcoming shows...{RESET}")
                 successful = 0
                 failed = 0
                 skipped_existing = 0
                 
-                for show in upcoming_shows:
+                for show in all_shows:
                     print(f"\nProcessing: {show['title']}")
                     
                     # Check if content already exists
@@ -1807,15 +1881,17 @@ def main():
             new_shows_overlay_file = kometa_folder / "UMTK_TV_NEW_SHOWS_OVERLAYS.yml"
             collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
             
-            create_overlay_yaml_tv(str(overlay_file), upcoming_shows, 
+            create_overlay_yaml_tv(str(overlay_file), future_shows, aired_shows, 
                                {"backdrop": config.get("backdrop_upcoming_shows", {}),
-                                "text": config.get("text_upcoming_shows", {})})
+                                "text": config.get("text_upcoming_shows", {}),
+                                "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
+                                "text_aired": config.get("text_upcoming_shows_aired", {})})
             
             create_new_shows_overlay_yaml(str(new_shows_overlay_file), new_shows,
                                           {"backdrop": config.get("backdrop_new_show", {}),
                                            "text": config.get("text_new_show", {})})
             
-            create_collection_yaml_tv(str(collection_file), upcoming_shows, config)
+            create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
             
             print(f"\n{GREEN}TV YAML files created successfully{RESET}")
         

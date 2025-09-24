@@ -27,6 +27,7 @@ exclude_radarr_tags: exclude, private
 ################################################################################
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
+future_only_tv: false
 exclude_sonarr_tags: exclude, private
   
 ################################################################################
@@ -97,12 +98,14 @@ collection_upcoming_shows:
   build_collection: false
 
 ################################################################################
-##########                  UPCOMING SHOWS OVERLAY:                   ##########
-################################################################################  
+##########               UPCOMING SHOWS OVERLAY FUTURE:               ##########
+################################################################################ 
 backdrop_upcoming_shows:
   enable: true
   name: red_frame_bottom
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
+  group: TSSK_backdrop
+  weight: 100
 
 text_upcoming_shows:
   use_text: "PREMIERES"
@@ -114,6 +117,29 @@ text_upcoming_shows:
   vertical_offset: 17
   font_size: 70
   font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########                UPCOMING SHOWS OVERLAY AIRED:               ##########
+################################################################################  
+backdrop_upcoming_shows_aired:
+  enable: true
+  name: red_frame_bottom
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_upcoming_shows_aired:
+  use_text: "COMING SOON"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 17
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
 
 ################################################################################
 ##########                        NEW SHOWS:                          ##########

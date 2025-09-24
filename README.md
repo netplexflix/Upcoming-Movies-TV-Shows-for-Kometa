@@ -195,6 +195,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 
 - **future_days_upcoming_shows:** How many days ahead to look for premieres (default: `30`)
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
+- **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
 - **exclude_sonarr_tags**: Skip TV Shows with these tags
 
 ### Radarr Configuration (for Movies):
@@ -215,10 +216,10 @@ The remaining settings customize the output .yml files for Kometa.
 > You can enter any Kometa variables in this block and they will be automatically added in the generated .yml files.</br>
 
 > [!NOTE]
-> There are two different overlays for Movies:<br>
+> There are two different overlays:<br>
 >
-> - One for movies with a release date in the future. This overlay will append the release date.<br>
-> - One for movies that have already been released but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
+> - One for movies/shows with a release/air date in the future. This overlay will append the release date.<br>
+> - One for movies/shows that have already been released/aired but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
 
 > [!NOTE] 
 > **Date format options:**
