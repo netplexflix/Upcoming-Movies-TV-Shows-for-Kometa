@@ -1740,7 +1740,7 @@ def main():
     
     # Check if running in Docker and adjust output path
     if os.environ.get('DOCKER') == 'true':
-        kometa_folder = Path('/output') / "kometa"
+        kometa_folder = Path('/app') / "kometa"
     else:
         kometa_folder = Path(__file__).parent / "kometa"
     
