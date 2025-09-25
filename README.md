@@ -1,8 +1,9 @@
 # Upcoming Movies & TV Shows for Kometa
 
-**UMTK** (Upcoming Movies & TV Shows for Kometa) creates 'coming soon' collections in your Plex server. It accomplishes this by:
+**UMTK** (Upcoming Movies & TV Shows for Kometa) creates 'Coming Soon' collections in your Plex server.<br> 
+It accomplishes this by:
 
-- Checking [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content within x days
+- Checking [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content expected to be released/air within x days
 - Either downloading trailers using [yt-dlp](https://github.com/yt-dlp/yt-dlp) or creating placeholder video files
   - For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account!)
   - For TV Shows, the Trailer or placeholder file is saved as a "special"(S00E00)
@@ -12,11 +13,47 @@
 
 ### Movies:
 
-<img width="777" height="356" alt="Image" src="https://github.com/user-attachments/assets/588ff92e-ac42-4d80-9d3a-31eac52a7961" /><br>
+<img width="785" height="357" alt="Image" src="https://github.com/user-attachments/assets/bd809972-fa98-4cb5-a64f-d514e75f69e2" /><br>
 
 ### TV Shows:
 
-<img width="1303" height="495" alt="TV Shows Example" src="https://github.com/user-attachments/assets/bd2718b0-2437-44f7-8da6-2b819dece7b7" />
+![Image](https://github.com/user-attachments/assets/3f9beeca-2c7e-4c34-bbda-5293c6d45a8c)
+
+---
+
+## 📑 Table of Contents
+
+## 📑 Table of Contents
+
+- [🛠️ Installation](#-installation)
+  - [Option 1: Docker](#option-1-docker)
+    - [Step 1: Install Docker](#step-1-install-docker)
+    - [Step 2: Create Docker Compose File](#step-2-create-docker-compose-file)
+    - [Step 3: Create Required Directories](#step-3-create-required-directories)
+    - [Step 4: Configure Your Settings](#step-4-configure-your-settings)
+    - [Step 5: Update Media Paths](#step-5-update-media-paths)
+    - [Step 6: Run UMTK](#step-6-run-umtk)
+    - [What Happens Next?](#what-happens-next)
+  - [Option 2: Manual Installation](#option-2-manual-installation)
+    - [Step 1: Clone the repository](#step-1-clone-the-repository)
+    - [Step2: Install Python dependencies](#step-2-install-python-dependencies)
+    - [Step3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
+- [⚙️ Configuration](#️-configuration)
+  - [General](#general)
+  - [Movie Settings](#movie-settings)
+  - [TV Show Settings](#tv-show-settings)
+  - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
+  - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
+  - [Overlay & Collection Settings](#overlay--collection-settings)
+- [📼 Placeholder Video (Method 2)](#-placeholder-video-method-2)
+- [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
+- [🚀 Usage](#-usage)
+- [💡 Tips & Best Practices](#-tips--best-practices)
+  - [Prevent Upcoming Content from "Recently Added" Sections](#prevent-upcoming-content-from-recently-added-sections)
+  - [Choosing Between Methods](#choosing-between-methods)
+  - [Understanding Movie Release Types](#understanding-movie-release-types)
+  - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
+- [🩺 Troubleshooting Common Issues:](#-troubleshooting-common-issues)
 
 ---
 
@@ -137,7 +174,7 @@ services:
 
 ### Option 2: Manual Installation
 
-#### 1️⃣ Clone the repository:
+#### Step 1: Clone the repository:
 
 ```bash
 git clone https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa.git
@@ -148,7 +185,7 @@ cd Upcoming-Movies-TV-Shows-for-Kometa
 > If you don't know what that means, simply download the script by pressing the green 'Code' button above and then 'Download Zip'.  
 > Extract the files to your desired folder.
 
-#### 2️⃣ Install Python dependencies:
+#### Step 2: Install Python dependencies:
 
 - Ensure you have [Python](https://www.python.org/downloads/) installed (`>=3.11`)
 - Open a Terminal in the script's directory
@@ -163,7 +200,7 @@ cd Upcoming-Movies-TV-Shows-for-Kometa
 pip install -r requirements.txt
 ```
 
-#### 3️⃣ Install ffmpeg (for trailer downloads)
+#### Step 3: Install ffmpeg (for trailer downloads)
 
 [ffmpeg](https://www.ffmpeg.org/) is required by yt-dlp for postprocessing when downloading trailers.
 Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_i_get_ffmpeg.3F) for installation instructions.
@@ -236,6 +273,12 @@ The remaining settings customize the output .yml files for Kometa.
 > - `yyyy`: Full year (2025)
 >
 > Dividers can be `/`, `-` or a space
+
+> [!NOTE] 
+> In the config example, I use `build_collection: false`, only applying labels to the content without having Kometa actually creating the collection.
+> I do this because I can then create a smart filter which includes both `Coming Soon` items from UMTK and `New Season Soon` items from TSSK.
+> It also makes the collection more flexible allowing me to easily add/remove filters
+> You can remove `build_collection: false` if you want Kometa to create the collection directly.
 
 ---
 
@@ -369,6 +412,10 @@ Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 
 - Check logs: `docker-compose logs umtk`
 - Verify your `config.yml` settings are correct
+
+**❌ yt-dlp fails to download Trailers:**
+- There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. Report the issue so the requirements can be updated in the Docker image if needed.
+- As a temporary workaround, switch to the Placeholder method (2)
 
 ---
 
