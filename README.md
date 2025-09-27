@@ -414,7 +414,7 @@ Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 - Verify your `config.yml` settings are correct
 
 **❌ yt-dlp fails to download Trailers:**
-- There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. Report the issue so the requirements can be updated in the Docker image if needed.
+- There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. If you manually run the script, you can try updating yt-dlp. Report the issue so the requirements can be updated in the Docker image if needed.
 - As a temporary workaround, switch to the Placeholder method (2)
 
 ---
