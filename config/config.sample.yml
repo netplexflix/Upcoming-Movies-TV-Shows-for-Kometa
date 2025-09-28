@@ -3,6 +3,7 @@
 ################################################################################
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 1 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+method_fallback: true
 utc_offset: +1
 debug: false
 cleanup: true

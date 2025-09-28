@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.09.24"
+VERSION = "2025.09.28"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -67,6 +67,19 @@ def load_config(file_path=None):
     except yaml.YAMLError as e:
         print(f"Error parsing YAML config file: {e}")
         sys.exit(1)
+
+def get_cookies_path():
+    if os.environ.get('DOCKER') == 'true':
+        cookies_folder = Path('/cookies')
+    else:
+        cookies_folder = Path(__file__).parent / 'cookies'
+    
+    cookies_file = cookies_folder / 'cookies.txt'
+    
+    if cookies_file.exists() and cookies_file.is_file():
+        return str(cookies_file)
+    
+    return None
 
 def process_sonarr_url(base_url, api_key):
     """Process and validate Sonarr URL"""
@@ -696,6 +709,9 @@ def download_trailer_tv(show, trailer_info, debug=False):
     filename = f"{clean_title}.S00E00.Trailer.%(ext)s"
     output_path = season_00_path / filename
 
+    # Get cookies path if available
+    cookies_path = get_cookies_path()
+    
     try:
         def _run(format_string):
             ydl_opts = {
@@ -710,6 +726,13 @@ def download_trailer_tv(show, trailer_info, debug=False):
                 'quiet': not debug,
                 'no_warnings': not debug,
             }
+            
+            # Add cookies if available
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
+                if debug:
+                    print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
+            
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -765,6 +788,9 @@ def download_trailer_movie(movie, trailer_info, debug=False):
     filename = f"{file_name}.%(ext)s"
     output_path = coming_soon_path / filename
 
+    # Get cookies path if available
+    cookies_path = get_cookies_path()
+
     try:
         def _run(format_string):
             ydl_opts = {
@@ -779,6 +805,13 @@ def download_trailer_movie(movie, trailer_info, debug=False):
                 'quiet': not debug,
                 'no_warnings': not debug,
             }
+            
+            # Add cookies if available
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
+                if debug:
+                    print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
+            
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -1707,9 +1740,12 @@ def main():
     # Get processing methods
     tv_method = config.get('tv', 1)
     movie_method = config.get('movies', 2)
+    method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
-    print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})\n")
+    print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
+    print(f"Method fallback: {method_fallback}")
+    print()
     
     # Check requirements based on methods
     if tv_method == 1 or movie_method == 1:
@@ -1717,10 +1753,16 @@ def main():
             print(f"{RED}yt-dlp is required for trailer downloading but not installed.{RESET}")
             sys.exit(1)
     
-    if tv_method == 2 or movie_method == 2:
+    # Check for placeholder requirements (both original methods and fallback)
+    if tv_method == 2 or movie_method == 2 or (method_fallback and (tv_method == 1 or movie_method == 1)):
         if not check_video_file():
             print(f"{RED}UMTK video file is required for placeholder method but not found.{RESET}")
             sys.exit(1)
+    
+    # Check for cookies file
+    cookies_path = get_cookies_path()
+    if cookies_path:
+        print(f"{GREEN}Found cookies file: {cookies_path}{RESET}")
     
     # Get common configuration values
     utc_offset = float(config.get('utc_offset', 0))
@@ -1824,6 +1866,7 @@ def main():
                 successful = 0
                 failed = 0
                 skipped_existing = 0
+                fallback_used = 0
                 
                 for show in all_shows:
                     print(f"\nProcessing: {show['title']}")
@@ -1845,6 +1888,8 @@ def main():
                             continue
                     
                     # Process based on method
+                    success = False
+                    
                     if tv_method == 1:  # Trailer
                         trailer_info = search_trailer_on_youtube(
                             show['title'], 
@@ -1856,24 +1901,31 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            
-                            if download_trailer_tv(show, trailer_info, debug):
-                                successful += 1
-                            else:
-                                failed += 1
+                            success = download_trailer_tv(show, trailer_info, debug)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
-                            failed += 1
+                        
+                        # If trailer method failed and fallback is enabled, try placeholder
+                        if not success and method_fallback:
+                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                            success = create_placeholder_tv(show, debug)
+                            if success:
+                                fallback_used += 1
+                                print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
                     
                     elif tv_method == 2:  # Placeholder
-                        if create_placeholder_tv(show, debug):
-                            successful += 1
-                        else:
-                            failed += 1
+                        success = create_placeholder_tv(show, debug)
+                    
+                    if success:
+                        successful += 1
+                    else:
+                        failed += 1
                 
                 print(f"\n{GREEN}TV content processing summary:{RESET}")
                 print(f"Successful: {successful}")
                 print(f"Skipped (already exist): {skipped_existing}")
+                if fallback_used > 0:
+                    print(f"Fallback used: {fallback_used}")
                 print(f"Failed: {failed}")
             
             # Create TV YAML files
@@ -1953,6 +2005,7 @@ def main():
                 print(f"\n{BLUE}Processing content for movies...{RESET}")
                 successful = 0
                 failed = 0
+                fallback_used = 0
                 
                 for movie in all_movies:
                     print(f"\nProcessing: {movie['title']}")
@@ -1974,6 +2027,8 @@ def main():
                             continue
                     
                     # Process based on method
+                    success = False
+                    
                     if movie_method == 1:  # Trailer
                         trailer_info = search_trailer_on_youtube(
                             movie['title'], 
@@ -1985,23 +2040,30 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            
-                            if download_trailer_movie(movie, trailer_info, debug):
-                                successful += 1
-                            else:
-                                failed += 1
+                            success = download_trailer_movie(movie, trailer_info, debug)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {movie['title']}{RESET}")
-                            failed += 1
+                        
+                        # If trailer method failed and fallback is enabled, try placeholder
+                        if not success and method_fallback:
+                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                            success = create_placeholder_movie(movie, debug)
+                            if success:
+                                fallback_used += 1
+                                print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
                     
                     elif movie_method == 2:  # Placeholder
-                        if create_placeholder_movie(movie, debug):
-                            successful += 1
-                        else:
-                            failed += 1
+                        success = create_placeholder_movie(movie, debug)
+                    
+                    if success:
+                        successful += 1
+                    else:
+                        failed += 1
                 
                 print(f"\n{GREEN}Movie content processing summary:{RESET}")
                 print(f"Successful: {successful}")
+                if fallback_used > 0:
+                    print(f"Fallback used: {fallback_used}")
                 print(f"Failed: {failed}")
             
             # Cleanup movie content

@@ -1,9 +1,7 @@
-name: Build & Push Docker Image (on Release)
+name: Build & Push Docker Image (Develop)
 
 on:
-  release:
-    types: [published]   # triggers when a release is published
-  workflow_dispatch:      # allows manual runs from the Actions tab
+  workflow_dispatch:      # only manual trigger
 
 permissions:
   contents: read
@@ -17,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: develop
 
       - name: Set up QEMU (multi-arch)
         uses: docker/setup-qemu-action@v3
@@ -32,7 +30,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Extract tags and labels from the release
+      # Extract tags and labels for develop build
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -40,9 +38,7 @@ jobs:
           images: |
             netplexflix/umtk
           tags: |
-            type=raw,value=latest
-            type=semver,pattern={{version}},enable={{is_default_branch}}
-            type=semver,pattern={{major}}.{{minor}},enable={{is_default_branch}}
+            type=raw,value=develop
 
       - name: Build & Push (multi-arch)
         uses: docker/build-push-action@v6

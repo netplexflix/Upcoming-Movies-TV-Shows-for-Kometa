@@ -45,6 +45,7 @@ It accomplishes this by:
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
   - [Overlay & Collection Settings](#overlay--collection-settings)
+- [🍪 Using browser cookies for yt-dl](#-using-browser-cookies-for-yt-dlp)
 - [📼 Placeholder Video (Method 2)](#-placeholder-video-method-2)
 - [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🚀 Usage](#-usage)
@@ -215,6 +216,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 
 - **movies**: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **tv**: 1 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
 - **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues
@@ -279,6 +281,29 @@ The remaining settings customize the output .yml files for Kometa.
 > I do this because I can then create a smart filter which includes both `Coming Soon` items from UMTK and `New Season Soon` items from TSSK.
 > It also makes the collection more flexible allowing me to easily add/remove filters
 > You can remove `build_collection: false` if you want Kometa to create the collection directly.
+
+---
+
+## 🍪 Using browser cookies for yt-dlp
+
+In case you need to use your browser's cookies with method 1, you can pass them along to yt-dlp.<br>
+To extract your cookies in Netscape format, you can use an extension:
+  * [Firefox](https://addons.mozilla.org/en-US/firefox/addon/export-cookies-txt/)
+  * [Chrome](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)<br>
+Extract the cookies you need and rename the file `cookies.txt`
+
+#### For Docker Users:
+
+Add the path to the folder containing your `cookies.txt` to your docker-compose.yml under `volumes:`:
+
+```yaml
+      - /path/to/cookies:/cookies
+```
+
+#### For Local Installation
+
+1. Create a `cookies` folder in the same directory as the UMTK script
+2. Export your browser cookies to `cookies.txt` within this new subfolder
 
 ---
 
