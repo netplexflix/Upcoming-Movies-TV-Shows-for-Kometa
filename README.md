@@ -23,8 +23,6 @@ It accomplishes this by:
 
 ## 📑 Table of Contents
 
-## 📑 Table of Contents
-
 - [🛠️ Installation](#-installation)
   - [Option 1: Docker](#option-1-docker)
     - [Step 1: Install Docker](#step-1-install-docker)
@@ -54,6 +52,7 @@ It accomplishes this by:
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
+  - [Prevent Ombi/Overseerr/.. from marking 'coming soon' items as available](Prevent-Ombi/Overseerr/..-from-marking-'coming-soon'-items-as-available)
 - [🩺 Troubleshooting Common Issues:](#-troubleshooting-common-issues)
 
 ---
@@ -229,6 +228,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** Set to `false` (default) to include already-released but not-downloaded movies
 - **exclude_radarr_tags**: Skip movies with these tags
+- **umtk_root_movies**: Leave empty to use the default Radarr root. Enter a custom root if desired.
 
 ### TV Show Settings:
 
@@ -236,6 +236,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
 - **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
 - **exclude_sonarr_tags**: Skip TV Shows with these tags
+- **umtk_root_tv**: Leave empty to use the default Sonarr root. Enter a custom root if desired.
 
 ### Radarr Configuration (for Movies):
 
@@ -284,7 +285,7 @@ The remaining settings customize the output .yml files for Kometa.
 
 ---
 
-## 🍪 Using browser cookies for yt-dlp
+## 🍪 Using browser cookies for yt-dlp (Method 1)
 
 In case you need to use your browser's cookies with method 1, you can pass them along to yt-dlp.<br>
 To extract your cookies in Netscape format, you can use an extension:
@@ -307,12 +308,13 @@ Add the path to the folder containing your `cookies.txt` to your docker-compose.
 
 ---
 
-## 📼 Placeholder Video (Method 2)
+## 📼 Choose Placeholder Video (Method 2)
 
 When using the placeholder method, the script uses the `UMTK` video file in the `video` subfolder.<br>
 It's a simple intro video that shows 'coming soon':<br>
 ![Image](https://github.com/user-attachments/assets/588618dc-86f2-4e0f-9be7-93c5eacef4e7)<br>
-You can replace this with any video you like, as long as it is named `UMTK`.
+
+You can replace this with one of the other included examples, or with any video you like. Just make sure your chosen video is named `UMTK`.
 
 ---
 
@@ -411,6 +413,31 @@ The default schedule is `0 2 * * *` (2 AM daily). Common alternatives:
 
 Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 
+
+### Prevent Ombi/Overseerr/.. from marking 'coming soon' items as available
+This happens because these request platforms check Plex for availability instead of Radarr/Sonarr<br>
+To avoid this you can choose to create seperate libraries for your 'coming soon' items.
+
+- Use new custom roots for coming soon content under `umtk_root_movies` and `umtk_root_tv`
+Examples:
+
+```yaml
+umtk_root_movies: P:/umtk movies
+umtk_root_tv: P:/umtk tv
+```
+
+```yaml
+umtk_root_movies: /mnt/media/umtk movies
+umtk_root_tv: /mnt/media/umtk tv
+```
+
+- In Plex, create new Coming Soon Libraries pointed to these new roots.
+- Add these new libraries to your Kometa config and add the collection and overlay .yml files there.
+- In Ombi/Overseerr/... unmonitor these libraries
+<img width="638" height="191" alt="Image" src="https://github.com/user-attachments/assets/6a7ff130-12dc-42dd-bb50-4686af9e0e28" />
+
+NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise they will not see the 'Coming Soon' collections appear on their home screen.
+
 ---
 
 ## 🩺 Troubleshooting Common Issues:
@@ -440,7 +467,7 @@ Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 
 **❌ yt-dlp fails to download Trailers:**
 - There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. If you manually run the script, you can try updating yt-dlp. Report the issue so the requirements can be updated in the Docker image if needed.
-- As a temporary workaround, switch to the Placeholder method (2)
+- As a temporary workaround, set `method_fallback: true` in config to fallback to the Placeholder video method if trailer downloads fail.
 
 ---
 

@@ -690,14 +690,21 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
     return best
 
 # Video handling functions
-def download_trailer_tv(show, trailer_info, debug=False):
+def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     """Download trailer for TV show"""
     show_path = show.get('path')
     if not show_path:
         print(f"{RED}No path found for show: {show.get('title')}{RESET}")
         return False
 
-    season_00_path = Path(show_path) / "Season 00"
+    if umtk_root_tv:
+        # Use custom root path
+        show_name = Path(show_path).name
+        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+    else:
+        # Use original logic
+        season_00_path = Path(show_path) / "Season 00"
+    
     season_00_path.mkdir(parents=True, exist_ok=True)
 
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
@@ -705,6 +712,8 @@ def download_trailer_tv(show, trailer_info, debug=False):
     if debug:
         print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
 
     filename = f"{clean_title}.S00E00.Trailer.%(ext)s"
     output_path = season_00_path / filename
@@ -762,7 +771,7 @@ def download_trailer_tv(show, trailer_info, debug=False):
         print(f"{RED}Download error for {show['title']}: {e}{RESET}")
         return False
 
-def download_trailer_movie(movie, trailer_info, debug=False):
+def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=None):
     """Download trailer for movie"""
     movie_path = movie.get('path')
     if not movie_path:
@@ -776,14 +785,22 @@ def download_trailer_movie(movie, trailer_info, debug=False):
     folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-Coming Soon}}")
     
-    base_path = Path(movie_path)
-    parent_dir = base_path.parent
-    coming_soon_path = parent_dir / folder_name
+    if umtk_root_movies:
+        # Use custom root path
+        coming_soon_path = Path(umtk_root_movies) / folder_name
+    else:
+        # Use original logic
+        base_path = Path(movie_path)
+        parent_dir = base_path.parent
+        coming_soon_path = parent_dir / folder_name
+    
     coming_soon_path.mkdir(parents=True, exist_ok=True)
 
     if debug:
         print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
 
     filename = f"{file_name}.%(ext)s"
     output_path = coming_soon_path / filename
@@ -841,7 +858,7 @@ def download_trailer_movie(movie, trailer_info, debug=False):
         print(f"{RED}Download error for {movie['title']}: {e}{RESET}")
         return False
 
-def create_placeholder_tv(show, debug=False):
+def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     """Create placeholder video for TV show"""
     # Check if running in Docker
     if os.environ.get('DOCKER') == 'true':
@@ -863,7 +880,14 @@ def create_placeholder_tv(show, debug=False):
         print(f"{RED}No path found for show: {show.get('title')}{RESET}")
         return False
     
-    season_00_path = Path(show_path) / "Season 00"
+    if umtk_root_tv:
+        # Use custom root path
+        show_name = Path(show_path).name
+        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+    else:
+        # Use original logic
+        season_00_path = Path(show_path) / "Season 00"
+    
     season_00_path.mkdir(parents=True, exist_ok=True)
     
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
@@ -873,7 +897,9 @@ def create_placeholder_tv(show, debug=False):
         print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
-    
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
+        
     try:
         shutil.copy2(source_file, dest_file)
         size_mb = dest_file.stat().st_size / (1024 * 1024)
@@ -883,7 +909,7 @@ def create_placeholder_tv(show, debug=False):
         print(f"{RED}Error creating placeholder for {show['title']}: {e}{RESET}")
         return False
 
-def create_placeholder_movie(movie, debug=False):
+def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
     """Create placeholder video for movie"""
     # Check if running in Docker
     if os.environ.get('DOCKER') == 'true':
@@ -912,16 +938,24 @@ def create_placeholder_movie(movie, debug=False):
     folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-Coming Soon}}")
     
-    base_path = Path(movie_path)
-    parent_dir = base_path.parent
-    coming_soon_path = parent_dir / folder_name
+    if umtk_root_movies:
+        # Use custom root path
+        coming_soon_path = Path(umtk_root_movies) / folder_name
+    else:
+        # Use original logic
+        base_path = Path(movie_path)
+        parent_dir = base_path.parent
+        coming_soon_path = parent_dir / folder_name
+    
     dest_file = coming_soon_path / f"{file_name}{video_extension}"
     
     if debug:
         print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
-    
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
+
     if dest_file.exists():
         if debug:
             print(f"{ORANGE}[DEBUG] Placeholder file already exists for {movie['title']}{RESET}")
@@ -940,10 +974,12 @@ def create_placeholder_movie(movie, debug=False):
         return False
 
 # Cleanup functions
-def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False):
+def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False, umtk_root_tv=None):
     """Cleanup TV show trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting TV content cleanup process (method: {tv_method}){RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv for cleanup: {umtk_root_tv}{RESET}")
     
     removed_count = 0
     checked_count = 0
@@ -961,14 +997,19 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
         show_path = series.get('path')
         if not show_path:
             continue
-            
-        season_00_path = Path(show_path) / "Season 00"
+        
+        # Use custom root path if specified, otherwise use original logic
+        if umtk_root_tv:
+            show_name = Path(show_path).name
+            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+        else:
+            season_00_path = Path(show_path) / "Season 00"
         
         if not season_00_path.exists():
             continue
             
         trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*"))
-        
+                
         for trailer_file in trailer_files:
             checked_count += 1
             if debug:
@@ -1038,10 +1079,12 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
     elif debug:
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
-def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None):
+def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None, umtk_root_movies=None):
     """Cleanup movie trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting movie content cleanup process (method: {movie_method}){RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies for cleanup: {umtk_root_movies}{RESET}")
     
     removed_count = 0
     checked_count = 0
@@ -1057,13 +1100,17 @@ def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, m
     valid_coming_soon_paths = set()
     for movie in future_movies + released_movies:
         if movie.get('path'):
-            base_path = Path(movie['path'])
-            parent_dir = base_path.parent
-            
             movie_title = movie.get('title', 'Unknown')
             movie_year = movie.get('year', '')
             folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-            coming_soon_path = parent_dir / folder_name
+            
+            if umtk_root_movies:
+                coming_soon_path = Path(umtk_root_movies) / folder_name
+            else:
+                base_path = Path(movie['path'])
+                parent_dir = base_path.parent
+                coming_soon_path = parent_dir / folder_name
+            
             valid_coming_soon_paths.add(str(coming_soon_path))
     
     radarr_movie_lookup = {}
@@ -1072,31 +1119,45 @@ def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, m
         if not movie_path:
             continue
         
-        base_path = Path(movie_path)
-        parent_dir = base_path.parent
-        
         movie_title = movie.get('title', 'Unknown')
         movie_year = movie.get('year', '')
         folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-        coming_soon_path = parent_dir / folder_name
+        
+        if umtk_root_movies:
+            coming_soon_path = Path(umtk_root_movies) / folder_name
+        else:
+            base_path = Path(movie_path)
+            parent_dir = base_path.parent
+            coming_soon_path = parent_dir / folder_name
+        
         radarr_movie_lookup[str(coming_soon_path)] = movie
     
+    # Determine directories to scan
     parent_dirs_to_scan = set()
     
-    for movie in all_movies:
-        movie_path = movie.get('path')
-        if movie_path:
-            base_path = Path(movie_path)
-            parent_dirs_to_scan.add(base_path.parent)
-    
-    for valid_path in valid_coming_soon_paths:
-        parent_dirs_to_scan.add(Path(valid_path).parent)
-    
-    if debug:
-        print(f"{BLUE}[DEBUG] Scanning {len(parent_dirs_to_scan)} parent directories for Coming Soon folders{RESET}")
+    if umtk_root_movies:
+        # If using custom root, only scan the custom root directory
+        parent_dirs_to_scan.add(Path(umtk_root_movies))
+        if debug:
+            print(f"{BLUE}[DEBUG] Scanning custom root directory: {umtk_root_movies}{RESET}")
+    else:
+        # Original logic: scan parent directories of all movie paths
+        for movie in all_movies:
+            movie_path = movie.get('path')
+            if movie_path:
+                base_path = Path(movie_path)
+                parent_dirs_to_scan.add(base_path.parent)
+        
+        for valid_path in valid_coming_soon_paths:
+            parent_dirs_to_scan.add(Path(valid_path).parent)
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Scanning {len(parent_dirs_to_scan)} parent directories for Coming Soon folders{RESET}")
     
     for parent_dir in parent_dirs_to_scan:
         if not parent_dir.exists():
+            if debug:
+                print(f"{ORANGE}[DEBUG] Directory does not exist: {parent_dir}{RESET}")
             continue
             
         try:
@@ -1738,6 +1799,28 @@ def main():
     
     config = load_config()
     
+    # Get umtk root paths - handle None values properly
+    umtk_root_movies = config.get('umtk_root_movies')
+    umtk_root_tv = config.get('umtk_root_tv')
+    
+    # Convert None or empty strings to None, strip whitespace from valid strings
+    if umtk_root_movies:
+        umtk_root_movies = str(umtk_root_movies).strip()
+        umtk_root_movies = umtk_root_movies if umtk_root_movies else None
+    else:
+        umtk_root_movies = None
+        
+    if umtk_root_tv:
+        umtk_root_tv = str(umtk_root_tv).strip()
+        umtk_root_tv = umtk_root_tv if umtk_root_tv else None
+    else:
+        umtk_root_tv = None
+    
+    if umtk_root_movies:
+        print(f"{GREEN}Using custom movie root: {umtk_root_movies}{RESET}")
+    if umtk_root_tv:
+        print(f"{GREEN}Using custom TV root: {umtk_root_tv}{RESET}")
+    
     # Get processing methods
     tv_method = config.get('tv', 1)
     movie_method = config.get('movies', 2)
@@ -1823,7 +1906,7 @@ def main():
             # Cleanup TV content
             if cleanup:
                 print(f"{BLUE}Checking for TV content to cleanup...{RESET}")
-                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv)
+                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv, umtk_root_tv)
                 print()
             
             # Find upcoming shows
@@ -1875,7 +1958,14 @@ def main():
                     # Check if content already exists
                     show_path = show.get('path')
                     if show_path:
-                        season_00_path = Path(show_path) / "Season 00"
+                        if umtk_root_tv:
+                            # Use custom root path for checking existing files
+                            show_name = Path(show_path).name
+                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                        else:
+                            # Use original logic
+                            season_00_path = Path(show_path) / "Season 00"
+                        
                         clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
                         
                         trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
@@ -1902,20 +1992,20 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            success = download_trailer_tv(show, trailer_info, debug)
+                            success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
                         
                         # If trailer method failed and fallback is enabled, try placeholder
                         if not success and method_fallback:
                             print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                            success = create_placeholder_tv(show, debug)
+                            success = create_placeholder_tv(show, debug, umtk_root_tv)
                             if success:
                                 fallback_used += 1
                                 print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
                     
                     elif tv_method == 2:  # Placeholder
-                        success = create_placeholder_tv(show, debug)
+                        success = create_placeholder_tv(show, debug, umtk_root_tv)
                     
                     if success:
                         successful += 1
@@ -2014,13 +2104,18 @@ def main():
                     # Check if content already exists
                     movie_path = movie.get('path')
                     if movie_path:
-                        base_path = Path(movie_path)
-                        parent_dir = base_path.parent
-                        
                         movie_title = movie.get('title', 'Unknown')
                         movie_year = movie.get('year', '')
                         folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-                        coming_soon_path = parent_dir / folder_name
+                        
+                        if umtk_root_movies:
+                            # Use custom root path for checking existing files
+                            coming_soon_path = Path(umtk_root_movies) / folder_name
+                        else:
+                            # Use original logic
+                            base_path = Path(movie_path)
+                            parent_dir = base_path.parent
+                            coming_soon_path = parent_dir / folder_name
                         
                         if coming_soon_path.exists():
                             print(f"{GREEN}Content already exists for {movie['title']} - skipping{RESET}")
@@ -2041,20 +2136,20 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            success = download_trailer_movie(movie, trailer_info, debug)
+                            success = download_trailer_movie(movie, trailer_info, debug, umtk_root_movies)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {movie['title']}{RESET}")
                         
                         # If trailer method failed and fallback is enabled, try placeholder
                         if not success and method_fallback:
                             print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                            success = create_placeholder_movie(movie, debug)
+                            success = create_placeholder_movie(movie, debug, umtk_root_movies)
                             if success:
                                 fallback_used += 1
                                 print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
                     
                     elif movie_method == 2:  # Placeholder
-                        success = create_placeholder_movie(movie, debug)
+                        success = create_placeholder_movie(movie, debug, umtk_root_movies)
                     
                     if success:
                         successful += 1
@@ -2070,7 +2165,7 @@ def main():
             # Cleanup movie content
             if cleanup:
                 print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
-                cleanup_movie_content(radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug)
+                cleanup_movie_content(radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug, exclude_radarr_tag_ids, umtk_root_movies)
             
             # Create Movie YAML files
             overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"
