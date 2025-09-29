@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.09.28"
+VERSION = "2025.09.29"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -915,19 +915,20 @@ def create_placeholder_movie(movie, debug=False):
     base_path = Path(movie_path)
     parent_dir = base_path.parent
     coming_soon_path = parent_dir / folder_name
+    dest_file = coming_soon_path / f"{file_name}{video_extension}"
     
     if debug:
         print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
     
-    if coming_soon_path.exists():
+    if dest_file.exists():
         if debug:
-            print(f"{ORANGE}[DEBUG] Coming Soon folder already exists for {movie['title']}{RESET}")
+            print(f"{ORANGE}[DEBUG] Placeholder file already exists for {movie['title']}{RESET}")
         return True
     
     try:
         coming_soon_path.mkdir(parents=True, exist_ok=True)
-        dest_file = coming_soon_path / f"{file_name}{video_extension}"
         shutil.copy2(source_file, dest_file)
         
         size_mb = dest_file.stat().st_size / (1024 * 1024)
