@@ -52,7 +52,7 @@ It accomplishes this by:
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
-  - [Prevent Ombi/Overseerr/etc from marking coming soon items as available](#Prevent-Ombi-Overseerr-etc-from-marking-coming-soon-items-as-available)
+  - [Prevent Request Platforms from marking coming soon items as available](#Prevent-Request-Platforms-from-marking-coming-soon-items-as-available)
 - [🩺 Troubleshooting Common Issues:](#-troubleshooting-common-issues)
 
 ---
@@ -414,8 +414,8 @@ The default schedule is `0 2 * * *` (2 AM daily). Common alternatives:
 Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 
 
-### Prevent Ombi/Overseerr/etc from marking coming soon items as available
-This happens because these request platforms check Plex for availability instead of Radarr/Sonarr<br>
+### Prevent Request Platforms from marking coming soon items as available
+Request platforms such as Ombi and Overseerr check Plex for availability instead of Radarr/Sonarr. Therefor they will mark 'coming soon' items as available even though Radarr and Sonarr will correctly see them as 'missing'<br>
 To avoid this you can choose to create seperate libraries for your 'coming soon' items.
 
 - Use new custom roots for coming soon content under `umtk_root_movies` and `umtk_root_tv`
