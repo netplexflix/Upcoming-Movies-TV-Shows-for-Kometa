@@ -43,8 +43,8 @@ It accomplishes this by:
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
   - [Overlay & Collection Settings](#overlay--collection-settings)
-- [🍪 Using browser cookies for yt-dl](#-using-browser-cookies-for-yt-dlp)
-- [📼 Placeholder Video (Method 2)](#-placeholder-video-method-2)
+- [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
+- [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
 - [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🚀 Usage](#-usage)
 - [💡 Tips & Best Practices](#-tips--best-practices)
@@ -98,17 +98,9 @@ services:
       - ./kometa:/app/kometa
 
       # Media directories - MUST match your Sonarr/Radarr paths exactly
-      # Example 1: If your Sonarr/Radarr use /data/media paths
-      # - /mnt/media/movies:/data/media/movies
-      # - /mnt/media/tv:/data/media/tv
+      - /mnt/media/movies:/media/movies
+      - /mnt/media/tv:/media/tv
 
-      # Example 2: If your Sonarr/Radarr use /media paths
-      # - /mnt/media/movies:/media/movies
-      # - /mnt/media/tv:/media/tv
-
-      # Example 3: If your Sonarr/Radarr use /mnt/media paths
-      # - /mnt/media/movies:/mnt/media/movies
-      # - /mnt/media/tv:/mnt/media/tv
     restart: unless-stopped
 ```
 
@@ -130,29 +122,19 @@ services:
      - You can also use your own video file. Just make sure it is called `UMTK`.
 
 #### Step 4: Configure Your Settings
-
-1. **Open the `config.yml` file** you just downloaded
-2. **Update these important settings**:
-   - `radarr_url`: Your Radarr web address (e.g., `http://localhost:7878` or `http://192.168.1.100:7878`)
-   - `radarr_api_key`: Your Radarr API key (found in Radarr Settings → General → Security)
-   - `sonarr_url`: Your Sonarr web address (e.g., `http://localhost:8989` or `http://192.168.1.100:8989`)
-   - `sonarr_api_key`: Your Sonarr API key (found in Sonarr Settings → General → Security)
-   - `utc_offset`: Your timezone (e.g., `-5` for New York, `+1` for London)
-3. **Optionally edit any other variables**: See [⚙️ Configuration](#%EF%B8%8F-configuration)
-
-> [!IMPORTANT]
-> **Make sure Sonarr and Radarr are running** before starting UMTK! The container needs to connect to these services.
+- See [⚙️ Configuration](#️-configuration)
 
 #### Step 5: Update Media Paths
+You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup.
 
 > [!IMPORTANT]
-> You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup:
-
-1. **Check your Sonarr/Radarr** to see what paths they use for your media
-2. **Edit the volume paths** in `docker-compose.yml` (uncomment and modify the appropriate lines):
-   - If Sonarr uses `/media/movies`, uncomment and modify: `- /media/movies:/media/movies`
-   - If Radarr uses `/data/media/movies`, uncomment and modify: `- /mnt/media/movies:/data/media/movies`
-   - **The format is**: `your-actual-path:container-path`
+> **The format is**: `your-actual-path:container-path`
+1. **Check your Sonarr/Radarr**
+   - To see what paths they use for your media, go to Settings>Media Management>Root Folders
+   - Let's say your Radarr Root folder is simply `/movies`, and the actual full path is `/mnt/media/movies`
+   - Then you have to mount `/mnt/media/movies:/movies`
+   - If you have multiple roots, simply mount all of them.
+3. **Edit the volume paths** in `docker-compose.yml`:
 
 #### Step 6: Run UMTK
 
@@ -327,16 +309,16 @@ Example:
 ```yaml
 TV Shows:
   collection_files:
-    - file: /path/to/UMTK/Kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
   overlay_files:
-    - file: /path/to/UMTK/Kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
-    - file: /path/to/UMTK/Kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
 
 Movies:
   collection_files:
-    - file: /path/to/UMTK/Kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
   overlay_files:
-    - file: /path/to/UMTK/Kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
 ```
 
 ---
