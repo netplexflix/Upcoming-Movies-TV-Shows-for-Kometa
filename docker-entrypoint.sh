@@ -38,15 +38,11 @@ if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
         usermod -g $PGID umtk
         log "${GREEN}Updated user group to GID:${PGID}${NC}"
     fi
-    
-    # Fix ownership of app directory
-    chown -R $PUID:$PGID /app
-    log "${GREEN}Updated ownership of /app to ${PUID}:${PGID}${NC}"
 fi
 
-# Check and setup directories
+# Check and setup directories (as root)
 log "${BLUE}Setting up directories...${NC}"
-mkdir -p /app/config /app/video /app/kometa /app/config/overlay
+mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs
 
 # Check if config exists, if not copy sample
 if [ ! -f /app/config/config.yml ]; then
@@ -65,7 +61,7 @@ fi
 # Check if video file exists for placeholder method
 log "${BLUE}Checking video files...${NC}"
 if grep -E "^(tv|movies):\s*2" /app/config/config.yml > /dev/null 2>&1; then
-    if [ ! -f /app/video/UMTK.* ]; then
+    if ! ls /app/video/UMTK.* 1> /dev/null 2>&1; then
         log "${YELLOW}Placeholder method detected but no UMTK video file found${NC}"
         # Look for UMTK video files in the app directory and copy if found
         if ls /app/UMTK.* 1> /dev/null 2>&1; then
@@ -102,6 +98,10 @@ if grep -q "your_sonarr_url_here\|your_api_key_here" /app/config/config.yml 2>/d
     log "${YELLOW}Please update your config.yml with your actual Sonarr/Radarr URLs and API keys${NC}"
 fi
 
+# Fix ownership of all directories before switching user
+log "${BLUE}Setting ownership of /app to ${PUID}:${PGID}...${NC}"
+chown -R $PUID:$PGID /app
+
 # Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
@@ -133,52 +133,41 @@ else:
 "
 }
 
-# Setup cron job as non-root user
-log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log" > /tmp/umtk-cron
-crontab /tmp/umtk-cron
-rm /tmp/umtk-cron
-
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
-log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
 
-# Run once on startup
-log "${GREEN}Running UMTK on startup...${NC}"
-cd /app && DOCKER=true /usr/local/bin/python UMTK.py
-
-# Start cron and tail logs
-log "${BLUE}Starting scheduled execution...${NC}"
-log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
-log "${BLUE}Use 'docker logs -f umtk' to follow the logs${NC}"
-
-# Create log file in user's home directory
-mkdir -p /app/logs
-touch /app/logs/cron.log
-
-# Function to run UMTK
-run_umtk() {
-    log "${GREEN}Running scheduled UMTK execution...${NC}"
-    cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
-}
-
-# Switch to umtk user for the main process
+# Now switch to umtk user and run everything as that user
 log "${BLUE}Switching to umtk user (${PUID}:${PGID})...${NC}"
 
-# Start the main process as umtk user
 exec gosu umtk bash -c "
-    # Start cron daemon in background (if possible)
+    # Setup cron job as umtk user
+    echo '${BLUE}Setting up cron schedule: ${CRON}${NC}'
+    echo '$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log' > /tmp/umtk-cron
+    crontab /tmp/umtk-cron
+    rm /tmp/umtk-cron
+    echo '${GREEN}Next scheduled run: ${NEXT_RUN}${NC}'
+
+    # Run once on startup as umtk user
+    echo '${GREEN}Running UMTK on startup...${NC}'
+    cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
+
+    # Start cron and tail logs
+    echo '${BLUE}Starting scheduled execution...${NC}'
+    echo '${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}'
+    echo '${BLUE}Use docker logs -f umtk to follow the logs${NC}'
+
+    # Start cron daemon in background
     cron -f 2>/dev/null &
 
     # If cron fails, fall back to sleep-based scheduling
     if [ \$? -ne 0 ]; then
-        echo -e \"\${YELLOW}Cron daemon failed, using sleep-based scheduling\${NC}\"
+        echo '${YELLOW}Cron daemon failed, using sleep-based scheduling${NC}'
         while true; do
             sleep 3600  # Check every hour
             current_hour=\$(date +%H)
-            cron_hour=\$(echo \"$CRON\" | awk '{print \$2}')
+            cron_hour=\$(echo '$CRON' | awk '{print \$2}')
             if [ \"\$current_hour\" = \"\$cron_hour\" ]; then
-                run_umtk
+                cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
             fi
         done &
     fi

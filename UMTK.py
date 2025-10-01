@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.09.29"
+VERSION = "2025.10.01"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -100,7 +100,7 @@ def process_sonarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
             if response.status_code == 200:
                 print(f"Successfully connected to Sonarr at: {test_url}")
                 return test_url
@@ -131,7 +131,7 @@ def process_radarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
             if response.status_code == 200:
                 print(f"Successfully connected to Radarr at: {test_url}")
                 return test_url
@@ -148,7 +148,7 @@ def get_sonarr_series(sonarr_url, api_key):
     try:
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -160,7 +160,7 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id):
     try:
         url = f"{sonarr_url}/episode?seriesId={series_id}"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -172,7 +172,7 @@ def get_radarr_movies(radarr_url, api_key):
     try:
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -535,7 +535,7 @@ def get_tag_ids_from_names(api_url, api_key, tag_names, debug=False):
     try:
         url = f"{api_url}/tag"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         
         all_tags = response.json()
@@ -2109,18 +2109,19 @@ def main():
                         folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
                         
                         if umtk_root_movies:
-                            # Use custom root path for checking existing files
                             coming_soon_path = Path(umtk_root_movies) / folder_name
                         else:
-                            # Use original logic
                             base_path = Path(movie_path)
                             parent_dir = base_path.parent
                             coming_soon_path = parent_dir / folder_name
                         
+                        # Check if actual video file exists with the Coming Soon edition tag
                         if coming_soon_path.exists():
-                            print(f"{GREEN}Content already exists for {movie['title']} - skipping{RESET}")
-                            successful += 1
-                            continue
+                            existing_files = list(coming_soon_path.glob("*{edition-Coming Soon}.*"))
+                            if existing_files:
+                                print(f"{GREEN}Content already exists for {movie['title']} - skipping{RESET}")
+                                successful += 1
+                                continue
                     
                     # Process based on method
                     success = False
