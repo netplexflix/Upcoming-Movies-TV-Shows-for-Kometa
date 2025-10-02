@@ -102,6 +102,12 @@ fi
 log "${BLUE}Setting ownership of /app to ${PUID}:${PGID}...${NC}"
 chown -R $PUID:$PGID /app
 
+# Also fix ownership of any mounted volumes that might have root-owned files
+if [ -d /app/kometa ]; then
+    log "${BLUE}Fixing ownership of /app/kometa...${NC}"
+    chown -R $PUID:$PGID /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app/kometa${NC}"
+fi
+
 # Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
