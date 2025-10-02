@@ -44,7 +44,7 @@ fi
 
 # Check and setup directories (as root)
 log "${BLUE}Setting up directories...${NC}"
-mkdir -p /app/config /app/video /app/kometa /app/config/overlay
+mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs
 
 # Check if config exists, if not copy sample
 if [ ! -f /app/config/config.yml ]; then
@@ -141,26 +141,29 @@ else:
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Now switch to umtk user and run everything as that user
-log "${BLUE}Switching to umtk user (${PUID}:${PGID})...${NC}"
+# Ensure logs directory exists and is writable
+log "${BLUE}Setting up logging...${NC}"
+mkdir -p /app/logs
+chown $PUID:$PGID /app/logs
+touch /app/logs/umtk.log
+chown $PUID:$PGID /app/logs/umtk.log
 
-exec gosu umtk bash -c "
-    # Setup cron job as umtk user
-    echo '${BLUE}Setting up cron schedule: ${CRON}${NC}'
-    echo '$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py' > /tmp/umtk-cron
-    crontab /tmp/umtk-cron
-    rm /tmp/umtk-cron
-    echo '${GREEN}Next scheduled run: ${NEXT_RUN}${NC}'
+# Setup cron job to run as umtk user
+log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
+echo "$CRON gosu umtk bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
+chmod 0644 /etc/cron.d/umtk-cron
+crontab /etc/cron.d/umtk-cron
 
-    # Run once on startup as umtk user
-    echo '${GREEN}Running UMTK on startup...${NC}'
-    cd /app && DOCKER=true /usr/local/bin/python UMTK.py
+log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
 
-    # Start cron and keep container running
-    echo '${BLUE}Starting scheduled execution...${NC}'
-    echo '${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}'
-    echo '${BLUE}Use docker logs -f umtk to follow the logs${NC}'
+# Run once on startup as umtk user
+log "${GREEN}Running UMTK on startup...${NC}"
+gosu umtk bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
 
-    # Start cron daemon using busybox crond
-    exec crond -f -l 2
-"
+# Start cron and keep container running
+log "${BLUE}Starting scheduled execution...${NC}"
+log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
+log "${BLUE}Use docker logs -f umtk to follow the logs${NC}"
+
+# Start cron in foreground
+exec cron -f
