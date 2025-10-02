@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.022"
+VERSION = "2025.10.023"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -715,20 +715,30 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         # Use custom root path
         show_name = Path(show_path).name
         season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+        parent_dir = Path(umtk_root_tv) / show_name
     else:
         # Use original logic
         season_00_path = Path(show_path) / "Season 00"
-    
-    # Check if parent directory exists and is writable
-    if umtk_root_tv:
-        parent_dir = Path(umtk_root_tv) / Path(show_path).name
-    else:
         parent_dir = Path(show_path)
     
+    # Create parent directory if it doesn't exist
     if not parent_dir.exists():
-        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
-        return False
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
     
+    # Check if parent directory is writable
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
         print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
@@ -759,6 +769,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
 
     if debug:
         print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         if umtk_root_tv:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
@@ -986,26 +997,41 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         # Use custom root path
         show_name = Path(show_path).name
         season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+        parent_dir = Path(umtk_root_tv) / show_name
     else:
         # Use original logic
         season_00_path = Path(show_path) / "Season 00"
+        parent_dir = Path(show_path)
     
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
     
     if debug:
         print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
         if umtk_root_tv:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
     
-    # Check if parent directory exists and is writable
-    parent_dir = Path(show_path)
+    # Create parent directory if it doesn't exist
     if not parent_dir.exists():
-        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
-        return False
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
     
+    # Check if parent directory is writable
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
         print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
