@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.02"
+VERSION = "2025.10.021"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -705,7 +705,31 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         # Use original logic
         season_00_path = Path(show_path) / "Season 00"
     
-    season_00_path.mkdir(parents=True, exist_ok=True)
+    # Check if parent directory exists and is writable
+    if umtk_root_tv:
+        parent_dir = Path(umtk_root_tv) / Path(show_path).name
+    else:
+        parent_dir = Path(show_path)
+    
+    if not parent_dir.exists():
+        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
+        return False
+    
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {parent_dir.stat().st_uid}:{parent_dir.stat().st_gid}{RESET}")
+        print(f"{RED}Current user: {os.getuid()}:{os.getgid()}{RESET}")
+        return False
+    
+    try:
+        season_00_path.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {season_00_path}: {e}{RESET}")
+        return False
 
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
 
@@ -888,8 +912,6 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         # Use original logic
         season_00_path = Path(show_path) / "Season 00"
     
-    season_00_path.mkdir(parents=True, exist_ok=True)
-    
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
     
@@ -899,7 +921,29 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
         if umtk_root_tv:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
+    
+    # Check if parent directory exists and is writable
+    parent_dir = Path(show_path)
+    if not parent_dir.exists():
+        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
+        return False
+    
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {parent_dir.stat().st_uid}:{parent_dir.stat().st_gid}{RESET}")
+        print(f"{RED}Current user: {os.getuid()}:{os.getgid()}{RESET}")
+        return False
         
+    try:
+        season_00_path.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {season_00_path}: {e}{RESET}")
+        return False
+    
     try:
         shutil.copy2(source_file, dest_file)
         size_mb = dest_file.stat().st_size / (1024 * 1024)
