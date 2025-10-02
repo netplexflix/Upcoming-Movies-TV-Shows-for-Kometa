@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.023"
+VERSION = "2025.10.024"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -712,14 +712,21 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         return False
 
     if umtk_root_tv:
-        # Use custom root path
+        # Use custom root path - extract just the show name
         show_name = Path(show_path).name
-        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
         parent_dir = Path(umtk_root_tv) / show_name
+        season_00_path = parent_dir / "Season 00"
     else:
         # Use original logic
-        season_00_path = Path(show_path) / "Season 00"
         parent_dir = Path(show_path)
+        season_00_path = parent_dir / "Season 00"
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
+        print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
     
     # Create parent directory if it doesn't exist
     if not parent_dir.exists():
@@ -766,13 +773,6 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         return False
 
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-
-    if debug:
-        print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
-        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
-        print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
-        if umtk_root_tv:
-            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
 
     filename = f"{clean_title}.S00E00.Trailer.%(ext)s"
     output_path = season_00_path / filename
@@ -856,23 +856,39 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
     
     if umtk_root_movies:
         # Use custom root path
-        coming_soon_path = Path(umtk_root_movies) / folder_name
+        parent_dir = Path(umtk_root_movies)
+        coming_soon_path = parent_dir / folder_name
     else:
         # Use original logic
         base_path = Path(movie_path)
         parent_dir = base_path.parent
         coming_soon_path = parent_dir / folder_name
     
-    # Check if parent directory exists and is writable
-    if umtk_root_movies:
-        parent_dir = Path(umtk_root_movies)
-    else:
-        parent_dir = Path(movie_path).parent
-    
+    if debug:
+        print(f"{BLUE}[DEBUG] Movie path from Radarr: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
+        print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
+
+    # Create parent directory if it doesn't exist
     if not parent_dir.exists():
-        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
-        return False
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
     
+    # Check if parent directory is writable
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
         print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
@@ -898,12 +914,6 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
     except Exception as e:
         print(f"{RED}Error creating directory {coming_soon_path}: {e}{RESET}")
         return False
-
-    if debug:
-        print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
-        print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
-        if umtk_root_movies:
-            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
 
     filename = f"{file_name}.%(ext)s"
     output_path = coming_soon_path / filename
@@ -994,20 +1004,20 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         return False
     
     if umtk_root_tv:
-        # Use custom root path
+        # Use custom root path - extract just the show name
         show_name = Path(show_path).name
-        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
         parent_dir = Path(umtk_root_tv) / show_name
+        season_00_path = parent_dir / "Season 00"
     else:
         # Use original logic
-        season_00_path = Path(show_path) / "Season 00"
         parent_dir = Path(show_path)
+        season_00_path = parent_dir / "Season 00"
     
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
     
     if debug:
-        print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
         print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
@@ -1108,7 +1118,8 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
     
     if umtk_root_movies:
         # Use custom root path
-        coming_soon_path = Path(umtk_root_movies) / folder_name
+        parent_dir = Path(umtk_root_movies)
+        coming_soon_path = parent_dir / folder_name
     else:
         # Use original logic
         base_path = Path(movie_path)
@@ -1118,22 +1129,31 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
     dest_file = coming_soon_path / f"{file_name}{video_extension}"
     
     if debug:
-        print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Movie path from Radarr: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
         if umtk_root_movies:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
 
-    # Check if parent directory exists and is writable
-    if umtk_root_movies:
-        parent_dir = Path(umtk_root_movies)
-    else:
-        parent_dir = Path(movie_path).parent
-    
+    # Create parent directory if it doesn't exist
     if not parent_dir.exists():
-        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
-        return False
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
     
+    # Check if parent directory is writable
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
         print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
