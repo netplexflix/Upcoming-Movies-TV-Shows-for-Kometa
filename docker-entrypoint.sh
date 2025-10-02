@@ -19,6 +19,8 @@ log "${BLUE}Setting up user permissions...${NC}"
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
+log "${BLUE}Using PUID:${PUID} PGID:${PGID}${NC}"
+
 # Check if we need to create/modify user
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
     log "${BLUE}Creating user with PUID:${PUID} PGID:${PGID}${NC}"
@@ -159,6 +161,6 @@ exec gosu umtk bash -c "
     echo '${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}'
     echo '${BLUE}Use docker logs -f umtk to follow the logs${NC}'
 
-    # Start cron daemon and keep it in foreground
-    cron -f
+    # Start cron daemon using busybox crond
+    exec crond -f -l 2
 "

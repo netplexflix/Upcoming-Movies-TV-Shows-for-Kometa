@@ -18,6 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     cron \
+    busybox-suid \
     tzdata \
     ffmpeg \
     curl \
@@ -38,10 +39,7 @@ COPY . /app
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs && \
-    chown -R umtk:umtk /app && \
-    chmod 755 /var/spool/cron/crontabs && \
-    chmod 755 /var/spool/cron && \
-    chown umtk:umtk /var/spool/cron/crontabs
+    chown -R umtk:umtk /app
 
 # Copy and prepare the entrypoint
 COPY docker-entrypoint.sh /entrypoint.sh
