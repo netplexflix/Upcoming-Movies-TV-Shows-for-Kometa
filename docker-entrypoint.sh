@@ -42,7 +42,7 @@ fi
 
 # Check and setup directories (as root)
 log "${BLUE}Setting up directories...${NC}"
-mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs
+mkdir -p /app/config /app/video /app/kometa /app/config/overlay
 
 # Check if config exists, if not copy sample
 if [ ! -f /app/config/config.yml ]; then
@@ -111,10 +111,7 @@ fi
 # Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
-import subprocess
 import datetime
-from datetime import timezone
-import re
 
 cron_expression = '$CRON'
 parts = cron_expression.split()
@@ -148,36 +145,20 @@ log "${BLUE}Switching to umtk user (${PUID}:${PGID})...${NC}"
 exec gosu umtk bash -c "
     # Setup cron job as umtk user
     echo '${BLUE}Setting up cron schedule: ${CRON}${NC}'
-    echo '$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log' > /tmp/umtk-cron
+    echo '$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py' > /tmp/umtk-cron
     crontab /tmp/umtk-cron
     rm /tmp/umtk-cron
     echo '${GREEN}Next scheduled run: ${NEXT_RUN}${NC}'
 
     # Run once on startup as umtk user
     echo '${GREEN}Running UMTK on startup...${NC}'
-    cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
+    cd /app && DOCKER=true /usr/local/bin/python UMTK.py
 
-    # Start cron and tail logs
+    # Start cron and keep container running
     echo '${BLUE}Starting scheduled execution...${NC}'
     echo '${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}'
     echo '${BLUE}Use docker logs -f umtk to follow the logs${NC}'
 
-    # Start cron daemon in background
-    cron -f 2>/dev/null &
-
-    # If cron fails, fall back to sleep-based scheduling
-    if [ \$? -ne 0 ]; then
-        echo '${YELLOW}Cron daemon failed, using sleep-based scheduling${NC}'
-        while true; do
-            sleep 3600  # Check every hour
-            current_hour=\$(date +%H)
-            cron_hour=\$(echo '$CRON' | awk '{print \$2}')
-            if [ \"\$current_hour\" = \"\$cron_hour\" ]; then
-                cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
-            fi
-        done &
-    fi
-
-    # Keep container running and show logs
-    tail -f /app/logs/cron.log
+    # Start cron daemon and keep it in foreground
+    cron -f
 "

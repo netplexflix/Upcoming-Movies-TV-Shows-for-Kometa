@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.01"
+VERSION = "2025.10.02"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1005,7 +1005,10 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
         else:
             season_00_path = Path(show_path) / "Season 00"
         
+        # Skip if Season 00 doesn't exist
         if not season_00_path.exists():
+            if debug:
+                print(f"{BLUE}[DEBUG] Season 00 path doesn't exist for {series['title']}, skipping{RESET}")
             continue
             
         trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*"))
@@ -2119,7 +2122,8 @@ def main():
                         if coming_soon_path.exists():
                             existing_files = list(coming_soon_path.glob("*{edition-Coming Soon}.*"))
                             if existing_files:
-                                print(f"{GREEN}Content already exists for {movie['title']} - skipping{RESET}")
+                                existing_file = existing_files[0]
+                                print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
                                 successful += 1
                                 continue
                     
