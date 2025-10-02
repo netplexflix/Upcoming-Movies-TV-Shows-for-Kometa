@@ -37,7 +37,7 @@ if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
         log "${GREEN}Created user with UID:${PUID}${NC}"
     else
         # Update existing user's group
-        usermod -g $PGID umtk
+        usermod -g $PGID umtk 2>/dev/null || true
         log "${GREEN}Updated user group to GID:${PGID}${NC}"
     fi
 fi
@@ -102,13 +102,23 @@ fi
 
 # Fix ownership of all directories before switching user
 log "${BLUE}Setting ownership of /app to ${PUID}:${PGID}...${NC}"
-chown -R $PUID:$PGID /app
+chown -R $PUID:$PGID /app 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app${NC}"
 
-# Also fix ownership of any mounted volumes that might have root-owned files
+# Fix ownership of kometa directory specifically and ensure it's writable
 if [ -d /app/kometa ]; then
-    log "${BLUE}Fixing ownership of /app/kometa...${NC}"
+    log "${BLUE}Fixing ownership and permissions of /app/kometa...${NC}"
     chown -R $PUID:$PGID /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app/kometa${NC}"
+    chmod -R u+rw /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change permissions of some files in /app/kometa${NC}"
 fi
+
+# Ensure logs directory is writable
+log "${BLUE}Setting up logging...${NC}"
+mkdir -p /app/logs
+chown -R $PUID:$PGID /app/logs 2>/dev/null || true
+chmod -R u+rw /app/logs 2>/dev/null || true
+touch /app/logs/umtk.log
+chown $PUID:$PGID /app/logs/umtk.log 2>/dev/null || true
+chmod u+rw /app/logs/umtk.log 2>/dev/null || true
 
 # Function to get next cron run time
 get_next_cron_time() {
@@ -129,8 +139,7 @@ if len(parts) == 5:
     next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
     
     # If time has passed today, move to tomorrow
-    if next_run <= now:
-        next_run += datetime.timedelta(days=1)
+    if next_run <= datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -138,27 +147,44 @@ else:
 "
 }
 
+# Function to fix media directory permissions
+fix_media_permissions() {
+    log "${BLUE}Fixing permissions on media directories...${NC}"
+    
+    # Fix TV show directories if umtk_root_tv is set
+    if [ -n "$UMTK_ROOT_TV" ] && [ -d "$UMTK_ROOT_TV" ]; then
+        log "${BLUE}Fixing TV directory permissions: $UMTK_ROOT_TV${NC}"
+        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        log "${GREEN}TV directory permissions fixed${NC}"
+    fi
+    
+    # Fix movie directories if umtk_root_movies is set
+    if [ -n "$UMTK_ROOT_MOVIES" ] && [ -d "$UMTK_ROOT_MOVIES" ]; then
+        log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        log "${GREEN}Movie directory permissions fixed${NC}"
+    fi
+}
+
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Ensure logs directory exists and is writable
-log "${BLUE}Setting up logging...${NC}"
-mkdir -p /app/logs
-chown $PUID:$PGID /app/logs
-touch /app/logs/umtk.log
-chown $PUID:$PGID /app/logs/umtk.log
-
 # Setup cron job to run as umtk user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON gosu umtk bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
+echo "$CRON gosu $PUID:$PGID bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
 
 log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
 
-# Run once on startup as umtk user
+# Fix media permissions before running
+fix_media_permissions
+
+# Run once on startup as umtk user with explicit UID:GID
 log "${GREEN}Running UMTK on startup...${NC}"
-gosu umtk bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
+gosu $PUID:$PGID bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
 
 # Start cron and keep container running
 log "${BLUE}Starting scheduled execution...${NC}"

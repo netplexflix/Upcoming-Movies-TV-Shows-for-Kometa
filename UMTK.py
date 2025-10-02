@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.021"
+VERSION = "2025.10.022"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -22,6 +22,20 @@ RED = '\033[31m'
 RESET = '\033[0m'
 BOLD = '\033[1m'
 
+def get_user_info():
+    try:
+        return f"{os.getuid()}:{os.getgid()}"
+    except AttributeError:
+        import getpass
+        return f"Windows User: {getpass.getuser()}"
+
+def get_file_owner(path):
+    try:
+        stat_info = path.stat()
+        return f"{stat_info.st_uid}:{stat_info.st_gid}"
+    except AttributeError:
+        return "Windows File"
+	
 def check_for_updates():
     print(f"Checking for updates to UMTK {VERSION}...")
     
@@ -717,12 +731,22 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
-        print(f"{RED}Directory owner: {parent_dir.stat().st_uid}:{parent_dir.stat().st_gid}{RESET}")
-        print(f"{RED}Current user: {os.getuid()}:{os.getgid()}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
         return False
     
     try:
         season_00_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(season_00_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
     except PermissionError as e:
         print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
         print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
@@ -784,6 +808,16 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         downloaded_files = list(season_00_path.glob(f"{clean_title}.S00E00.Trailer.*"))
         if downloaded_files:
             downloaded_file = downloaded_files[0]
+            
+            # Set proper permissions on downloaded file
+            try:
+                os.chmod(downloaded_file, 0o644)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+            
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {show['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
             return True
@@ -818,7 +852,41 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         parent_dir = base_path.parent
         coming_soon_path = parent_dir / folder_name
     
-    coming_soon_path.mkdir(parents=True, exist_ok=True)
+    # Check if parent directory exists and is writable
+    if umtk_root_movies:
+        parent_dir = Path(umtk_root_movies)
+    else:
+        parent_dir = Path(movie_path).parent
+    
+    if not parent_dir.exists():
+        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
+        return False
+    
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+    
+    try:
+        coming_soon_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(coming_soon_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {coming_soon_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {coming_soon_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {coming_soon_path}: {e}{RESET}")
+        return False
 
     if debug:
         print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
@@ -871,6 +939,16 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         downloaded_files = list(coming_soon_path.glob(f"{file_name}.*"))
         if downloaded_files:
             downloaded_file = downloaded_files[0]
+            
+            # Set proper permissions on downloaded file
+            try:
+                os.chmod(downloaded_file, 0o644)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+            
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {movie['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
             return True
@@ -930,12 +1008,22 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     
     if not os.access(parent_dir, os.W_OK):
         print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
-        print(f"{RED}Directory owner: {parent_dir.stat().st_uid}:{parent_dir.stat().st_gid}{RESET}")
-        print(f"{RED}Current user: {os.getuid()}:{os.getgid()}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
         return False
         
     try:
         season_00_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(season_00_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
     except PermissionError as e:
         print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
         print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
@@ -946,6 +1034,16 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     
     try:
         shutil.copy2(source_file, dest_file)
+        
+        # Set proper permissions on created file
+        try:
+            os.chmod(dest_file, 0o644)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+        
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {show['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
         return True
@@ -1000,6 +1098,22 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
         if umtk_root_movies:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
 
+    # Check if parent directory exists and is writable
+    if umtk_root_movies:
+        parent_dir = Path(umtk_root_movies)
+    else:
+        parent_dir = Path(movie_path).parent
+    
+    if not parent_dir.exists():
+        print(f"{RED}Error: Parent directory does not exist: {parent_dir}{RESET}")
+        return False
+    
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+
     if dest_file.exists():
         if debug:
             print(f"{ORANGE}[DEBUG] Placeholder file already exists for {movie['title']}{RESET}")
@@ -1007,7 +1121,35 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
     
     try:
         coming_soon_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(coming_soon_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {coming_soon_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {coming_soon_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {coming_soon_path}: {e}{RESET}")
+        return False
+    
+    try:
         shutil.copy2(source_file, dest_file)
+        
+        # Set proper permissions on created file
+        try:
+            os.chmod(dest_file, 0o644)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
         
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {movie['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
