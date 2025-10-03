@@ -5,7 +5,7 @@ It accomplishes this by:
 
 - Checking [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content expected to be released/air within x days
 - Either downloading trailers using [yt-dlp](https://github.com/yt-dlp/yt-dlp) or creating placeholder video files
-  - For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account!)
+  - For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account)
   - For TV Shows, the Trailer or placeholder file is saved as a "special"(S00E00)
 - Creating collection and overlay .yml files which can be used with [Kometa](https://kometa.wiki/en/latest/) (formerly Plex Meta Manager)
 
@@ -31,11 +31,13 @@ It accomplishes this by:
     - [Step 4: Configure Your Settings](#step-4-configure-your-settings)
     - [Step 5: Update Media Paths](#step-5-update-media-paths)
     - [Step 6: Run UMTK](#step-6-run-umtk)
-    - [What Happens Next?](#what-happens-next)
+    - [Step 7: Add the yml files to your Kometa config](#step-7-add-the-yml-files-to-your-kometa-config)
   - [Option 2: Manual Installation](#option-2-manual-installation)
     - [Step 1: Clone the repository](#step-1-clone-the-repository)
     - [Step2: Install Python dependencies](#step-2-install-python-dependencies)
     - [Step3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
+    - [Step 4: Configure Your Config Settings](#step-4-configure-your-config-Settings)
+    - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
 - [⚙️ Configuration](#️-configuration)
   - [General](#general)
   - [Movie Settings](#movie-settings)
@@ -43,12 +45,12 @@ It accomplishes this by:
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
   - [Overlay & Collection Settings](#overlay--collection-settings)
+- [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
-- [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🚀 Usage](#-usage)
 - [💡 Tips & Best Practices](#-tips--best-practices)
-  - [Prevent Upcoming Content from "Recently Added" Sections](#prevent-upcoming-content-from-recently-added-sections)
+  - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-upcoming-content-from-recently-added-sections)
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
@@ -104,7 +106,7 @@ services:
     restart: unless-stopped
 ```
 
-4. **Update the timezone** in the `TZ` environment variable to match your location (e.g., `America/New_York`, `Europe/London`, `Asia/Tokyo`)
+4. **Update the timezone** in the `TZ` environment variable to [match your location](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) (e.g.: `America/New_York`, `Europe/London`, `Asia/Tokyo`)
 5. **Update PUID/PGID** to match your system user (optional - defaults to 1000:1000)
 
 #### Step 3: Create Required Directories
@@ -136,6 +138,13 @@ You must update the media paths in the existing `docker-compose.yml` file to mat
    - If you have multiple roots, simply mount all of them.
 3. **Edit the volume paths** in `docker-compose.yml`:
 
+> [!TIP]
+> By default UMTK will output the yml files in a subfolder named `kometa`.<br>
+> You can make UMTK output the yml files directly into your `Kometa/config` folder for example by adjusting the volume mount.<br>
+> This will make them easily accessible for Kometa.
+> e.g.: `/path/to/Kometa/config:/kometa`
+
+
 #### Step 6: Run UMTK
 
 1. **Open a terminal/command prompt** in your UMTK folder
@@ -145,14 +154,10 @@ You must update the media paths in the existing `docker-compose.yml` file to mat
    ```
 3. **That's it!** UMTK will now run automatically every day at 2 AM
 
-#### What Happens Next?
+#### Step 7: Add the yml files to your Kometa config
+- See [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 
-- UMTK will create YAML files in the `kometa` folder
-- These files can be used with Kometa to create collections in Plex
-- You can check the logs anytime with: `docker-compose logs -f`
-
-
-
+---
 
 ### Option 2: Manual Installation
 
@@ -186,6 +191,24 @@ pip install -r requirements.txt
 
 [ffmpeg](https://www.ffmpeg.org/) is required by yt-dlp for postprocessing when downloading trailers.
 Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_i_get_ffmpeg.3F) for installation instructions.
+
+#### Step 4: Configure Your Config Settings
+- See [⚙️ Configuration](#️-configuration)
+  
+#### Step 5: Add the yml files to your Kometa config
+- See [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
+
+> [!TIP]
+> Windows users can create a batch file to quickly launch the script.<br/>
+> Type `"[path to your python.exe]" "[path to the script]" -r pause"` into a text editor
+>
+> For example:
+> ```
+>"C:\Users\User1\AppData\Local\Programs\Python\Python311\python.exe" "P:\UMTK\UMTK.py" -r
+>pause
+> ```
+> Save as a .bat file. You can now double click this batch file to directly launch the script.<br/>
+> You can also use this batch file to [schedule](https://www.windowscentral.com/how-create-automated-task-using-task-scheduler-windows-10) the script to run.
 
 ---
 
@@ -267,6 +290,29 @@ The remaining settings customize the output .yml files for Kometa.
 
 ---
 
+## ☄️ Add to Kometa Configuration
+
+Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMFK .yml files under `collection_files` and `overlay_files`.
+
+Example:
+
+```yaml
+TV Shows:
+  collection_files:
+    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
+  overlay_files:
+    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
+
+Movies:
+  collection_files:
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
+  overlay_files:
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
+```
+
+---
+
 ## 🍪 Using browser cookies for yt-dlp (Method 1)
 
 In case you need to use your browser's cookies with method 1, you can pass them along to yt-dlp.<br>
@@ -300,29 +346,6 @@ You can replace this with one of the other included examples, or with any video 
 
 ---
 
-## ☄️ Add to Kometa Configuration
-
-Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMFK .yml files under `collection_files` and `overlay_files`.
-
-Example:
-
-```yaml
-TV Shows:
-  collection_files:
-    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
-  overlay_files:
-    - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
-    - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
-
-Movies:
-  collection_files:
-    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
-  overlay_files:
-    - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
-```
-
----
-
 ## 🚀 Usage
 
 ### Docker:
@@ -345,7 +368,7 @@ python UMTK.py
 
 ## 💡 Tips & Best Practices
 
-### Prevent Upcoming Content from "Recently Added" Sections
+### Exclude Upcoming Content from "Recently Added" Sections
 
 Since UMTK adds content before it's actually available, you'll want to exclude it from "Recently Added" sections:
 
@@ -366,13 +389,13 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 **Trailer Method (1):**
 
 - ✅ Provides actual trailers for upcoming content
-- ❌ May fail if no suitable trailer is found
+- ❌ May fail if no suitable trailer is found or yt-dlp is currently blocked by YouTube
 
 **Placeholder Method (2):**
 
 - ✅ Always works (no external dependencies)
 - ✅ Faster processing
-- ❌ Some TV Shows may not have a Plex Pass Trailer
+- ❌ Some content may not have a Plex Pass Trailer
 
 ### Understanding Movie Release Types
 
@@ -450,6 +473,11 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 **❌ yt-dlp fails to download Trailers:**
 - There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. If you manually run the script, you can try updating yt-dlp. Report the issue so the requirements can be updated in the Docker image if needed.
 - As a temporary workaround, set `method_fallback: true` in config to fallback to the Placeholder video method if trailer downloads fail.
+
+**❌ A bunch of old movies/shows are being added as Coming Soon**
+- That means you have those items monitored in Radarr/Sonarr but not downloaded.
+- You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
+- Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
 
 ---
 
