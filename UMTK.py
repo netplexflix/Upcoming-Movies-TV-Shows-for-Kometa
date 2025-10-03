@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.03"
+VERSION = "2025.10.04"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -160,12 +160,16 @@ def process_radarr_url(base_url, api_key):
 def get_sonarr_series(sonarr_url, api_key):
     """Get all series from Sonarr"""
     try:
+        print(f"{BLUE}Fetching series from Sonarr...{RESET}", flush=True)
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
         response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
-        return response.json()
+        series_data = response.json()
+        print(f"{GREEN}Done ✓ ({len(series_data)} series){RESET}")
+        return series_data
     except requests.exceptions.RequestException as e:
+        print(f" {RED}✗{RESET}")
         print(f"{RED}Error connecting to Sonarr: {str(e)}{RESET}")
         sys.exit(1)
 
@@ -184,12 +188,16 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id):
 def get_radarr_movies(radarr_url, api_key):
     """Get all movies from Radarr"""
     try:
+        print(f"{BLUE}Fetching movies from Radarr...{RESET}", flush=True)
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
         response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
-        return response.json()
+        movies_data = response.json()
+        print(f"{GREEN}Done ✓ ({len(movies_data)} movies){RESET}")
+        return movies_data
     except requests.exceptions.RequestException as e:
+        print(f" {RED}✗{RESET}")
         print(f"{RED}Error connecting to Radarr: {str(e)}{RESET}")
         sys.exit(1)
 
@@ -269,7 +277,7 @@ def check_video_file():
     return True
 
 # TV Show specific functions
-def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False):
+def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False):
     """Find shows with upcoming episodes that have their first episode airing within specified days"""
     future_shows = []
     aired_shows = []
@@ -280,12 +288,8 @@ def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_off
     if debug:
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
         print(f"{BLUE}[DEBUG] Future only TV: {future_only_tv}{RESET}")
-    
-    all_series = get_sonarr_series(sonarr_url, api_key)
-    
-    if debug:
         print(f"{BLUE}[DEBUG] Found {len(all_series)} total series in Sonarr{RESET}")
-    
+   
     for series in all_series:
         if debug:
             print(f"{BLUE}[DEBUG] Processing show: {series['title']} (status: {series.get('status')}, monitored: {series.get('monitored', True)}){RESET}")
@@ -373,7 +377,7 @@ def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_off
     
     return future_shows, aired_shows
 
-def find_new_shows(sonarr_url, api_key, recent_days_new_show, utc_offset=0, debug=False):
+def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_offset=0, debug=False):
     """Find shows where S01E01 has been downloaded and aired within specified past days"""
     new_shows = []
     
@@ -382,10 +386,6 @@ def find_new_shows(sonarr_url, api_key, recent_days_new_show, utc_offset=0, debu
     
     if debug:
         print(f"{BLUE}[DEBUG] Looking for shows with S01E01 aired between {cutoff_date} and {now_local}{RESET}")
-    
-    all_series = get_sonarr_series(sonarr_url, api_key)
-    
-    if debug:
         print(f"{BLUE}[DEBUG] Found {len(all_series)} total series in Sonarr{RESET}")
     
     for series in all_series:
@@ -448,7 +448,7 @@ def find_new_shows(sonarr_url, api_key, recent_days_new_show, utc_offset=0, debu
     return new_shows
 
 # Movie specific functions
-def find_upcoming_movies(radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None):
+def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None):
     """Find movies that are monitored and meet release date criteria"""
     future_movies = []
     released_movies = []
@@ -460,10 +460,6 @@ def find_upcoming_movies(radarr_url, api_key, future_days_upcoming_movies, utc_o
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
         print(f"{BLUE}[DEBUG] Future only mode: {future_only}{RESET}")
         print(f"{BLUE}[DEBUG] Include inCinemas: {include_inCinemas}{RESET}")
-    
-    all_movies = get_radarr_movies(radarr_url, api_key)
-    
-    if debug:
         print(f"{BLUE}[DEBUG] Found {len(all_movies)} total movies in Radarr{RESET}")
     
     for movie in all_movies:
@@ -1206,7 +1202,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
         return False
 
 # Cleanup functions
-def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False, umtk_root_tv=None):
+def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False, umtk_root_tv=None):
     """Cleanup TV show trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting TV content cleanup process (method: {tv_method}){RESET}")
@@ -1216,10 +1212,8 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
     removed_count = 0
     checked_count = 0
     
-    all_series = get_sonarr_series(sonarr_url, api_key)
-    
     # Get current upcoming shows to compare against
-    current_future_shows, current_aired_shows = find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags, future_only_tv)
+    current_future_shows, current_aired_shows = find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags, future_only_tv)
     current_upcoming_titles = {show['title'] for show in current_future_shows + current_aired_shows}
     
     if debug:
@@ -1314,7 +1308,7 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
     elif debug:
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
-def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None, umtk_root_movies=None):
+def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None, umtk_root_movies=None):
     """Cleanup movie trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting movie content cleanup process (method: {movie_method}){RESET}")
@@ -1323,8 +1317,6 @@ def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, m
     
     removed_count = 0
     checked_count = 0
-    
-    all_movies = get_radarr_movies(radarr_url, api_key)
     
     # Create a set of current valid movie titles for quick lookup
     current_valid_movies = {movie['title'] for movie in future_movies + released_movies}
@@ -2117,6 +2109,9 @@ def main():
             sonarr_url = process_sonarr_url(config['sonarr_url'], config['sonarr_api_key'])
             sonarr_api_key = config['sonarr_api_key']
             
+            # Fetch all series once
+            all_series = get_sonarr_series(sonarr_url, sonarr_api_key)
+            
             # Get exclude tags for Sonarr
             exclude_sonarr_tag_names = config.get('exclude_sonarr_tags', [])
             if isinstance(exclude_sonarr_tag_names, str):
@@ -2141,12 +2136,12 @@ def main():
             # Cleanup TV content
             if cleanup:
                 print(f"{BLUE}Checking for TV content to cleanup...{RESET}")
-                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv, umtk_root_tv)
+                cleanup_tv_content(all_series, sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv, umtk_root_tv)
                 print()
             
             # Find upcoming shows
             future_shows, aired_shows = find_upcoming_shows(
-                sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
+                all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
             )
             
             if future_shows:
@@ -2168,7 +2163,7 @@ def main():
             # Find new shows
             print(f"\n{BLUE}Finding new shows with S01E01 downloaded...{RESET}")
             new_shows = find_new_shows(
-                sonarr_url, sonarr_api_key, recent_days_new_show, utc_offset, debug
+                all_series, sonarr_url, sonarr_api_key, recent_days_new_show, utc_offset, debug
             )
             
             if new_shows:
@@ -2282,6 +2277,9 @@ def main():
             radarr_url = process_radarr_url(config['radarr_url'], config['radarr_api_key'])
             radarr_api_key = config['radarr_api_key']
             
+            # Fetch all movies once
+            all_movies = get_radarr_movies(radarr_url, radarr_api_key)
+            
             # Get exclude tags for Radarr
             exclude_radarr_tag_names = config.get('exclude_radarr_tags', [])
             if isinstance(exclude_radarr_tag_names, str):
@@ -2306,7 +2304,7 @@ def main():
             # Find upcoming movies
             print(f"{BLUE}Finding upcoming movies...{RESET}")
             future_movies, released_movies = find_upcoming_movies(
-                radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids
+                all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids
             )
             
             if future_movies:
@@ -2326,14 +2324,14 @@ def main():
                 print(f"{ORANGE}No released movies found that are not yet available.{RESET}")
             
             # Process movie content based on method
-            all_movies = future_movies + released_movies
-            if all_movies:
+            all_movies_to_process = future_movies + released_movies
+            if all_movies_to_process:
                 print(f"\n{BLUE}Processing content for movies...{RESET}")
                 successful = 0
                 failed = 0
                 fallback_used = 0
                 
-                for movie in all_movies:
+                for movie in all_movies_to_process:
                     print(f"\nProcessing: {movie['title']}")
                     
                     # Check if content already exists
@@ -2402,7 +2400,7 @@ def main():
             # Cleanup movie content
             if cleanup:
                 print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
-                cleanup_movie_content(radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug, exclude_radarr_tag_ids, umtk_root_movies)
+                cleanup_movie_content(all_movies, radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug, exclude_radarr_tag_ids, umtk_root_movies)
             
             # Create Movie YAML files
             overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"
