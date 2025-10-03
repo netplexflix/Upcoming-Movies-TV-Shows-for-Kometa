@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.09.24"
+VERSION = "2025.10.03"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -22,6 +22,20 @@ RED = '\033[31m'
 RESET = '\033[0m'
 BOLD = '\033[1m'
 
+def get_user_info():
+    try:
+        return f"{os.getuid()}:{os.getgid()}"
+    except AttributeError:
+        import getpass
+        return f"Windows User: {getpass.getuser()}"
+
+def get_file_owner(path):
+    try:
+        stat_info = path.stat()
+        return f"{stat_info.st_uid}:{stat_info.st_gid}"
+    except AttributeError:
+        return "Windows File"
+	
 def check_for_updates():
     print(f"Checking for updates to UMTK {VERSION}...")
     
@@ -68,6 +82,19 @@ def load_config(file_path=None):
         print(f"Error parsing YAML config file: {e}")
         sys.exit(1)
 
+def get_cookies_path():
+    if os.environ.get('DOCKER') == 'true':
+        cookies_folder = Path('/cookies')
+    else:
+        cookies_folder = Path(__file__).parent / 'cookies'
+    
+    cookies_file = cookies_folder / 'cookies.txt'
+    
+    if cookies_file.exists() and cookies_file.is_file():
+        return str(cookies_file)
+    
+    return None
+
 def process_sonarr_url(base_url, api_key):
     """Process and validate Sonarr URL"""
     base_url = base_url.rstrip('/')
@@ -87,7 +114,7 @@ def process_sonarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
             if response.status_code == 200:
                 print(f"Successfully connected to Sonarr at: {test_url}")
                 return test_url
@@ -118,7 +145,7 @@ def process_radarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=45)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
             if response.status_code == 200:
                 print(f"Successfully connected to Radarr at: {test_url}")
                 return test_url
@@ -135,7 +162,7 @@ def get_sonarr_series(sonarr_url, api_key):
     try:
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -147,7 +174,7 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id):
     try:
         url = f"{sonarr_url}/episode?seriesId={series_id}"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -159,7 +186,7 @@ def get_radarr_movies(radarr_url, api_key):
     try:
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=45)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -337,7 +364,7 @@ def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_off
                 future_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
-            elif not future_only_tv:  # Only add aired shows if future_only_tv is False
+            elif not future_only_tv:  # Only add aired shows if future_only_tv is false
                 aired_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to aired shows: {series['title']}{RESET}")
@@ -522,7 +549,7 @@ def get_tag_ids_from_names(api_url, api_key, tag_names, debug=False):
     try:
         url = f"{api_url}/tag"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=90)
         response.raise_for_status()
         
         all_tags = response.json()
@@ -677,25 +704,82 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
     return best
 
 # Video handling functions
-def download_trailer_tv(show, trailer_info, debug=False):
+def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     """Download trailer for TV show"""
     show_path = show.get('path')
     if not show_path:
         print(f"{RED}No path found for show: {show.get('title')}{RESET}")
         return False
 
-    season_00_path = Path(show_path) / "Season 00"
-    season_00_path.mkdir(parents=True, exist_ok=True)
+    if umtk_root_tv:
+        # Use custom root path - extract just the show name
+        show_name = Path(show_path).name
+        parent_dir = Path(umtk_root_tv) / show_name
+        season_00_path = parent_dir / "Season 00"
+    else:
+        # Use original logic
+        parent_dir = Path(show_path)
+        season_00_path = parent_dir / "Season 00"
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
+        print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
+    
+    # Create parent directory if it doesn't exist
+    if not parent_dir.exists():
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
+    
+    # Check if parent directory is writable
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+    
+    try:
+        season_00_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(season_00_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {season_00_path}: {e}{RESET}")
+        return False
 
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-
-    if debug:
-        print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
-        print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
 
     filename = f"{clean_title}.S00E00.Trailer.%(ext)s"
     output_path = season_00_path / filename
 
+    # Get cookies path if available
+    cookies_path = get_cookies_path()
+    
     try:
         def _run(format_string):
             ydl_opts = {
@@ -710,6 +794,13 @@ def download_trailer_tv(show, trailer_info, debug=False):
                 'quiet': not debug,
                 'no_warnings': not debug,
             }
+            
+            # Add cookies if available
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
+                if debug:
+                    print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
+            
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -728,6 +819,16 @@ def download_trailer_tv(show, trailer_info, debug=False):
         downloaded_files = list(season_00_path.glob(f"{clean_title}.S00E00.Trailer.*"))
         if downloaded_files:
             downloaded_file = downloaded_files[0]
+            
+            # Set proper permissions on downloaded file
+            try:
+                os.chmod(downloaded_file, 0o644)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+            
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {show['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
             return True
@@ -739,7 +840,7 @@ def download_trailer_tv(show, trailer_info, debug=False):
         print(f"{RED}Download error for {show['title']}: {e}{RESET}")
         return False
 
-def download_trailer_movie(movie, trailer_info, debug=False):
+def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=None):
     """Download trailer for movie"""
     movie_path = movie.get('path')
     if not movie_path:
@@ -753,17 +854,72 @@ def download_trailer_movie(movie, trailer_info, debug=False):
     folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-Coming Soon}}")
     
-    base_path = Path(movie_path)
-    parent_dir = base_path.parent
-    coming_soon_path = parent_dir / folder_name
-    coming_soon_path.mkdir(parents=True, exist_ok=True)
-
+    if umtk_root_movies:
+        # Use custom root path
+        parent_dir = Path(umtk_root_movies)
+        coming_soon_path = parent_dir / folder_name
+    else:
+        # Use original logic
+        base_path = Path(movie_path)
+        parent_dir = base_path.parent
+        coming_soon_path = parent_dir / folder_name
+    
     if debug:
-        print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Movie path from Radarr: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
+
+    # Create parent directory if it doesn't exist
+    if not parent_dir.exists():
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
+    
+    # Check if parent directory is writable
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+    
+    try:
+        coming_soon_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(coming_soon_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {coming_soon_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {coming_soon_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {coming_soon_path}: {e}{RESET}")
+        return False
 
     filename = f"{file_name}.%(ext)s"
     output_path = coming_soon_path / filename
+
+    # Get cookies path if available
+    cookies_path = get_cookies_path()
 
     try:
         def _run(format_string):
@@ -779,6 +935,13 @@ def download_trailer_movie(movie, trailer_info, debug=False):
                 'quiet': not debug,
                 'no_warnings': not debug,
             }
+            
+            # Add cookies if available
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
+                if debug:
+                    print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
+            
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -797,6 +960,16 @@ def download_trailer_movie(movie, trailer_info, debug=False):
         downloaded_files = list(coming_soon_path.glob(f"{file_name}.*"))
         if downloaded_files:
             downloaded_file = downloaded_files[0]
+            
+            # Set proper permissions on downloaded file
+            try:
+                os.chmod(downloaded_file, 0o644)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+            
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {movie['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
             return True
@@ -808,7 +981,7 @@ def download_trailer_movie(movie, trailer_info, debug=False):
         print(f"{RED}Download error for {movie['title']}: {e}{RESET}")
         return False
 
-def create_placeholder_tv(show, debug=False):
+def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     """Create placeholder video for TV show"""
     # Check if running in Docker
     if os.environ.get('DOCKER') == 'true':
@@ -830,19 +1003,83 @@ def create_placeholder_tv(show, debug=False):
         print(f"{RED}No path found for show: {show.get('title')}{RESET}")
         return False
     
-    season_00_path = Path(show_path) / "Season 00"
-    season_00_path.mkdir(parents=True, exist_ok=True)
+    if umtk_root_tv:
+        # Use custom root path - extract just the show name
+        show_name = Path(show_path).name
+        parent_dir = Path(umtk_root_tv) / show_name
+        season_00_path = parent_dir / "Season 00"
+    else:
+        # Use original logic
+        parent_dir = Path(show_path)
+        season_00_path = parent_dir / "Season 00"
     
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
     
     if debug:
-        print(f"{BLUE}[DEBUG] Show path: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
+    
+    # Create parent directory if it doesn't exist
+    if not parent_dir.exists():
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
+    
+    # Check if parent directory is writable
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+        
+    try:
+        season_00_path.mkdir(parents=True, exist_ok=True)
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(season_00_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {season_00_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {season_00_path}: {e}{RESET}")
+        return False
     
     try:
         shutil.copy2(source_file, dest_file)
+        
+        # Set proper permissions on created file
+        try:
+            os.chmod(dest_file, 0o644)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
+        
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {show['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
         return True
@@ -850,7 +1087,7 @@ def create_placeholder_tv(show, debug=False):
         print(f"{RED}Error creating placeholder for {show['title']}: {e}{RESET}")
         return False
 
-def create_placeholder_movie(movie, debug=False):
+def create_placeholder_movie(movie, debug=False, umtk_root_movies=None):
     """Create placeholder video for movie"""
     # Check if running in Docker
     if os.environ.get('DOCKER') == 'true':
@@ -879,23 +1116,86 @@ def create_placeholder_movie(movie, debug=False):
     folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-Coming Soon}}")
     
-    base_path = Path(movie_path)
-    parent_dir = base_path.parent
-    coming_soon_path = parent_dir / folder_name
+    if umtk_root_movies:
+        # Use custom root path
+        parent_dir = Path(umtk_root_movies)
+        coming_soon_path = parent_dir / folder_name
+    else:
+        # Use original logic
+        base_path = Path(movie_path)
+        parent_dir = base_path.parent
+        coming_soon_path = parent_dir / folder_name
+    
+    dest_file = coming_soon_path / f"{file_name}{video_extension}"
     
     if debug:
-        print(f"{BLUE}[DEBUG] Movie path: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Movie path from Radarr: {movie_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Parent directory: {parent_dir}{RESET}")
         print(f"{BLUE}[DEBUG] Coming Soon path: {coming_soon_path}{RESET}")
+        print(f"{BLUE}[DEBUG] Destination file: {dest_file}{RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies: {umtk_root_movies}{RESET}")
+
+    # Create parent directory if it doesn't exist
+    if not parent_dir.exists():
+        try:
+            parent_dir.mkdir(parents=True, exist_ok=True)
+            # Set proper permissions on created directory
+            try:
+                os.chmod(parent_dir, 0o755)
+                if debug:
+                    print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+            except Exception as perm_error:
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        except Exception as e:
+            print(f"{RED}Error creating parent directory {parent_dir}: {e}{RESET}")
+            return False
     
-    if coming_soon_path.exists():
+    # Check if parent directory is writable
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Error: No write permission for directory: {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        return False
+
+    if dest_file.exists():
         if debug:
-            print(f"{ORANGE}[DEBUG] Coming Soon folder already exists for {movie['title']}{RESET}")
+            print(f"{ORANGE}[DEBUG] Placeholder file already exists for {movie['title']}{RESET}")
         return True
     
     try:
         coming_soon_path.mkdir(parents=True, exist_ok=True)
-        dest_file = coming_soon_path / f"{file_name}{video_extension}"
+        
+        # Set proper permissions on created directory
+        try:
+            os.chmod(coming_soon_path, 0o755)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 755 on {coming_soon_path}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
+        
+    except PermissionError as e:
+        print(f"{RED}Permission error creating directory {coming_soon_path}: {e}{RESET}")
+        print(f"{RED}Parent directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error creating directory {coming_soon_path}: {e}{RESET}")
+        return False
+    
+    try:
         shutil.copy2(source_file, dest_file)
+        
+        # Set proper permissions on created file
+        try:
+            os.chmod(dest_file, 0o644)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+        except Exception as perm_error:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
         
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {movie['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
@@ -906,10 +1206,12 @@ def create_placeholder_movie(movie, debug=False):
         return False
 
 # Cleanup functions
-def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False):
+def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False, umtk_root_tv=None):
     """Cleanup TV show trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting TV content cleanup process (method: {tv_method}){RESET}")
+        if umtk_root_tv:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv for cleanup: {umtk_root_tv}{RESET}")
     
     removed_count = 0
     checked_count = 0
@@ -927,14 +1229,22 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
         show_path = series.get('path')
         if not show_path:
             continue
-            
-        season_00_path = Path(show_path) / "Season 00"
         
+        # Use custom root path if specified, otherwise use original logic
+        if umtk_root_tv:
+            show_name = Path(show_path).name
+            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+        else:
+            season_00_path = Path(show_path) / "Season 00"
+        
+        # Skip if Season 00 doesn't exist
         if not season_00_path.exists():
+            if debug:
+                print(f"{BLUE}[DEBUG] Season 00 path doesn't exist for {series['title']}, skipping{RESET}")
             continue
             
         trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*"))
-        
+                
         for trailer_file in trailer_files:
             checked_count += 1
             if debug:
@@ -1004,10 +1314,12 @@ def cleanup_tv_content(sonarr_url, api_key, tv_method, debug=False, exclude_tags
     elif debug:
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
-def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None):
+def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, movie_method, debug=False, exclude_tags=None, umtk_root_movies=None):
     """Cleanup movie trailers or placeholders"""
     if debug:
         print(f"{BLUE}[DEBUG] Starting movie content cleanup process (method: {movie_method}){RESET}")
+        if umtk_root_movies:
+            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies for cleanup: {umtk_root_movies}{RESET}")
     
     removed_count = 0
     checked_count = 0
@@ -1023,13 +1335,17 @@ def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, m
     valid_coming_soon_paths = set()
     for movie in future_movies + released_movies:
         if movie.get('path'):
-            base_path = Path(movie['path'])
-            parent_dir = base_path.parent
-            
             movie_title = movie.get('title', 'Unknown')
             movie_year = movie.get('year', '')
             folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-            coming_soon_path = parent_dir / folder_name
+            
+            if umtk_root_movies:
+                coming_soon_path = Path(umtk_root_movies) / folder_name
+            else:
+                base_path = Path(movie['path'])
+                parent_dir = base_path.parent
+                coming_soon_path = parent_dir / folder_name
+            
             valid_coming_soon_paths.add(str(coming_soon_path))
     
     radarr_movie_lookup = {}
@@ -1038,31 +1354,45 @@ def cleanup_movie_content(radarr_url, api_key, future_movies, released_movies, m
         if not movie_path:
             continue
         
-        base_path = Path(movie_path)
-        parent_dir = base_path.parent
-        
         movie_title = movie.get('title', 'Unknown')
         movie_year = movie.get('year', '')
         folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-        coming_soon_path = parent_dir / folder_name
+        
+        if umtk_root_movies:
+            coming_soon_path = Path(umtk_root_movies) / folder_name
+        else:
+            base_path = Path(movie_path)
+            parent_dir = base_path.parent
+            coming_soon_path = parent_dir / folder_name
+        
         radarr_movie_lookup[str(coming_soon_path)] = movie
     
+    # Determine directories to scan
     parent_dirs_to_scan = set()
     
-    for movie in all_movies:
-        movie_path = movie.get('path')
-        if movie_path:
-            base_path = Path(movie_path)
-            parent_dirs_to_scan.add(base_path.parent)
-    
-    for valid_path in valid_coming_soon_paths:
-        parent_dirs_to_scan.add(Path(valid_path).parent)
-    
-    if debug:
-        print(f"{BLUE}[DEBUG] Scanning {len(parent_dirs_to_scan)} parent directories for Coming Soon folders{RESET}")
+    if umtk_root_movies:
+        # If using custom root, only scan the custom root directory
+        parent_dirs_to_scan.add(Path(umtk_root_movies))
+        if debug:
+            print(f"{BLUE}[DEBUG] Scanning custom root directory: {umtk_root_movies}{RESET}")
+    else:
+        # Original logic: scan parent directories of all movie paths
+        for movie in all_movies:
+            movie_path = movie.get('path')
+            if movie_path:
+                base_path = Path(movie_path)
+                parent_dirs_to_scan.add(base_path.parent)
+        
+        for valid_path in valid_coming_soon_paths:
+            parent_dirs_to_scan.add(Path(valid_path).parent)
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Scanning {len(parent_dirs_to_scan)} parent directories for Coming Soon folders{RESET}")
     
     for parent_dir in parent_dirs_to_scan:
         if not parent_dir.exists():
+            if debug:
+                print(f"{ORANGE}[DEBUG] Directory does not exist: {parent_dir}{RESET}")
             continue
             
         try:
@@ -1704,12 +2034,37 @@ def main():
     
     config = load_config()
     
+    # Get umtk root paths - handle None values properly
+    umtk_root_movies = config.get('umtk_root_movies')
+    umtk_root_tv = config.get('umtk_root_tv')
+    
+    # Convert None or empty strings to None, strip whitespace from valid strings
+    if umtk_root_movies:
+        umtk_root_movies = str(umtk_root_movies).strip()
+        umtk_root_movies = umtk_root_movies if umtk_root_movies else None
+    else:
+        umtk_root_movies = None
+        
+    if umtk_root_tv:
+        umtk_root_tv = str(umtk_root_tv).strip()
+        umtk_root_tv = umtk_root_tv if umtk_root_tv else None
+    else:
+        umtk_root_tv = None
+    
+    if umtk_root_movies:
+        print(f"{GREEN}Using custom movie root: {umtk_root_movies}{RESET}")
+    if umtk_root_tv:
+        print(f"{GREEN}Using custom TV root: {umtk_root_tv}{RESET}")
+    
     # Get processing methods
     tv_method = config.get('tv', 1)
     movie_method = config.get('movies', 2)
+    method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
-    print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})\n")
+    print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
+    print(f"Method fallback: {method_fallback}")
+    print()
     
     # Check requirements based on methods
     if tv_method == 1 or movie_method == 1:
@@ -1717,10 +2072,16 @@ def main():
             print(f"{RED}yt-dlp is required for trailer downloading but not installed.{RESET}")
             sys.exit(1)
     
-    if tv_method == 2 or movie_method == 2:
+    # Check for placeholder requirements (both original methods and fallback)
+    if tv_method == 2 or movie_method == 2 or (method_fallback and (tv_method == 1 or movie_method == 1)):
         if not check_video_file():
             print(f"{RED}UMTK video file is required for placeholder method but not found.{RESET}")
             sys.exit(1)
+    
+    # Check for cookies file
+    cookies_path = get_cookies_path()
+    if cookies_path:
+        print(f"{GREEN}Found cookies file: {cookies_path}{RESET}")
     
     # Get common configuration values
     utc_offset = float(config.get('utc_offset', 0))
@@ -1780,7 +2141,7 @@ def main():
             # Cleanup TV content
             if cleanup:
                 print(f"{BLUE}Checking for TV content to cleanup...{RESET}")
-                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv)
+                cleanup_tv_content(sonarr_url, sonarr_api_key, tv_method, debug, exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, future_only_tv, umtk_root_tv)
                 print()
             
             # Find upcoming shows
@@ -1824,6 +2185,7 @@ def main():
                 successful = 0
                 failed = 0
                 skipped_existing = 0
+                fallback_used = 0
                 
                 for show in all_shows:
                     print(f"\nProcessing: {show['title']}")
@@ -1831,7 +2193,14 @@ def main():
                     # Check if content already exists
                     show_path = show.get('path')
                     if show_path:
-                        season_00_path = Path(show_path) / "Season 00"
+                        if umtk_root_tv:
+                            # Use custom root path for checking existing files
+                            show_name = Path(show_path).name
+                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                        else:
+                            # Use original logic
+                            season_00_path = Path(show_path) / "Season 00"
+                        
                         clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
                         
                         trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
@@ -1845,6 +2214,8 @@ def main():
                             continue
                     
                     # Process based on method
+                    success = False
+                    
                     if tv_method == 1:  # Trailer
                         trailer_info = search_trailer_on_youtube(
                             show['title'], 
@@ -1856,24 +2227,31 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            
-                            if download_trailer_tv(show, trailer_info, debug):
-                                successful += 1
-                            else:
-                                failed += 1
+                            success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
-                            failed += 1
+                        
+                        # If trailer method failed and fallback is enabled, try placeholder
+                        if not success and method_fallback:
+                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                            success = create_placeholder_tv(show, debug, umtk_root_tv)
+                            if success:
+                                fallback_used += 1
+                                print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
                     
                     elif tv_method == 2:  # Placeholder
-                        if create_placeholder_tv(show, debug):
-                            successful += 1
-                        else:
-                            failed += 1
+                        success = create_placeholder_tv(show, debug, umtk_root_tv)
+                    
+                    if success:
+                        successful += 1
+                    else:
+                        failed += 1
                 
                 print(f"\n{GREEN}TV content processing summary:{RESET}")
                 print(f"Successful: {successful}")
                 print(f"Skipped (already exist): {skipped_existing}")
+                if fallback_used > 0:
+                    print(f"Fallback used: {fallback_used}")
                 print(f"Failed: {failed}")
             
             # Create TV YAML files
@@ -1953,6 +2331,7 @@ def main():
                 print(f"\n{BLUE}Processing content for movies...{RESET}")
                 successful = 0
                 failed = 0
+                fallback_used = 0
                 
                 for movie in all_movies:
                     print(f"\nProcessing: {movie['title']}")
@@ -1960,20 +2339,29 @@ def main():
                     # Check if content already exists
                     movie_path = movie.get('path')
                     if movie_path:
-                        base_path = Path(movie_path)
-                        parent_dir = base_path.parent
-                        
                         movie_title = movie.get('title', 'Unknown')
                         movie_year = movie.get('year', '')
                         folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-                        coming_soon_path = parent_dir / folder_name
                         
+                        if umtk_root_movies:
+                            coming_soon_path = Path(umtk_root_movies) / folder_name
+                        else:
+                            base_path = Path(movie_path)
+                            parent_dir = base_path.parent
+                            coming_soon_path = parent_dir / folder_name
+                        
+                        # Check if actual video file exists with the Coming Soon edition tag
                         if coming_soon_path.exists():
-                            print(f"{GREEN}Content already exists for {movie['title']} - skipping{RESET}")
-                            successful += 1
-                            continue
+                            existing_files = list(coming_soon_path.glob("*{edition-Coming Soon}.*"))
+                            if existing_files:
+                                existing_file = existing_files[0]
+                                print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
+                                successful += 1
+                                continue
                     
                     # Process based on method
+                    success = False
+                    
                     if movie_method == 1:  # Trailer
                         trailer_info = search_trailer_on_youtube(
                             movie['title'], 
@@ -1985,29 +2373,36 @@ def main():
                         
                         if trailer_info:
                             print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                            
-                            if download_trailer_movie(movie, trailer_info, debug):
-                                successful += 1
-                            else:
-                                failed += 1
+                            success = download_trailer_movie(movie, trailer_info, debug, umtk_root_movies)
                         else:
                             print(f"{ORANGE}No suitable trailer found for {movie['title']}{RESET}")
-                            failed += 1
+                        
+                        # If trailer method failed and fallback is enabled, try placeholder
+                        if not success and method_fallback:
+                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                            success = create_placeholder_movie(movie, debug, umtk_root_movies)
+                            if success:
+                                fallback_used += 1
+                                print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
                     
                     elif movie_method == 2:  # Placeholder
-                        if create_placeholder_movie(movie, debug):
-                            successful += 1
-                        else:
-                            failed += 1
+                        success = create_placeholder_movie(movie, debug, umtk_root_movies)
+                    
+                    if success:
+                        successful += 1
+                    else:
+                        failed += 1
                 
                 print(f"\n{GREEN}Movie content processing summary:{RESET}")
                 print(f"Successful: {successful}")
+                if fallback_used > 0:
+                    print(f"Fallback used: {fallback_used}")
                 print(f"Failed: {failed}")
             
             # Cleanup movie content
             if cleanup:
                 print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
-                cleanup_movie_content(radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug)
+                cleanup_movie_content(radarr_url, radarr_api_key, future_movies, released_movies, movie_method, debug, exclude_radarr_tag_ids, umtk_root_movies)
             
             # Create Movie YAML files
             overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"

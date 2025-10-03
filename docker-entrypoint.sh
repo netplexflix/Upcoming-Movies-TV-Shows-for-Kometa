@@ -19,6 +19,8 @@ log "${BLUE}Setting up user permissions...${NC}"
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
+log "${BLUE}Using PUID:${PUID} PGID:${PGID}${NC}"
+
 # Check if we need to create/modify user
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
     log "${BLUE}Creating user with PUID:${PUID} PGID:${PGID}${NC}"
@@ -35,18 +37,14 @@ if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
         log "${GREEN}Created user with UID:${PUID}${NC}"
     else
         # Update existing user's group
-        usermod -g $PGID umtk
+        usermod -g $PGID umtk 2>/dev/null || true
         log "${GREEN}Updated user group to GID:${PGID}${NC}"
     fi
-    
-    # Fix ownership of app directory
-    chown -R $PUID:$PGID /app
-    log "${GREEN}Updated ownership of /app to ${PUID}:${PGID}${NC}"
 fi
 
-# Check and setup directories
+# Check and setup directories (as root)
 log "${BLUE}Setting up directories...${NC}"
-mkdir -p /app/config /app/video /app/kometa /app/config/overlay
+mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs
 
 # Check if config exists, if not copy sample
 if [ ! -f /app/config/config.yml ]; then
@@ -65,7 +63,7 @@ fi
 # Check if video file exists for placeholder method
 log "${BLUE}Checking video files...${NC}"
 if grep -E "^(tv|movies):\s*2" /app/config/config.yml > /dev/null 2>&1; then
-    if [ ! -f /app/video/UMTK.* ]; then
+    if ! ls /app/video/UMTK.* 1> /dev/null 2>&1; then
         log "${YELLOW}Placeholder method detected but no UMTK video file found${NC}"
         # Look for UMTK video files in the app directory and copy if found
         if ls /app/UMTK.* 1> /dev/null 2>&1; then
@@ -102,13 +100,30 @@ if grep -q "your_sonarr_url_here\|your_api_key_here" /app/config/config.yml 2>/d
     log "${YELLOW}Please update your config.yml with your actual Sonarr/Radarr URLs and API keys${NC}"
 fi
 
+# Fix ownership of all directories before switching user
+log "${BLUE}Setting ownership of /app to ${PUID}:${PGID}...${NC}"
+chown -R $PUID:$PGID /app 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app${NC}"
+
+# Fix ownership of kometa directory specifically and ensure it's writable
+if [ -d /app/kometa ]; then
+    log "${BLUE}Fixing ownership and permissions of /app/kometa...${NC}"
+    chown -R $PUID:$PGID /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app/kometa${NC}"
+    chmod -R u+rw /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change permissions of some files in /app/kometa${NC}"
+fi
+
+# Ensure logs directory is writable
+log "${BLUE}Setting up logging...${NC}"
+mkdir -p /app/logs
+chown -R $PUID:$PGID /app/logs 2>/dev/null || true
+chmod -R u+rw /app/logs 2>/dev/null || true
+touch /app/logs/umtk.log
+chown $PUID:$PGID /app/logs/umtk.log 2>/dev/null || true
+chmod u+rw /app/logs/umtk.log 2>/dev/null || true
+
 # Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
-import subprocess
 import datetime
-from datetime import timezone
-import re
 
 cron_expression = '$CRON'
 parts = cron_expression.split()
@@ -124,8 +139,7 @@ if len(parts) == 5:
     next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
     
     # If time has passed today, move to tomorrow
-    if next_run <= now:
-        next_run += datetime.timedelta(days=1)
+    if next_run <= datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -133,56 +147,49 @@ else:
 "
 }
 
-# Setup cron job as non-root user
-log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log" > /tmp/umtk-cron
-crontab /tmp/umtk-cron
-rm /tmp/umtk-cron
+# Function to fix media directory permissions
+fix_media_permissions() {
+    log "${BLUE}Fixing permissions on media directories...${NC}"
+    
+    # Fix TV show directories if umtk_root_tv is set
+    if [ -n "$UMTK_ROOT_TV" ] && [ -d "$UMTK_ROOT_TV" ]; then
+        log "${BLUE}Fixing TV directory permissions: $UMTK_ROOT_TV${NC}"
+        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        log "${GREEN}TV directory permissions fixed${NC}"
+    fi
+    
+    # Fix movie directories if umtk_root_movies is set
+    if [ -n "$UMTK_ROOT_MOVIES" ] && [ -d "$UMTK_ROOT_MOVIES" ]; then
+        log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        log "${GREEN}Movie directory permissions fixed${NC}"
+    fi
+}
 
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
+
+# Setup cron job to run as umtk user
+log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
+echo "$CRON gosu $PUID:$PGID bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
+chmod 0644 /etc/cron.d/umtk-cron
+crontab /etc/cron.d/umtk-cron
+
 log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
 
-# Run once on startup
-log "${GREEN}Running UMTK on startup...${NC}"
-cd /app && DOCKER=true /usr/local/bin/python UMTK.py
+# Fix media permissions before running
+fix_media_permissions
 
-# Start cron and tail logs
+# Run once on startup as umtk user with explicit UID:GID
+log "${GREEN}Running UMTK on startup...${NC}"
+gosu $PUID:$PGID bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
+
+# Start cron and keep container running
 log "${BLUE}Starting scheduled execution...${NC}"
 log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
-log "${BLUE}Use 'docker logs -f umtk' to follow the logs${NC}"
+log "${BLUE}Use docker logs -f umtk to follow the logs${NC}"
 
-# Create log file in user's home directory
-mkdir -p /app/logs
-touch /app/logs/cron.log
-
-# Function to run UMTK
-run_umtk() {
-    log "${GREEN}Running scheduled UMTK execution...${NC}"
-    cd /app && DOCKER=true /usr/local/bin/python UMTK.py 2>&1 | tee -a /app/logs/cron.log
-}
-
-# Switch to umtk user for the main process
-log "${BLUE}Switching to umtk user (${PUID}:${PGID})...${NC}"
-
-# Start the main process as umtk user
-exec gosu umtk bash -c "
-    # Start cron daemon in background (if possible)
-    cron -f 2>/dev/null &
-
-    # If cron fails, fall back to sleep-based scheduling
-    if [ \$? -ne 0 ]; then
-        echo -e \"\${YELLOW}Cron daemon failed, using sleep-based scheduling\${NC}\"
-        while true; do
-            sleep 3600  # Check every hour
-            current_hour=\$(date +%H)
-            cron_hour=\$(echo \"$CRON\" | awk '{print \$2}')
-            if [ \"\$current_hour\" = \"\$cron_hour\" ]; then
-                run_umtk
-            fi
-        done &
-    fi
-
-    # Keep container running and show logs
-    tail -f /app/logs/cron.log
-"
+# Start cron in foreground
+exec cron -f

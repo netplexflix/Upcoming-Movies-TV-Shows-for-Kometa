@@ -2,12 +2,15 @@ services:
   umtk:
     image: netplexflix/umtk:latest
     container_name: umtk
+    network_mode: "host" # Use host network to access localhost services
     environment:
       - CRON=0 2 * * * # Run daily at 2am
       - DOCKER=true
       - TZ=America/New_York # Set your timezone
       - PUID=1000 # Set to your user ID (run `id -u` in terminal)
       - PGID=1000 # Set to your group ID (run `id -g` in terminal)
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Alternative way to access host
     volumes:
       # Configuration directory (required)
       - ./config:/app/config
@@ -19,15 +22,7 @@ services:
       - ./kometa:/app/kometa
 
       # Media directories - MUST match your Sonarr/Radarr paths exactly
-      # Example 1: If your Sonarr/Radarr use /data/media paths
-      - /mnt/media/movies:/data/media/movies
-      - /mnt/media/tv:/data/media/tv
+      - /mnt/media/movies:/media/movies
+      - /mnt/media/tv:/media/tv
 
-      # Example 2: If your Sonarr/Radarr use /media paths
-      # - /mnt/media/movies:/media/movies
-      # - /mnt/media/tv:/media/tv
-
-      # Example 3: If your Sonarr/Radarr use /mnt/media paths
-      # - /mnt/media/movies:/mnt/media/movies
-      # - /mnt/media/tv:/mnt/media/tv
     restart: unless-stopped

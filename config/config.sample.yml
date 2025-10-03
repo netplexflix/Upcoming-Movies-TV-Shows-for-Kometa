@@ -3,6 +3,7 @@
 ################################################################################
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 1 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+method_fallback: true
 utc_offset: +1
 debug: false
 cleanup: true
@@ -21,6 +22,7 @@ future_days_upcoming_movies: 30
 include_inCinemas: false
 future_only: false
 exclude_radarr_tags: exclude, private
+umtk_root_movies: # Leave empty to use default behavior
 
 ################################################################################
 ##########                         TV SHOWS:                          ##########
@@ -29,6 +31,7 @@ future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
 exclude_sonarr_tags: exclude, private
+umtk_root_tv: # Leave empty to use default behavior
   
 ################################################################################
 ##########                   RADARR CONFIGURATION:                    ##########
@@ -99,7 +102,7 @@ collection_upcoming_shows:
 
 ################################################################################
 ##########               UPCOMING SHOWS OVERLAY FUTURE:               ##########
-################################################################################ 
+################################################################################
 backdrop_upcoming_shows:
   enable: true
   name: red_frame_bottom
