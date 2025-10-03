@@ -12,7 +12,7 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 
-VERSION = "2025.10.024"
+VERSION = "2025.10.03"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -364,7 +364,7 @@ def find_upcoming_shows(sonarr_url, api_key, future_days_upcoming_shows, utc_off
                 future_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
-            elif not future_only_tv:  # Only add aired shows if future_only_tv is False
+            elif not future_only_tv:  # Only add aired shows if future_only_tv is false
                 aired_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to aired shows: {series['title']}{RESET}")
