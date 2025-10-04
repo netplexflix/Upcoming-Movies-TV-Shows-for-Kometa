@@ -139,7 +139,8 @@ if len(parts) == 5:
     next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
     
     # If time has passed today, move to tomorrow
-    if next_run <= datetime.timedelta(days=1)
+    if next_run <= now:
+        next_run = next_run + datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
