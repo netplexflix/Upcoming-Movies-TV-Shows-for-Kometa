@@ -2,7 +2,7 @@
 ##########                         GENERAL:                           ##########
 ################################################################################
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-tv: 1 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 method_fallback: true
 utc_offset: +1
 debug: false
@@ -16,22 +16,33 @@ skip_channels:
   - "New Movie Updates"
 
 ################################################################################
-##########                         MOVIES:                            ##########
+##########                        TRENDING:                           ##########
+################################################################################
+trending_movies: 2
+trending_tv: 2
+mdblist_api_key: YOUR_MDBLIST_API_KEY
+mdblist_movies: https://mdblist.com/lists/linaspurinis/trending-movies-list
+mdblist_movies_limit: 10
+mdblist_tv: https://mdblist.com/lists/adamosborne01/trending-shows1
+mdblist_tv_limit: 10
+
+################################################################################
+##########                   COMING SOON MOVIES:                      ##########
 ################################################################################
 future_days_upcoming_movies: 30
 include_inCinemas: false
 future_only: false
 exclude_radarr_tags: exclude, private
-umtk_root_movies: # Leave empty to use default behavior
+umtk_root_movies: # Required for trending
 
 ################################################################################
-##########                         TV SHOWS:                          ##########
+##########                   COMING SOON TV SHOWS:                    ##########
 ################################################################################
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
 exclude_sonarr_tags: exclude, private
-umtk_root_tv: # Leave empty to use default behavior
+umtk_root_tv: # Required for trending
   
 ################################################################################
 ##########                   RADARR CONFIGURATION:                    ##########
@@ -169,3 +180,65 @@ text_new_show:
   font_color: "#FFFFFF"
   group: TSSK_text
   weight: 50
+
+################################################################################
+##########                TRENDING MOVIES COLLECTION:                 ##########
+################################################################################
+collection_trending_movies:
+  collection_name: "Trending Movies"
+  item_label: UMTKTrending
+  non_item_remove_label: UMTKTrending
+  build_collection: false
+  collection_order: custom
+  sync_mode: sync
+
+
+################################################################################
+##########           TRENDING MOVIES OVERLAY REQUEST NEEDED:          ##########
+################################################################################  
+backdrop_trending_movies_request_needed:
+  enable: true
+  name: red_frame
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame.png
+
+text_trending_movies_request_needed:
+  use_text: "REQUEST NEEDED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: top
+  vertical_offset: 20
+  font_size: 70
+  font_color: "#FFFFFF"
+
+################################################################################
+##########                TRENDING SHOWS COLLECTION:                  ##########
+################################################################################
+collection_trending_shows:
+  collection_name: "Trending Shows"
+  item_label: UMTKTrending
+  non_item_remove_label: UMTKTrending
+  build_collection: false
+  collection_order: custom
+  sync_mode: sync
+
+
+################################################################################
+##########           TRENDING SHOWS OVERLAY REQUEST NEEDED:           ##########
+################################################################################  
+backdrop_trending_shows_request_needed:
+  enable: true
+  name: red_frame_bottom
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame_bottom.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_trending_shows_request_needed:
+  use_text: "REQUEST NEEDED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 17
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
