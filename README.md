@@ -22,7 +22,7 @@ Optionally applies a TOP 10 ranking overlay.
 
 ![Image](https://github.com/user-attachments/assets/3f9beeca-2c7e-4c34-bbda-5293c6d45a8c)
 
-### Trending:
+### Trending Movies:
 
 <img width="1636" height="372" alt="Image" src="https://github.com/user-attachments/assets/4cc2511a-40aa-4476-9fb2-7f054708e271" />
 In this example the movie "Dracula" has not been added to Radarr (and is not available).
@@ -272,6 +272,8 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **mdblist_movies_limit:** How many items to pull from the trending movies list
 - **mdblist_tv:** which trending TV shows list to use. you can create your own.
 - **mdblist_tv_limit:** ow many items to pull from the trending TV shows list
+> [!TIP]
+> With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
 
 ### Overlay & Collection Settings:
 
