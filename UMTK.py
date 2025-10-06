@@ -11,8 +11,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
+from yaml.representer import SafeRepresenter
 
-VERSION = "2025.10.0501"
+VERSION = "2025.10.06"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -95,7 +96,7 @@ def get_cookies_path():
     
     return None
 
-def process_sonarr_url(base_url, api_key):
+def process_sonarr_url(base_url, api_key, timeout=90):
     """Process and validate Sonarr URL"""
     base_url = base_url.rstrip('/')
     
@@ -114,7 +115,7 @@ def process_sonarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=timeout)
             if response.status_code == 200:
                 print(f"Successfully connected to Sonarr at: {test_url}")
                 return test_url
@@ -126,7 +127,7 @@ def process_sonarr_url(base_url, api_key):
                         "\n".join([f"- {base_url}{path}" for path in api_paths]) + 
                         f"\nPlease verify your URL and API key and ensure Sonarr is running.{RESET}")
 
-def process_radarr_url(base_url, api_key):
+def process_radarr_url(base_url, api_key, timeout=90):
     """Process and validate Radarr URL"""
     base_url = base_url.rstrip('/')
     
@@ -145,7 +146,7 @@ def process_radarr_url(base_url, api_key):
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
-            response = requests.get(f"{test_url}/health", headers=headers, timeout=90)
+            response = requests.get(f"{test_url}/health", headers=headers, timeout=timeout)
             if response.status_code == 200:
                 print(f"Successfully connected to Radarr at: {test_url}")
                 return test_url
@@ -157,13 +158,13 @@ def process_radarr_url(base_url, api_key):
                         "\n".join([f"- {base_url}{path}" for path in api_paths]) + 
                         f"\nPlease verify your URL and API key and ensure Radarr is running.{RESET}")
 
-def get_sonarr_series(sonarr_url, api_key):
+def get_sonarr_series(sonarr_url, api_key, timeout=90):
     """Get all series from Sonarr"""
     try:
         print(f"{BLUE}Fetching series from Sonarr...{RESET}", flush=True)
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=90)
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         series_data = response.json()
         print(f"{GREEN}Done ✓ ({len(series_data)} series){RESET}")
@@ -173,25 +174,25 @@ def get_sonarr_series(sonarr_url, api_key):
         print(f"{RED}Error connecting to Sonarr: {str(e)}{RESET}")
         sys.exit(1)
 
-def get_sonarr_episodes(sonarr_url, api_key, series_id):
+def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
     """Get episodes for a specific series"""
     try:
         url = f"{sonarr_url}/episode?seriesId={series_id}"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=90)
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"{RED}Error fetching episodes from Sonarr: {str(e)}{RESET}")
         sys.exit(1)
 
-def get_radarr_movies(radarr_url, api_key):
+def get_radarr_movies(radarr_url, api_key, timeout=90):
     """Get all movies from Radarr"""
     try:
         print(f"{BLUE}Fetching movies from Radarr...{RESET}", flush=True)
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=90)
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         movies_data = response.json()
         print(f"{GREEN}Done ✓ ({len(movies_data)} movies){RESET}")
@@ -328,7 +329,8 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
                     'title': item.get('title', 'Unknown'),
                     'year': item.get('release_year'),
                     'imdb_id': item.get('imdb_id'),
-                    'mediatype': item.get('mediatype')
+                    'mediatype': item.get('mediatype'),
+                    'rank': item.get('rank')  # ADD THIS LINE - preserve rank
                 }
                 
                 # MDBList uses 'id' for TMDB ID for movies, 'tvdb_id' for TV shows
@@ -645,7 +647,7 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
     
     return future_movies, released_movies
 
-def get_tag_ids_from_names(api_url, api_key, tag_names, debug=False):
+def get_tag_ids_from_names(api_url, api_key, tag_names, timeout=90, debug=False):
     """Convert tag names to tag IDs"""
     if not tag_names:
         return []
@@ -653,7 +655,7 @@ def get_tag_ids_from_names(api_url, api_key, tag_names, debug=False):
     try:
         url = f"{api_url}/tag"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=90)
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         
         all_tags = response.json()
@@ -1373,6 +1375,12 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         if umtk_root_tv:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
     
+    # Check if file already exists BEFORE creating directories
+    if dest_file.exists():
+        if debug:
+            print(f"{ORANGE}[DEBUG] Placeholder file already exists for {show['title']}: {dest_file}{RESET}")
+        return True
+    
     # Create parent directory if it doesn't exist
     if not parent_dir.exists():
         try:
@@ -1832,9 +1840,14 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
     
     current_trending_normalized = {normalize_title(movie['title']): movie['title'] for movie in current_trending_movies}
     
+    # Create a set of trending monitored titles (these use "Coming Soon" edition)
+    current_trending_monitored_titles = {movie['title'] for movie in trending_monitored}
+    current_trending_monitored_normalized = {normalize_title(movie['title']): movie['title'] for movie in trending_monitored}
+    
     if debug:
         print(f"{BLUE}[DEBUG] Current upcoming movies: {len(current_upcoming_titles)}{RESET}")
         print(f"{BLUE}[DEBUG] Current trending movies: {len(current_trending_titles)}{RESET}")
+        print(f"{BLUE}[DEBUG] Current trending monitored movies: {len(current_trending_monitored_titles)}{RESET}")
         if current_trending_titles:
             print(f"{BLUE}[DEBUG] Trending titles: {current_trending_titles}{RESET}")
     
@@ -1983,27 +1996,47 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                         movie = lookup_dict[folder_path_str]
                         movie_title = movie.get('title', movie_title)
                 else:
-                    # For coming soon content, use existing logic
+                    # For coming soon content, check BOTH regular upcoming AND trending monitored
                     lookup_dict = radarr_movie_lookup_coming_soon
                     
                     if folder_path_str in lookup_dict:
                         movie = lookup_dict[folder_path_str]
                         movie_title = movie.get('title', 'Unknown Movie')
                         
-                        if movie.get('hasFile', False):
-                            should_remove = True
-                            reason = "movie has been downloaded"
-                        elif not movie.get('monitored', False):
-                            should_remove = True
-                            reason = "movie is no longer monitored"
-                        elif exclude_tags and any(tag in movie.get('tags', []) for tag in exclude_tags):
-                            should_remove = True
-                            reason = "movie has excluded tags"
-                        elif movie_title not in current_upcoming_titles:
-                            should_remove = True
-                            reason = "movie no longer meets criteria"
+                        # Check if it's in regular upcoming list OR trending monitored list
+                        in_upcoming = movie_title in current_upcoming_titles
+                        
+                        # Check if it's in trending monitored (exact or normalized match)
+                        in_trending_monitored = False
+                        if movie_title in current_trending_monitored_titles:
+                            in_trending_monitored = True
+                        else:
+                            # Try normalized match
+                            normalized_movie = normalize_title(movie_title)
+                            for trending_monitored_movie in trending_monitored:
+                                if normalized_movie == normalize_title(trending_monitored_movie['title']):
+                                    in_trending_monitored = True
+                                    break
+                        
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Movie '{movie_title}' - in_upcoming: {in_upcoming}, in_trending_monitored: {in_trending_monitored}{RESET}")
+                        
+                        # Only remove if it's not in either list
+                        if not in_upcoming and not in_trending_monitored:
+                            if movie.get('hasFile', False):
+                                should_remove = True
+                                reason = "movie has been downloaded"
+                            elif not movie.get('monitored', False):
+                                should_remove = True
+                                reason = "movie is no longer monitored"
+                            elif exclude_tags and any(tag in movie.get('tags', []) for tag in exclude_tags):
+                                should_remove = True
+                                reason = "movie has excluded tags"
+                            else:
+                                should_remove = True
+                                reason = "movie no longer meets criteria"
                         elif debug:
-                            print(f"{BLUE}[DEBUG] Keeping content for {movie_title} - still valid{RESET}")
+                            print(f"{BLUE}[DEBUG] Keeping content for {movie_title} - still valid (upcoming or trending monitored){RESET}")
                     else:
                         should_remove = True
                         reason = "movie no longer exists in Radarr"
@@ -2078,7 +2111,6 @@ def format_date(yyyy_mm_dd, date_format, capitalize=False):
 
 def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored, trending_request_needed, config_sections):
     """Create overlay YAML file for TV shows"""
-    import yaml
 
     if not future_shows and not aired_shows and not trending_monitored and not trending_request_needed:
         with open(output_file, "w", encoding="utf-8") as f:
@@ -2281,7 +2313,6 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
 
 def create_new_shows_overlay_yaml(output_file, shows, config_sections):
     """Create overlay YAML file for new shows"""
-    import yaml
 
     if not shows:
         with open(output_file, "w", encoding="utf-8") as f:
@@ -2335,10 +2366,6 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
 
 def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
     """Create collection YAML file for TV shows"""
-    import yaml
-    from yaml.representer import SafeRepresenter
-    from collections import OrderedDict
-
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -2452,7 +2479,6 @@ def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
 
 def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored, trending_request_needed, config_sections):
     """Create overlay YAML file for movies"""
-    import yaml
 
     if not future_movies and not released_movies and not trending_monitored and not trending_request_needed:
         with open(output_file, "w", encoding="utf-8") as f:
@@ -2656,10 +2682,6 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
 
 def create_collection_yaml_movies(output_file, future_movies, released_movies, config):
     """Create collection YAML file for movies"""
-    import yaml
-    from yaml.representer import SafeRepresenter
-    from collections import OrderedDict
-
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -2774,9 +2796,7 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
 
 def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config):
     """Create trending collection YAML file for movies"""
-    import yaml
-    from yaml.representer import SafeRepresenter
-    from collections import OrderedDict
+
 
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
@@ -2838,10 +2858,6 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
 
 def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config):
     """Create trending collection YAML file for TV shows"""
-    import yaml
-    from yaml.representer import SafeRepresenter
-    from collections import OrderedDict
-
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -2899,6 +2915,139 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
+def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections):
+    """Create Top 10 overlay YAML file for movies based on MDBList ranking"""
+    if not mdblist_items:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No trending movies found for Top 10")
+        return
+    
+    # Limit to top 10 items
+    top_items = mdblist_items[:10]
+    
+    overlays_dict = {}
+    
+    # Get all TMDB IDs for the backdrop overlay
+    all_tmdb_ids = []
+    for item in top_items:
+        tmdb_id = item.get('id') or item.get('tmdb_id')
+        if tmdb_id:
+            all_tmdb_ids.append(str(tmdb_id))
+    
+    # Create backdrop overlay
+    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+    enable_backdrop = backdrop_config.pop("enable", True)
+    
+    if enable_backdrop and all_tmdb_ids:
+        if "name" not in backdrop_config:
+            backdrop_config["name"] = "backdrop"
+        
+        tmdb_ids_str = ", ".join(all_tmdb_ids)
+        
+        overlays_dict["backdrop_trending_top_10"] = {
+            "overlay": backdrop_config,
+            "tmdb_movie": tmdb_ids_str
+        }
+    
+    # Create individual text overlays for each ranked item
+    text_config = deepcopy(config_sections.get("text", {}))
+    enable_text = text_config.pop("enable", True)
+    
+    # Remove use_text if it exists (we don't use it for Top 10)
+    text_config.pop("use_text", None)
+    text_config.pop("date_format", None)
+    text_config.pop("capitalize_dates", None)
+    
+    if enable_text:
+        for item in top_items:
+            rank = item.get('rank')
+            tmdb_id = item.get('id') or item.get('tmdb_id')
+            
+            if not rank or not tmdb_id:
+                continue
+            
+            # Create a copy of text config for this rank
+            rank_text_config = deepcopy(text_config)
+            rank_text_config["name"] = f"text({rank})"
+            
+            block_key = f"trending_top10_{rank}"
+            overlays_dict[block_key] = {
+                "overlay": rank_text_config,
+                "tmdb_movie": str(tmdb_id)
+            }
+    
+    final_output = {"overlays": overlays_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False)
+
+
+def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
+    """Create Top 10 overlay YAML file for TV shows based on MDBList ranking"""
+    if not mdblist_items:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No trending shows found for Top 10")
+        return
+    
+    # Limit to top 10 items
+    top_items = mdblist_items[:10]
+    
+    overlays_dict = {}
+    
+    # Get all TVDB IDs for the backdrop overlay
+    all_tvdb_ids = []
+    for item in top_items:
+        tvdb_id = item.get('tvdb_id')
+        if tvdb_id:
+            all_tvdb_ids.append(str(tvdb_id))
+    
+    # Create backdrop overlay
+    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+    enable_backdrop = backdrop_config.pop("enable", True)
+    
+    if enable_backdrop and all_tvdb_ids:
+        if "name" not in backdrop_config:
+            backdrop_config["name"] = "backdrop"
+        
+        tvdb_ids_str = ", ".join(all_tvdb_ids)
+        
+        overlays_dict["backdrop_trending_top_10"] = {
+            "overlay": backdrop_config,
+            "tvdb_show": tvdb_ids_str
+        }
+    
+    # Create individual text overlays for each ranked item
+    text_config = deepcopy(config_sections.get("text", {}))
+    enable_text = text_config.pop("enable", True)
+    
+    # Remove use_text if it exists (we don't use it for Top 10)
+    text_config.pop("use_text", None)
+    text_config.pop("date_format", None)
+    text_config.pop("capitalize_dates", None)
+    
+    if enable_text:
+        for item in top_items:
+            rank = item.get('rank')
+            tvdb_id = item.get('tvdb_id')
+            
+            if not rank or not tvdb_id:
+                continue
+            
+            # Create a copy of text config for this rank
+            rank_text_config = deepcopy(text_config)
+            rank_text_config["name"] = f"text({rank})"
+            
+            block_key = f"trending_top10_{rank}"
+            overlays_dict[block_key] = {
+                "overlay": rank_text_config,
+                "tvdb_show": str(tvdb_id)
+            }
+    
+    final_output = {"overlays": overlays_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False)
+
 def main():
     start_time = datetime.now()
     print(f"{BLUE}{'*' * 50}\n{'*' * 1}Upcoming Movies & TV Shows for Kometa {VERSION}{'*' * 1}\n{'*' * 50}{RESET}")
@@ -2910,6 +3059,8 @@ def main():
     check_for_updates()
     
     config = load_config()
+    radarr_timeout = config.get('radarr_timeout', 90)
+    sonarr_timeout = config.get('sonarr_timeout', 90)
     
     # Get umtk root paths - handle None values properly
     umtk_root_movies = config.get('umtk_root_movies')
@@ -3005,18 +3156,18 @@ def main():
             print(f"{BLUE}Processing TV Shows...{RESET}")
             print(f"{BLUE}{'=' * 50}{RESET}\n")
             
-            sonarr_url = process_sonarr_url(config['sonarr_url'], config['sonarr_api_key'])
+            sonarr_url = process_sonarr_url(config['sonarr_url'], config['sonarr_api_key'], sonarr_timeout)
             sonarr_api_key = config['sonarr_api_key']
             
             # Fetch all series once
-            all_series = get_sonarr_series(sonarr_url, sonarr_api_key)
+            all_series = get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
             
             # Get exclude tags for Sonarr
             exclude_sonarr_tag_names = config.get('exclude_sonarr_tags', [])
             if isinstance(exclude_sonarr_tag_names, str):
                 exclude_sonarr_tag_names = [tag.strip() for tag in exclude_sonarr_tag_names.split(',') if tag.strip()]
             
-            exclude_sonarr_tag_ids = get_tag_ids_from_names(sonarr_url, sonarr_api_key, exclude_sonarr_tag_names, debug)
+            exclude_sonarr_tag_ids = get_tag_ids_from_names(sonarr_url, sonarr_api_key, exclude_sonarr_tag_names, sonarr_timeout, debug)
             
             if debug and exclude_sonarr_tag_names:
                 print(f"{BLUE}[DEBUG] Exclude Sonarr tags: {exclude_sonarr_tag_names} -> IDs: {exclude_sonarr_tag_ids}{RESET}")
@@ -3208,15 +3359,29 @@ def main():
                                 
                                 # Check if content already exists
                                 show_path = show.get('path')
+                                
+                                # Determine the path to check
                                 if show_path:
                                     if umtk_root_tv:
                                         show_name = Path(show_path).name
                                         season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
                                     else:
                                         season_00_path = Path(show_path) / "Season 00"
-                                    
+                                elif umtk_root_tv:
+                                    # For shows without a path, construct from umtk_root_tv
+                                    show_title = show.get('title', 'Unknown')
+                                    show_year = show.get('year', '')
+                                    if show_year:
+                                        show_folder = sanitize_filename(f"{show_title} ({show_year})")
+                                    else:
+                                        show_folder = sanitize_filename(show_title)
+                                    season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
+                                else:
+                                    season_00_path = None
+                                
+                                # Check for existing content
+                                if season_00_path:
                                     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                                    
                                     trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
                                     existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
                                     
@@ -3315,6 +3480,17 @@ def main():
                     trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
                     create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config)
                     print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
+
+                    # Create Top 10 TV overlay YAML
+                    if mdblist_tv_items:
+                        top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
+                        create_top10_overlay_yaml_tv(
+                            str(top10_tv_overlay_file), 
+                            mdblist_tv_items,
+                            {"backdrop": config.get("backdrop_trending_top_10", {}),
+                             "text": config.get("text_trending_top_10", {})}
+                        )
+                        print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
         
         # Determine if we need to process Movies at all (either regular or trending)
         process_movies = (movie_method > 0 or trending_movies_method > 0)
@@ -3325,18 +3501,18 @@ def main():
             print(f"{BLUE}Processing Movies...{RESET}")
             print(f"{BLUE}{'=' * 50}{RESET}\n")
             
-            radarr_url = process_radarr_url(config['radarr_url'], config['radarr_api_key'])
+            radarr_url = process_radarr_url(config['radarr_url'], config['radarr_api_key'], radarr_timeout)
             radarr_api_key = config['radarr_api_key']
             
             # Fetch all movies once
-            all_movies = get_radarr_movies(radarr_url, radarr_api_key)
+            all_movies = get_radarr_movies(radarr_url, radarr_api_key, radarr_timeout)
             
             # Get exclude tags for Radarr
             exclude_radarr_tag_names = config.get('exclude_radarr_tags', [])
             if isinstance(exclude_radarr_tag_names, str):
                 exclude_radarr_tag_names = [tag.strip() for tag in exclude_radarr_tag_names.split(',') if tag.strip()]
             
-            exclude_radarr_tag_ids = get_tag_ids_from_names(radarr_url, radarr_api_key, exclude_radarr_tag_names, debug)
+            exclude_radarr_tag_ids = get_tag_ids_from_names(radarr_url, radarr_api_key, exclude_radarr_tag_names, radarr_timeout, debug)
             
             if debug and exclude_radarr_tag_names:
                 print(f"{BLUE}[DEBUG] Exclude Radarr tags: {exclude_radarr_tag_names} -> IDs: {exclude_radarr_tag_ids}{RESET}")
@@ -3627,6 +3803,17 @@ def main():
                     trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
                     create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config)
                     print(f"{GREEN}Trending Movies collection YAML created successfully{RESET}")
+
+                    # Create Top 10 Movies overlay YAML
+                    if mdblist_movies_items:
+                        top10_movies_overlay_file = kometa_folder / "UMTK_MOVIES_TOP10_OVERLAYS.yml"
+                        create_top10_overlay_yaml_movies(
+                            str(top10_movies_overlay_file), 
+                            mdblist_movies_items,
+                            {"backdrop": config.get("backdrop_trending_top_10", {}),
+                             "text": config.get("text_trending_top_10", {})}
+                        )
+                        print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
         
         # Calculate and display runtime
         end_time = datetime.now()

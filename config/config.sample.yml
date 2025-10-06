@@ -49,13 +49,14 @@ umtk_root_tv: # Required for trending
 ################################################################################
 radarr_url: 'http://localhost:7878'
 radarr_api_key: 'YOUR_RADARR_API_KEY'
-
+radarr_timeout: 90
  
 ################################################################################
 ##########                   SONARR CONFIGURATION:                    ##########
 ################################################################################
 sonarr_url: 'http://localhost:8989'
 sonarr_api_key: 'YOUR_SONARR_API_KEY'
+sonarr_timeout: 90
 
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########
@@ -188,7 +189,6 @@ collection_trending_movies:
   collection_name: "Trending Movies"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  build_collection: false
   collection_order: custom
   sync_mode: sync
 
@@ -217,7 +217,6 @@ collection_trending_shows:
   collection_name: "Trending Shows"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  build_collection: false
   collection_order: custom
   sync_mode: sync
 
@@ -240,5 +239,28 @@ text_trending_shows_request_needed:
   vertical_offset: 17
   font_size: 70
   font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########                  TRENDING TOP 10 OVERLAY:                  ##########
+################################################################################
+backdrop_trending_top_10:
+  enable: false
+  name: top10
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/TOP10.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_trending_top_10:
+  horizontal_align: right
+  horizontal_offset: 25
+  vertical_align: bottom
+  vertical_offset: 25
+  font: fonts/Roboto-Black.ttf
+  font_size: 300
+  font_color: "#ff0000"
+  stroke_color: "#ffffff"
+  stroke_width: 6
   group: TSSK_text
   weight: 100
