@@ -1785,6 +1785,22 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                         print(f"{BLUE}[DEBUG] Keeping content for {series['title']} - still in valid shows list{RESET}")
             
             if should_remove:
+                # Check write permission before attempting deletion
+                if not os.access(trailer_file, os.W_OK):
+                    print(f"{RED}Permission denied: Cannot remove {trailer_file.name} for {display_title}{RESET}")
+                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                    print(f"{RED}Current user: {get_user_info()}{RESET}")
+                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                    continue
+                
+                # Check parent directory write permission
+                if not os.access(season_00_path, os.W_OK):
+                    print(f"{RED}Permission denied: No write access to directory {season_00_path}{RESET}")
+                    print(f"{RED}Directory owner: {get_file_owner(season_00_path)}{RESET}")
+                    print(f"{RED}Current user: {get_user_info()}{RESET}")
+                    print(f"{RED}Directory permissions: {oct(season_00_path.stat().st_mode)[-3:]}{RESET}")
+                    continue
+                
                 try:
                     file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
                     trailer_file.unlink()
@@ -1801,6 +1817,10 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     print(f"{GREEN}Removed {content_type} for {display_title} - {removal_reason} ({file_size_mb:.1f} MB freed){RESET}")
                     if debug:
                         print(f"{BLUE}[DEBUG] Deleted: {trailer_file}{RESET}")
+                except PermissionError as e:
+                    print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
+                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                    print(f"{RED}Current user: {get_user_info()}{RESET}")
                 except Exception as e:
                     print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
     
@@ -2042,6 +2062,22 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                         reason = "movie no longer exists in Radarr"
                 
                 if should_remove:
+                    # Check write permission before attempting deletion
+                    if not os.access(folder, os.W_OK):
+                        print(f"{RED}Permission denied: Cannot remove folder {folder.name} for {movie_title}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    # Check parent directory write permission
+                    if not os.access(parent_dir, os.W_OK):
+                        print(f"{RED}Permission denied: No write access to parent directory {parent_dir}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
                     try:
                         total_size = sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
                         size_mb = total_size / (1024 * 1024)
@@ -2052,6 +2088,10 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                         print(f"{GREEN}Removed {content_type} for {movie_title} - {reason} ({size_mb:.1f} MB freed){RESET}")
                         if debug:
                             print(f"{BLUE}[DEBUG] Deleted: {folder}{RESET}")
+                    except PermissionError as e:
+                        print(f"{RED}Permission error removing content for {movie_title}: {e}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
                     except Exception as e:
                         print(f"{RED}Error removing content for {movie_title}: {e}{RESET}")
         except Exception as e:
