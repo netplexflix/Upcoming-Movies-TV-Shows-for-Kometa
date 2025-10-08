@@ -13,7 +13,7 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from yaml.representer import SafeRepresenter
 
-VERSION = "2025.10.06"
+VERSION = "2025.10.0801"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1802,6 +1802,15 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     continue
                 
                 try:
+                    # Ensure directory has write permission before deletion
+                    try:
+                        os.chmod(season_00_path, 0o755)
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                    except Exception as perm_err:
+                        if debug:
+                            print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                    
                     file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
                     trailer_file.unlink()
                     
@@ -2087,6 +2096,17 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                         continue
                     
                     try:
+                        # Ensure directory has write permission before deletion
+                        try:
+                            os.chmod(folder, 0o755)
+                            # Also ensure parent directory is writable
+                            os.chmod(parent_dir, 0o755)
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Set permissions 755 on {folder} and {parent_dir}{RESET}")
+                        except Exception as perm_err:
+                            if debug:
+                                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                        
                         total_size = sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
                         size_mb = total_size / (1024 * 1024)
                         
