@@ -13,7 +13,7 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from yaml.representer import SafeRepresenter
 
-VERSION = "2025.10.0801"
+VERSION = "2025.10.0802"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1010,31 +1010,27 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     """Download trailer for TV show"""
     show_path = show.get('path')
     
-    # For trending shows without a path, create one
-    if not show_path:
-        if not umtk_root_tv:
-            print(f"{RED}No path found for show: {show.get('title')} and umtk_root_tv not configured{RESET}")
-            return False
-        
-        # Create show folder name
-        show_title = show.get('title', 'Unknown')
-        show_year = show.get('year', '')
-        if show_year:
-            show_folder = sanitize_filename(f"{show_title} ({show_year})")
-        else:
-            show_folder = sanitize_filename(show_title)
-        
-        show_path = str(Path(umtk_root_tv) / show_folder)
-        if debug:
-            print(f"{BLUE}[DEBUG] Created path for trending show: {show_path}{RESET}")
-
+    # Determine the target directory
     if umtk_root_tv:
-        # Use custom root path - extract just the show name
-        show_name = Path(show_path).name
+        # Extract just the show folder name from the Sonarr path
+        if show_path:
+            show_name = Path(show_path).name
+        else:
+            # For trending shows without a path, create folder name
+            show_title = show.get('title', 'Unknown')
+            show_year = show.get('year', '')
+            if show_year:
+                show_name = sanitize_filename(f"{show_title} ({show_year})")
+            else:
+                show_name = sanitize_filename(show_title)
+        
         parent_dir = Path(umtk_root_tv) / show_name
         season_00_path = parent_dir / "Season 00"
     else:
-        # Use original logic
+        # Use original Sonarr path
+        if not show_path:
+            print(f"{RED}No path found for show: {show.get('title')} and umtk_root_tv not configured{RESET}")
+            return False
         parent_dir = Path(show_path)
         season_00_path = parent_dir / "Season 00"
     
@@ -1044,7 +1040,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         print(f"{BLUE}[DEBUG] Season 00 path: {season_00_path}{RESET}")
         if umtk_root_tv:
             print(f"{BLUE}[DEBUG] Using custom umtk_root_tv: {umtk_root_tv}{RESET}")
-    
+        
     # Create parent directory if it doesn't exist
     if not parent_dir.exists():
         try:
@@ -1336,31 +1332,27 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     
     show_path = show.get('path')
     
-    # For trending shows without a path, create one
-    if not show_path:
-        if not umtk_root_tv:
-            print(f"{RED}No path found for show: {show.get('title')} and umtk_root_tv not configured{RESET}")
-            return False
-        
-        # Create show folder name
-        show_title = show.get('title', 'Unknown')
-        show_year = show.get('year', '')
-        if show_year:
-            show_folder = sanitize_filename(f"{show_title} ({show_year})")
-        else:
-            show_folder = sanitize_filename(show_title)
-        
-        show_path = str(Path(umtk_root_tv) / show_folder)
-        if debug:
-            print(f"{BLUE}[DEBUG] Created path for trending show: {show_path}{RESET}")
-    
+    # Determine the target directory
     if umtk_root_tv:
-        # Use custom root path - extract just the show name
-        show_name = Path(show_path).name
+        # Extract just the show folder name from the Sonarr path
+        if show_path:
+            show_name = Path(show_path).name
+        else:
+            # For trending shows without a path, create folder name
+            show_title = show.get('title', 'Unknown')
+            show_year = show.get('year', '')
+            if show_year:
+                show_name = sanitize_filename(f"{show_title} ({show_year})")
+            else:
+                show_name = sanitize_filename(show_title)
+        
         parent_dir = Path(umtk_root_tv) / show_name
         season_00_path = parent_dir / "Season 00"
     else:
-        # Use original logic
+        # Use original Sonarr path
+        if not show_path:
+            print(f"{RED}No path found for show: {show.get('title')} and umtk_root_tv not configured{RESET}")
+            return False
         parent_dir = Path(show_path)
         season_00_path = parent_dir / "Season 00"
     
