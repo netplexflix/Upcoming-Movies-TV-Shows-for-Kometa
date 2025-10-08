@@ -1821,8 +1821,16 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
                     print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
                     print(f"{RED}Current user: {get_user_info()}{RESET}")
+                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
                 except Exception as e:
+                    error_msg = str(e)
                     print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
+                    # If it's a permission error caught as generic exception, show details
+                    if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                        print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        if trailer_file.exists():
+                            print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
     
     if removed_count > 0:
         print(f"{GREEN}TV cleanup complete: Removed {removed_count} file(s) from {checked_count} checked{RESET}")
@@ -2092,8 +2100,15 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                         print(f"{RED}Permission error removing content for {movie_title}: {e}{RESET}")
                         print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
                         print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
                     except Exception as e:
+                        error_msg = str(e)
                         print(f"{RED}Error removing content for {movie_title}: {e}{RESET}")
+                        # If it's a permission error caught as generic exception, show details
+                        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+                            print(f"{RED}Current user: {get_user_info()}{RESET}")
+                            print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
         except Exception as e:
             if debug:
                 print(f"{ORANGE}[DEBUG] Error scanning directory {parent_dir}: {e}{RESET}")
