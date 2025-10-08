@@ -13,7 +13,7 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from yaml.representer import SafeRepresenter
 
-VERSION = "2025.10.0802"
+VERSION = "2025.10.0803"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -3322,6 +3322,18 @@ def main():
                                 skipped_existing += 1
                                 successful += 1
                                 continue
+                            
+                            clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                            
+                            trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
+                            existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                            
+                            if existing_trailers:
+                                existing_file = existing_trailers[0]
+                                print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
+                                skipped_existing += 1
+                                successful += 1
+                                continue
                         
                         # Process based on method
                         success = False
@@ -3426,6 +3438,38 @@ def main():
                                 
                                 # Check if content already exists
                                 show_path = show.get('path')
+                                
+                                # Determine the path to check
+                                if show_path:
+                                    if umtk_root_tv:
+                                        show_name = Path(show_path).name
+                                        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                                    else:
+                                        season_00_path = Path(show_path) / "Season 00"
+                                elif umtk_root_tv:
+                                    # For shows without a path, construct from umtk_root_tv
+                                    show_title = show.get('title', 'Unknown')
+                                    show_year = show.get('year', '')
+                                    if show_year:
+                                        show_folder = sanitize_filename(f"{show_title} ({show_year})")
+                                    else:
+                                        show_folder = sanitize_filename(show_title)
+                                    season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
+                                else:
+                                    season_00_path = None
+                                
+                                # Check for existing content
+                                if season_00_path:
+                                    clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                    trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
+                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                                    
+                                    if existing_trailers:
+                                        existing_file = existing_trailers[0]
+                                        print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
+                                        skipped_existing += 1
+                                        successful += 1
+                                        continue
                                 
                                 # Determine the path to check
                                 if show_path:
