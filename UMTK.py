@@ -12,8 +12,9 @@ from pathlib import Path
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from yaml.representer import SafeRepresenter
+from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.0803"
+VERSION = "2025.10.0804"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1014,7 +1015,8 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     if umtk_root_tv:
         # Extract just the show folder name from the Sonarr path
         if show_path:
-            show_name = Path(show_path).name
+            # Use PureWindowsPath to handle Windows paths from Sonarr even in Docker/Linux
+            show_name = PureWindowsPath(show_path).name
         else:
             # For trending shows without a path, create folder name
             show_title = show.get('title', 'Unknown')
@@ -1336,7 +1338,8 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     if umtk_root_tv:
         # Extract just the show folder name from the Sonarr path
         if show_path:
-            show_name = Path(show_path).name
+            # Use PureWindowsPath to handle Windows paths from Sonarr even in Docker/Linux
+            show_name = PureWindowsPath(show_path).name
         else:
             # For trending shows without a path, create folder name
             show_title = show.get('title', 'Unknown')
@@ -1355,7 +1358,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             return False
         parent_dir = Path(show_path)
         season_00_path = parent_dir / "Season 00"
-    
+        
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
     
@@ -3306,7 +3309,8 @@ def main():
                         show_path = show.get('path')
                         if show_path:
                             if umtk_root_tv:
-                                show_name = Path(show_path).name
+                                # Use PureWindowsPath to handle Windows paths from Sonarr
+                                show_name = PureWindowsPath(show_path).name
                                 season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
                             else:
                                 season_00_path = Path(show_path) / "Season 00"
@@ -3442,7 +3446,8 @@ def main():
                                 # Determine the path to check
                                 if show_path:
                                     if umtk_root_tv:
-                                        show_name = Path(show_path).name
+                                        # Use PureWindowsPath to handle Windows paths from Sonarr
+                                        show_name = PureWindowsPath(show_path).name
                                         season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
                                     else:
                                         season_00_path = Path(show_path) / "Season 00"
