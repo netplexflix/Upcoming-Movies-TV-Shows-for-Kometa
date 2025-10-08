@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.0804"
+VERSION = "2025.10.0805"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1615,7 +1615,19 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         if current_trending_titles:
             print(f"{BLUE}[DEBUG] Trending titles: {current_trending_titles}{RESET}")
     
-    # Build a map of show paths to series for quick lookup
+    # Build a map of show folder names to series for quick lookup when using umtk_root_tv
+    series_by_folder_name = {}
+    if umtk_root_tv:
+        for series in all_series:
+            show_path = series.get('path')
+            if show_path:
+                # Extract folder name the same way we do when creating content
+                folder_name = PureWindowsPath(show_path).name
+                series_by_folder_name[folder_name] = series
+                if debug:
+                    print(f"{BLUE}[DEBUG] Mapped folder '{folder_name}' to series '{series['title']}'{RESET}")
+    
+    # Build a map of show paths to series for quick lookup (for non-custom root)
     series_by_path = {}
     for series in all_series:
         show_path = series.get('path')
@@ -1666,12 +1678,13 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         # Try to find the series in Sonarr
         series = None
         if umtk_root_tv:
-            # For custom root, we need to match by folder name
-            for s in all_series:
-                s_path = s.get('path')
-                if s_path and Path(s_path).name == show_folder_name:
-                    series = s
-                    break
+            # For custom root, match by folder name using our lookup dictionary
+            series = series_by_folder_name.get(show_folder_name)
+            if debug:
+                if series:
+                    print(f"{BLUE}[DEBUG] Found series for folder '{show_folder_name}': {series['title']}{RESET}")
+                else:
+                    print(f"{BLUE}[DEBUG] No series found for folder '{show_folder_name}'{RESET}")
         else:
             # For regular paths, direct lookup
             series = series_by_path.get(str(show_dir))
@@ -1736,6 +1749,8 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     removal_reason = "show no longer exists in Sonarr"
                     if debug:
                         print(f"{BLUE}[DEBUG] No series found in Sonarr for {show_title_from_folder}{RESET}")
+                        print(f"{BLUE}[DEBUG] Folder name: {show_folder_name}{RESET}")
+                        print(f"{BLUE}[DEBUG] Available folder mappings: {list(series_by_folder_name.keys())}{RESET}")
                 else:
                     # Check if still in upcoming list
                     if series['title'] not in current_upcoming_titles:
