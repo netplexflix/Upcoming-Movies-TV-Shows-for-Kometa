@@ -174,7 +174,7 @@ NEXT_RUN=$(get_next_cron_time)
 
 # Setup cron job to run as umtk user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON gosu $PUID:$PGID bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
+echo "$CRON umtk cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1" > /etc/cron.d/umtk-cron
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
 
