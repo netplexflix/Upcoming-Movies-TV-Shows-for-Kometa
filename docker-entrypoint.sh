@@ -169,16 +169,73 @@ fix_media_permissions() {
     fi
 }
 
+# Create a wrapper script that includes the next schedule calculation
+cat > /app/run-umtk.sh << 'WRAPPER_EOF'
+#!/bin/bash
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to log with timestamp
+log() {
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Function to get next cron run time
+get_next_cron_time() {
+    python3 -c "
+import datetime
+
+cron_expression = '$CRON'
+parts = cron_expression.split()
+if len(parts) == 5:
+    minute, hour, day, month, dow = parts
+    now = datetime.datetime.now()
+    
+    # Simple calculation for next run (basic implementation)
+    next_hour = int(hour) if hour != '*' else now.hour
+    next_minute = int(minute) if minute != '*' else now.minute
+    
+    # Calculate next run time
+    next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
+    
+    # If time has passed today, move to tomorrow
+    if next_run <= now:
+        next_run = next_run + datetime.timedelta(days=1)
+    
+    print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
+else:
+    print('Unable to parse cron expression')
+"
+}
+
+cd /app
+export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:$PATH
+/usr/local/bin/python UMTK.py
+
+# Calculate and display next run time
+NEXT_RUN=$(get_next_cron_time)
+log "${BLUE}Next execution scheduled for: ${NEXT_RUN}${NC}"
+WRAPPER_EOF
+
+chmod +x /app/run-umtk.sh
+chown $PUID:$PGID /app/run-umtk.sh
+
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Setup cron job to run as umtk user with full environment
+# Setup cron job - NOTE: No username needed, will use su to switch user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
 cat > /etc/cron.d/umtk-cron << EOF
 PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 SHELL=/bin/bash
+CRON=$CRON
 
-$CRON umtk /bin/bash -c "cd /app && export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH && /usr/local/bin/python UMTK.py" >> /app/logs/umtk.log 2>&1
+$CRON root su -s /bin/bash umtk -c "/app/run-umtk.sh" >> /app/logs/umtk.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
@@ -190,7 +247,7 @@ fix_media_permissions
 
 # Run once on startup as umtk user with explicit UID:GID
 log "${GREEN}Running UMTK on startup...${NC}"
-gosu $PUID:$PGID bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
+gosu $PUID:$PGID bash -c "/app/run-umtk.sh"
 
 # Start cron and keep container running
 log "${BLUE}Starting scheduled execution...${NC}"
