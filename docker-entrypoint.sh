@@ -197,5 +197,8 @@ log "${BLUE}Starting scheduled execution...${NC}"
 log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
 log "${BLUE}Use docker logs -f umtk to follow the logs${NC}"
 
+# Tail the log file to docker logs in the background
+tail -F /app/logs/umtk.log &
+
 # Start cron in foreground
 exec cron -f
