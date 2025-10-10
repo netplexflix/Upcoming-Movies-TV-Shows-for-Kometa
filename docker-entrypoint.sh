@@ -274,9 +274,11 @@ echo "" >> /etc/cron.d/umtk-cron
 
 if command -v gosu &> /dev/null; then
     GOSU_CMD=$(which gosu)
-    echo "${CRON} root ${GOSU_CMD} ${PUID}:${PGID} /bin/bash -c 'TZ=${CRON_TZ} /app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+    # Fixed: Properly escape the command for cron and redirect outside the quotes
+    echo "${CRON} root ${GOSU_CMD} ${PUID}:${PGID} /bin/bash /app/run-umtk.sh >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
 else
-    echo "${CRON} root su -s /bin/bash umtk -c 'TZ=${CRON_TZ} /app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+    # Fixed: Properly escape the command for cron and redirect outside the quotes
+    echo "${CRON} root su -s /bin/bash umtk -c '/app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
 fi
 
 chmod 0644 /etc/cron.d/umtk-cron
