@@ -272,13 +272,14 @@ CRONEOF
 echo "TZ=${CRON_TZ}" >> /etc/cron.d/umtk-cron
 echo "" >> /etc/cron.d/umtk-cron
 
+# FIX 1: Correctly wrap the gosu/su command in /bin/bash -c "..." for system crontab
 if command -v gosu &> /dev/null; then
     GOSU_CMD=$(which gosu)
-    # Fixed: Properly escape the command for cron and redirect outside the quotes
-    echo "${CRON} root ${GOSU_CMD} ${PUID}:${PGID} /bin/bash /app/run-umtk.sh >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+    # The entire command to be executed by 'root' needs to be wrapped for redirection
+    echo "${CRON} root /bin/bash -c \"${GOSU_CMD} ${PUID}:${PGID} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1\"" >> /etc/cron.d/umtk-cron
 else
-    # Fixed: Properly escape the command for cron and redirect outside the quotes
-    echo "${CRON} root su -s /bin/bash umtk -c '/app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+    # su command already properly wrapped for redirection
+    echo "${CRON} root /bin/bash -c \"su -s /bin/bash umtk -c '/app/run-umtk.sh' >> /app/logs/umtk.log 2>&1\"" >> /etc/cron.d/umtk-cron
 fi
 
 chmod 0644 /etc/cron.d/umtk-cron
@@ -287,8 +288,6 @@ crontab /etc/cron.d/umtk-cron
 log "${BLUE}Cron job installed. Contents:${NC}"
 cat /etc/cron.d/umtk-cron | tail -1
 
-log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
-
 # Fix media permissions before running
 fix_media_permissions
 
@@ -296,10 +295,10 @@ fix_media_permissions
 log "${GREEN}Running UMTK on startup...${NC}"
 gosu $PUID:$PGID bash -c "/app/run-umtk.sh"
 
-# Start cron and keep container running
+# FIX 2: Remove duplicate logging of next scheduled run time
+# The next run time is already logged by /app/run-umtk.sh during the startup run.
 log "${BLUE}Starting scheduled execution...${NC}"
-log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
-log "${BLUE}Use docker logs -f umtk to follow the logs${NC}"
+log "${BLUE}Container is now running. Use docker logs -f umtk to follow the logs${NC}"
 
 # Tail the log file to docker logs in the background
 tail -F /app/logs/umtk.log &
