@@ -246,11 +246,19 @@ NEXT_RUN=$(get_next_cron_time)
 
 # Setup cron job - Run as root and use gosu to switch to umtk user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
+
+# Find the full path to gosu, fallback to su if gosu not available
+if command -v gosu &> /dev/null; then
+    SWITCH_USER_CMD="$(which gosu) ${PUID}:${PGID}"
+else
+    SWITCH_USER_CMD="su -s /bin/bash umtk -c"
+fi
+
 cat > /etc/cron.d/umtk-cron << EOF
 PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 SHELL=/bin/bash
 
-${CRON} root /usr/bin/gosu ${PUID}:${PGID} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1
+${CRON} root ${SWITCH_USER_CMD} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
