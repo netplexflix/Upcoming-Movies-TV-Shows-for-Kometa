@@ -131,16 +131,24 @@ if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
     
-    # Simple calculation for next run (basic implementation)
-    next_hour = int(hour) if hour != '*' else now.hour
-    next_minute = int(minute) if minute != '*' else now.minute
-    
-    # Calculate next run time
-    next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
-    
-    # If time has passed today, move to tomorrow
-    if next_run <= now:
-        next_run = next_run + datetime.timedelta(days=1)
+    # Handle wildcards and specific values
+    if hour == '*':
+        # If hour is *, run every hour
+        target_minute = int(minute) if minute != '*' else 0
+        next_run = now.replace(minute=target_minute, second=0, microsecond=0)
+        
+        # If we've passed the target minute this hour, go to next hour
+        if next_run <= now:
+            next_run = next_run + datetime.timedelta(hours=1)
+    else:
+        # Specific hour
+        target_hour = int(hour)
+        target_minute = int(minute) if minute != '*' else 0
+        next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        
+        # If time has passed today, move to tomorrow
+        if next_run <= now:
+            next_run = next_run + datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -170,7 +178,7 @@ fix_media_permissions() {
 }
 
 # Create a wrapper script that includes the next schedule calculation
-cat > /app/run-umtk.sh << 'WRAPPER_EOF'
+cat > /app/run-umtk.sh << WRAPPER_EOF
 #!/bin/bash
 
 # Colors for output
@@ -182,7 +190,7 @@ NC='\033[0m' # No Color
 
 # Function to log with timestamp
 log() {
-    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo -e "[\$(date '+%Y-%m-%d %H:%M:%S')] \$1"
 }
 
 # Function to get next cron run time
@@ -190,22 +198,30 @@ get_next_cron_time() {
     python3 -c "
 import datetime
 
-cron_expression = '$CRON'
+cron_expression = '${CRON}'
 parts = cron_expression.split()
 if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
     
-    # Simple calculation for next run (basic implementation)
-    next_hour = int(hour) if hour != '*' else now.hour
-    next_minute = int(minute) if minute != '*' else now.minute
-    
-    # Calculate next run time
-    next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
-    
-    # If time has passed today, move to tomorrow
-    if next_run <= now:
-        next_run = next_run + datetime.timedelta(days=1)
+    # Handle wildcards and specific values
+    if hour == '*':
+        # If hour is *, run every hour
+        target_minute = int(minute) if minute != '*' else 0
+        next_run = now.replace(minute=target_minute, second=0, microsecond=0)
+        
+        # If we've passed the target minute this hour, go to next hour
+        if next_run <= now:
+            next_run = next_run + datetime.timedelta(hours=1)
+    else:
+        # Specific hour
+        target_hour = int(hour)
+        target_minute = int(minute) if minute != '*' else 0
+        next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        
+        # If time has passed today, move to tomorrow
+        if next_run <= now:
+            next_run = next_run + datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -214,12 +230,12 @@ else:
 }
 
 cd /app
-export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:$PATH
+export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH
 /usr/local/bin/python UMTK.py
 
 # Calculate and display next run time
-NEXT_RUN=$(get_next_cron_time)
-log "${BLUE}Next execution scheduled for: ${NEXT_RUN}${NC}"
+NEXT_RUN=\$(get_next_cron_time)
+log "\${BLUE}Next execution scheduled for: \${NEXT_RUN}\${NC}"
 WRAPPER_EOF
 
 chmod +x /app/run-umtk.sh
@@ -228,14 +244,13 @@ chown $PUID:$PGID /app/run-umtk.sh
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Setup cron job - NOTE: No username needed, will use su to switch user
+# Setup cron job - Run as root and use gosu to switch to umtk user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
 cat > /etc/cron.d/umtk-cron << EOF
 PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 SHELL=/bin/bash
-CRON=$CRON
 
-$CRON root su -s /bin/bash umtk -c "/app/run-umtk.sh" >> /app/logs/umtk.log 2>&1
+${CRON} root /usr/bin/gosu ${PUID}:${PGID} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1
 EOF
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
