@@ -181,6 +181,11 @@ fix_media_permissions() {
 cat > /app/run-umtk.sh << WRAPPER_EOF
 #!/bin/bash
 
+# Set timezone if TZ is set
+if [ -n "\${TZ}" ]; then
+    export TZ="\${TZ}"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -250,18 +255,35 @@ log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
 # Find the full path to gosu, fallback to su if gosu not available
 if command -v gosu &> /dev/null; then
     SWITCH_USER_CMD="$(which gosu) ${PUID}:${PGID}"
+    log "${BLUE}Using gosu to switch users${NC}"
 else
     SWITCH_USER_CMD="su -s /bin/bash umtk -c"
+    log "${BLUE}Using su to switch users${NC}"
 fi
 
-cat > /etc/cron.d/umtk-cron << EOF
+# Get TZ for cron
+CRON_TZ="${TZ:-UTC}"
+
+cat > /etc/cron.d/umtk-cron << 'CRONEOF'
 PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
 SHELL=/bin/bash
+CRONEOF
 
-${CRON} root ${SWITCH_USER_CMD} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1
-EOF
+echo "TZ=${CRON_TZ}" >> /etc/cron.d/umtk-cron
+echo "" >> /etc/cron.d/umtk-cron
+
+if command -v gosu &> /dev/null; then
+    GOSU_CMD=$(which gosu)
+    echo "${CRON} root ${GOSU_CMD} ${PUID}:${PGID} /bin/bash -c 'TZ=${CRON_TZ} /app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+else
+    echo "${CRON} root su -s /bin/bash umtk -c 'TZ=${CRON_TZ} /app/run-umtk.sh' >> /app/logs/umtk.log 2>&1" >> /etc/cron.d/umtk-cron
+fi
+
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
+
+log "${BLUE}Cron job installed. Contents:${NC}"
+cat /etc/cron.d/umtk-cron | tail -1
 
 log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
 
