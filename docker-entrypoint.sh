@@ -172,9 +172,14 @@ fix_media_permissions() {
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Setup cron job to run as umtk user
+# Setup cron job to run as umtk user with full environment
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON umtk cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1" > /etc/cron.d/umtk-cron
+cat > /etc/cron.d/umtk-cron << EOF
+PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+SHELL=/bin/bash
+
+$CRON umtk /bin/bash -c "cd /app && export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH && /usr/local/bin/python UMTK.py" >> /app/logs/umtk.log 2>&1
+EOF
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
 

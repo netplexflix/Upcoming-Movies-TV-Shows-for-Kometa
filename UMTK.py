@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.0805"
+VERSION = "2025.10.10"
 
 # ANSI color codes
 GREEN = '\033[32m'
