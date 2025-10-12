@@ -124,6 +124,7 @@ chmod u+rw /app/logs/umtk.log 2>/dev/null || true
 get_next_cron_time() {
     python3 -c "
 import datetime
+import re
 
 cron_expression = '$CRON'
 parts = cron_expression.split()
@@ -131,24 +132,75 @@ if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
     
-    # Handle wildcards and specific values
-    if hour == '*':
-        # If hour is *, run every hour
-        target_minute = int(minute) if minute != '*' else 0
-        next_run = now.replace(minute=target_minute, second=0, microsecond=0)
-        
-        # If we've passed the target minute this hour, go to next hour
+    # Function to parse cron field with step values
+    def parse_field(field, min_val, max_val, current_val):
+        if field == '*':
+            return None  # Wildcard
+        elif '/' in field:
+            # Handle step values like */6
+            base, step = field.split('/')
+            step = int(step)
+            if base == '*':
+                # Find next value divisible by step
+                next_val = ((current_val // step) * step) + step
+                if next_val > max_val:
+                    next_val = 0
+                return next_val
+            else:
+                # Handle ranges with steps (not common, but supported)
+                return int(base)
+        elif ',' in field:
+            # Handle comma-separated values
+            values = [int(v) for v in field.split(',')]
+            for v in sorted(values):
+                if v > current_val:
+                    return v
+            return sorted(values)[0]  # Wrap to first
+        elif '-' in field:
+            # Handle ranges
+            start, end = map(int, field.split('-'))
+            if current_val < start:
+                return start
+            elif current_val < end:
+                return current_val + 1
+            else:
+                return start  # Wrap around
+        else:
+            return int(field)
+    
+    # Parse minute and hour
+    target_minute = parse_field(minute, 0, 59, now.minute)
+    target_hour = parse_field(hour, 0, 23, now.hour)
+    
+    # Calculate next run time
+    next_run = now.replace(second=0, microsecond=0)
+    
+    if target_hour is None and target_minute is None:
+        # Every minute (unlikely but handle it)
+        next_run = next_run + datetime.timedelta(minutes=1)
+    elif target_hour is None:
+        # Every hour at target minute
+        next_run = next_run.replace(minute=target_minute)
         if next_run <= now:
             next_run = next_run + datetime.timedelta(hours=1)
-    else:
-        # Specific hour
-        target_hour = int(hour)
-        target_minute = int(minute) if minute != '*' else 0
-        next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-        
-        # If time has passed today, move to tomorrow
+    elif target_minute is None:
+        # Target hour, every minute (unlikely)
+        next_run = next_run.replace(hour=target_hour)
         if next_run <= now:
             next_run = next_run + datetime.timedelta(days=1)
+    else:
+        # Specific hour and minute
+        next_run = next_run.replace(hour=target_hour, minute=target_minute)
+        
+        # If time has passed today, calculate next occurrence
+        if next_run <= now:
+            if '/' in hour:
+                # Step value in hour - add step hours
+                _, step = hour.split('/')
+                next_run = next_run + datetime.timedelta(hours=int(step))
+            else:
+                # Fixed hour - move to next day
+                next_run = next_run + datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -173,17 +225,19 @@ fix_media_permissions() {
         log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
         find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
         find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chmod -R u+rwX {} \; 2>/dev/null || true
         log "${GREEN}Movie directory permissions fixed${NC}"
     fi
 }
 
 # Create a wrapper script that includes the next schedule calculation
-cat > /app/run-umtk.sh << WRAPPER_EOF
+cat > /app/run-umtk.sh << 'WRAPPER_EOF'
 #!/bin/bash
 
 # Set timezone if TZ is set
-if [ -n "\${TZ}" ]; then
-    export TZ="\${TZ}"
+if [ -n "${TZ}" ]; then
+    export TZ="${TZ}"
 fi
 
 # Colors for output
@@ -195,13 +249,14 @@ NC='\033[0m' # No Color
 
 # Function to log with timestamp
 log() {
-    echo -e "[\$(date '+%Y-%m-%d %H:%M:%S')] \$1"
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
 # Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
 import datetime
+import re
 
 cron_expression = '${CRON}'
 parts = cron_expression.split()
@@ -209,24 +264,75 @@ if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
     
-    # Handle wildcards and specific values
-    if hour == '*':
-        # If hour is *, run every hour
-        target_minute = int(minute) if minute != '*' else 0
-        next_run = now.replace(minute=target_minute, second=0, microsecond=0)
-        
-        # If we've passed the target minute this hour, go to next hour
+    # Function to parse cron field with step values
+    def parse_field(field, min_val, max_val, current_val):
+        if field == '*':
+            return None  # Wildcard
+        elif '/' in field:
+            # Handle step values like */6
+            base, step = field.split('/')
+            step = int(step)
+            if base == '*':
+                # Find next value divisible by step
+                next_val = ((current_val // step) * step) + step
+                if next_val > max_val:
+                    next_val = 0
+                return next_val
+            else:
+                # Handle ranges with steps (not common, but supported)
+                return int(base)
+        elif ',' in field:
+            # Handle comma-separated values
+            values = [int(v) for v in field.split(',')]
+            for v in sorted(values):
+                if v > current_val:
+                    return v
+            return sorted(values)[0]  # Wrap to first
+        elif '-' in field:
+            # Handle ranges
+            start, end = map(int, field.split('-'))
+            if current_val < start:
+                return start
+            elif current_val < end:
+                return current_val + 1
+            else:
+                return start  # Wrap around
+        else:
+            return int(field)
+    
+    # Parse minute and hour
+    target_minute = parse_field(minute, 0, 59, now.minute)
+    target_hour = parse_field(hour, 0, 23, now.hour)
+    
+    # Calculate next run time
+    next_run = now.replace(second=0, microsecond=0)
+    
+    if target_hour is None and target_minute is None:
+        # Every minute (unlikely but handle it)
+        next_run = next_run + datetime.timedelta(minutes=1)
+    elif target_hour is None:
+        # Every hour at target minute
+        next_run = next_run.replace(minute=target_minute)
         if next_run <= now:
             next_run = next_run + datetime.timedelta(hours=1)
-    else:
-        # Specific hour
-        target_hour = int(hour)
-        target_minute = int(minute) if minute != '*' else 0
-        next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-        
-        # If time has passed today, move to tomorrow
+    elif target_minute is None:
+        # Target hour, every minute (unlikely)
+        next_run = next_run.replace(hour=target_hour)
         if next_run <= now:
             next_run = next_run + datetime.timedelta(days=1)
+    else:
+        # Specific hour and minute
+        next_run = next_run.replace(hour=target_hour, minute=target_minute)
+        
+        # If time has passed today, calculate next occurrence
+        if next_run <= now:
+            if '/' in hour:
+                # Step value in hour - add step hours
+                _, step = hour.split('/')
+                next_run = next_run + datetime.timedelta(hours=int(step))
+            else:
+                # Fixed hour - move to next day
+                next_run = next_run + datetime.timedelta(days=1)
     
     print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 else:
@@ -235,12 +341,12 @@ else:
 }
 
 cd /app
-export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH
+export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:$PATH
 /usr/local/bin/python UMTK.py
 
 # Calculate and display next run time
-NEXT_RUN=\$(get_next_cron_time)
-log "\${BLUE}Next execution scheduled for: \${NEXT_RUN}\${NC}"
+NEXT_RUN=$(get_next_cron_time)
+log "${BLUE}Next execution scheduled for: ${NEXT_RUN}${NC}"
 WRAPPER_EOF
 
 chmod +x /app/run-umtk.sh
@@ -272,7 +378,7 @@ CRONEOF
 echo "TZ=${CRON_TZ}" >> /etc/cron.d/umtk-cron
 echo "" >> /etc/cron.d/umtk-cron
 
-# FIX 1: Correctly wrap the gosu/su command in /bin/bash -c "..." for system crontab
+# Correctly wrap the gosu/su command in /bin/bash -c "..." for system crontab
 if command -v gosu &> /dev/null; then
     GOSU_CMD=$(which gosu)
     # The entire command to be executed by 'root' needs to be wrapped for redirection
@@ -295,9 +401,6 @@ fix_media_permissions
 log "${GREEN}Running UMTK on startup...${NC}"
 gosu $PUID:$PGID bash -c "/app/run-umtk.sh"
 
-# FIX 2: Remove duplicate logging of next scheduled run time
-# The next run time is already logged by /app/run-umtk.sh during the startup run.
-log "${BLUE}Starting scheduled execution...${NC}"
 log "${BLUE}Container is now running. Use docker logs -f umtk to follow the logs${NC}"
 
 # Tail the log file to docker logs in the background
