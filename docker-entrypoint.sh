@@ -141,11 +141,14 @@ if len(parts) == 5:
             base, step = field.split('/')
             step = int(step)
             if base == '*':
-                # Find next value divisible by step
-                next_val = ((current_val // step) * step) + step
-                if next_val > max_val:
-                    next_val = 0
-                return next_val
+                # Generate all valid values (divisible by step)
+                valid_values = [i for i in range(min_val, max_val + 1) if i % step == 0]
+                # Find next value after current
+                for val in valid_values:
+                    if val > current_val:
+                        return val
+                # If no value found, wrap to first value
+                return valid_values[0] if valid_values else 0
             else:
                 # Handle ranges with steps (not common, but supported)
                 return int(base)
@@ -192,12 +195,14 @@ if len(parts) == 5:
         # Specific hour and minute
         next_run = next_run.replace(hour=target_hour, minute=target_minute)
         
-        # If time has passed today, calculate next occurrence
+        # If time has passed, we need to move to next day
         if next_run <= now:
+            # Check if hour field has step value
             if '/' in hour:
-                # Step value in hour - add step hours
-                _, step = hour.split('/')
-                next_run = next_run + datetime.timedelta(hours=int(step))
+                # For step values, we already got the next valid hour
+                # If it wrapped to a smaller hour, we need to go to next day
+                if target_hour <= now.hour:
+                    next_run = next_run + datetime.timedelta(days=1)
             else:
                 # Fixed hour - move to next day
                 next_run = next_run + datetime.timedelta(days=1)
@@ -273,11 +278,14 @@ if len(parts) == 5:
             base, step = field.split('/')
             step = int(step)
             if base == '*':
-                # Find next value divisible by step
-                next_val = ((current_val // step) * step) + step
-                if next_val > max_val:
-                    next_val = 0
-                return next_val
+                # Generate all valid values (divisible by step)
+                valid_values = [i for i in range(min_val, max_val + 1) if i % step == 0]
+                # Find next value after current
+                for val in valid_values:
+                    if val > current_val:
+                        return val
+                # If no value found, wrap to first value
+                return valid_values[0] if valid_values else 0
             else:
                 # Handle ranges with steps (not common, but supported)
                 return int(base)
@@ -324,12 +332,14 @@ if len(parts) == 5:
         # Specific hour and minute
         next_run = next_run.replace(hour=target_hour, minute=target_minute)
         
-        # If time has passed today, calculate next occurrence
+        # If time has passed, we need to move to next day
         if next_run <= now:
+            # Check if hour field has step value
             if '/' in hour:
-                # Step value in hour - add step hours
-                _, step = hour.split('/')
-                next_run = next_run + datetime.timedelta(hours=int(step))
+                # For step values, we already got the next valid hour
+                # If it wrapped to a smaller hour, we need to go to next day
+                if target_hour <= now.hour:
+                    next_run = next_run + datetime.timedelta(days=1)
             else:
                 # Fixed hour - move to next day
                 next_run = next_run + datetime.timedelta(days=1)
