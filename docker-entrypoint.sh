@@ -124,90 +124,54 @@ chmod u+rw /app/logs/umtk.log 2>/dev/null || true
 get_next_cron_time() {
     python3 -c "
 import datetime
-import time
 
 cron_expression = '$CRON'
 parts = cron_expression.split()
-
-# Simplistic approach for common intervals (assuming minute is set and day/month/dow are '*')
-# This is a basic attempt to calculate the next run without a full cron parser library
 if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
-    next_run = None
-
+    
     try:
-        target_minute = int(minute) if minute.isdigit() else 0
-        
+        # Handle minute: if '*' use 0, otherwise try to get the first minute
+        target_minute = int(minute.split(',')[0]) if minute != '*' else 0
+
+        # Handle hours: split and sort the list of hours
         if hour == '*':
-            # Runs every hour
-            next_run = now.replace(minute=target_minute, second=0, microsecond=0)
-            if next_run <= now:
-                next_run += datetime.timedelta(hours=1)
-        elif '/' in hour:
-            # Handle */N (step) for hours
-            _, step_str = hour.split('/')
-            step = int(step_str)
-            
-            # Find the next hour that is a multiple of the step
-            current_hour = now.hour
-            
-            # Start checking from the current hour
-            h = current_hour
-            
-            # Check the current hour first (if we haven't passed the minute)
-            if h % step == 0:
-                potential_run = now.replace(minute=target_minute, second=0, microsecond=0)
-                if potential_run > now:
-                    next_run = potential_run
-            
-            if next_run is None:
-                # Find the next valid hour, may be today or tomorrow
-                found = False
-                for i in range(1, 25):
-                    next_h = (current_hour + i) % 24
-                    if next_h % step == 0:
-                        # Construct a datetime object for the next valid hour
-                        # Need to handle day change if next_h is less than current_hour (i.e., we wrapped around)
-                        days_offset = 0
-                        if next_h < current_hour:
-                             # This assumes we wrapped around to the next day
-                             days_offset = 1
-                        elif next_h == current_hour and i >= 24:
-                             # Wrapped around a full day without finding a suitable hour
-                             days_offset = 1
+            hour_list = list(range(24))
+        else:
+            hour_list = [int(h) for h in hour.split(',')]
+            hour_list.sort()
 
-                        if days_offset == 1:
-                            next_run = now.replace(hour=next_h, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
-                        else:
-                            next_run = now.replace(hour=next_h, minute=target_minute, second=0, microsecond=0)
-
-                        if next_run > now:
-                            found = True
-                            break
-                
-                if not found:
-                    # Fallback if logic failed (e.g., specific date components are also set)
-                    next_run = now + datetime.timedelta(hours=1)
+        # Find the next valid run time (today or tomorrow)
+        next_run = None
         
-        elif hour.isdigit():
-            # Specific hour
-            target_hour = int(hour)
-            next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        # Check for a run time today
+        for h in hour_list:
+            # Check for simple '*' minute and specific hour
+            if minute == '*':
+                # If minute is '*', run at the top of the next hour
+                test_run = now.replace(hour=h, minute=0, second=0, microsecond=0)
+            else:
+                test_run = now.replace(hour=h, minute=target_minute, second=0, microsecond=0)
             
-            # If time has passed today, move to tomorrow
-            if next_run <= now:
-                next_run += datetime.timedelta(days=1)
+            # If the calculated time is in the future, it's the next run
+            if test_run > now:
+                next_run = test_run
+                break
+
+        # If no valid time found today, pick the earliest time tomorrow
+        if next_run is None:
+            earliest_hour = hour_list[0]
+            if minute == '*':
+                next_run = now.replace(hour=earliest_hour, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+            else:
+                next_run = now.replace(hour=earliest_hour, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
+        
+        print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
 
     except ValueError:
-        # If any part of the expression is unparseable (like the original ':0'), fallback
-        pass
-    
-    if next_run:
-        print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
-    else:
-        print('Unable to reliably parse and calculate next cron expression, using next hour')
-        print((now + datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S'))
+        # Catch errors from int() conversion for non-numeric/complex cron expressions
+        print('Unable to reliably parse and calculate next cron expression')
 else:
     print('Unable to parse cron expression')
 "
@@ -255,92 +219,58 @@ log() {
     echo -e "[\$(date '+%Y-%m-%d %H:%M:%S')] \$1"
 }
 
-# Function to get next cron run time (FIXED: simplified logic to assume standard CRON or use next_run)
+# Function to get next cron run time
 get_next_cron_time() {
     python3 -c "
 import datetime
-import time
 
 cron_expression = '${CRON}'
 parts = cron_expression.split()
-
-# Simplistic approach for common intervals (assuming minute is set and day/month/dow are '*')
-# This is a basic attempt to calculate the next run without a full cron parser library
 if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
-    next_run = None
-
+    
     try:
-        target_minute = int(minute) if minute.isdigit() else 0
-        
+        # Handle minute: if '*' use 0, otherwise try to get the first minute
+        target_minute = int(minute.split(',')[0]) if minute != '*' else 0
+
+        # Handle hours: split and sort the list of hours
         if hour == '*':
-            # Runs every hour
-            next_run = now.replace(minute=target_minute, second=0, microsecond=0)
-            if next_run <= now:
-                next_run += datetime.timedelta(hours=1)
-        elif '/' in hour:
-            # Handle */N (step) for hours
-            _, step_str = hour.split('/')
-            step = int(step_str)
-            
-            # Find the next hour that is a multiple of the step
-            current_hour = now.hour
-            
-            # Check the current hour first (if we haven't passed the minute)
-            if current_hour % step == 0:
-                potential_run = now.replace(minute=target_minute, second=0, microsecond=0)
-                if potential_run > now:
-                    next_run = potential_run
-            
-            if next_run is None:
-                # Find the next valid hour, may be today or tomorrow
-                found = False
-                for i in range(1, 25):
-                    next_h = (current_hour + i) % 24
-                    if next_h % step == 0:
-                        # Construct a datetime object for the next valid hour
-                        # Need to handle day change if next_h is less than current_hour (i.e., we wrapped around)
-                        days_offset = 0
-                        if next_h < current_hour:
-                             # This assumes we wrapped around to the next day
-                             days_offset = 1
-                        elif next_h == current_hour and i >= 24:
-                             # Wrapped around a full day without finding a suitable hour
-                             days_offset = 1
+            hour_list = list(range(24))
+        else:
+            hour_list = [int(h) for h in hour.split(',')]
+            hour_list.sort()
 
-                        if days_offset == 1:
-                            next_run = now.replace(hour=next_h, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
-                        else:
-                            next_run = now.replace(hour=next_h, minute=target_minute, second=0, microsecond=0)
-
-                        if next_run > now:
-                            found = True
-                            break
-                
-                if not found:
-                    # Fallback if logic failed (e.g., specific date components are also set)
-                    next_run = now + datetime.timedelta(hours=1)
-
-        elif hour.isdigit():
-            # Specific hour
-            target_hour = int(hour)
-            target_minute = int(minute) if minute.isdigit() else 0
-            next_run = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
-            
-            # If time has passed today, move to tomorrow
-            if next_run <= now:
-                next_run += datetime.timedelta(days=1)
+        # Find the next valid run time (today or tomorrow)
+        next_run = None
         
-    except ValueError:
-        # If any part of the expression is unparseable (like the original ':0'), fallback
-        pass
+        # Check for a run time today
+        for h in hour_list:
+            # Check for simple '*' minute and specific hour
+            if minute == '*':
+                # If minute is '*', run at the top of the next hour
+                test_run = now.replace(hour=h, minute=0, second=0, microsecond=0)
+            else:
+                test_run = now.replace(hour=h, minute=target_minute, second=0, microsecond=0)
+            
+            # If the calculated time is in the future, it's the next run
+            if test_run > now:
+                next_run = test_run
+                break
 
-    if next_run:
+        # If no valid time found today, pick the earliest time tomorrow
+        if next_run is None:
+            earliest_hour = hour_list[0]
+            if minute == '*':
+                next_run = now.replace(hour=earliest_hour, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+            else:
+                next_run = now.replace(hour=earliest_hour, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
+        
         print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
-    else:
-        print('Unable to reliably parse and calculate next cron expression, using next hour')
-        print((now + datetime.timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S'))
+
+    except ValueError:
+        # Catch errors from int() conversion for non-numeric/complex cron expressions
+        print('Unable to reliably parse and calculate next cron expression')
 else:
     print('Unable to parse cron expression')
 "
@@ -384,7 +314,7 @@ CRONEOF
 echo "TZ=${CRON_TZ}" >> /etc/cron.d/umtk-cron
 echo "" >> /etc/cron.d/umtk-cron
 
-
+# FIX 1: Correctly wrap the gosu/su command in /bin/bash -c "..." for system crontab
 if command -v gosu &> /dev/null; then
     GOSU_CMD=$(which gosu)
     # The entire command to be executed by 'root' needs to be wrapped for redirection
@@ -407,6 +337,7 @@ fix_media_permissions
 log "${GREEN}Running UMTK on startup...${NC}"
 gosu $PUID:$PGID bash -c "/app/run-umtk.sh"
 
+# FIX 2: Remove duplicate logging of next scheduled run time
 # The next run time is already logged by /app/run-umtk.sh during the startup run.
 log "${BLUE}Container is now running. Use docker logs -f umtk to follow the logs${NC}"
 
