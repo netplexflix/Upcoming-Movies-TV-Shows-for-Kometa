@@ -9,6 +9,9 @@ It accomplishes this by:
   - For TV Shows, the Trailer or placeholder file is saved as a "special"(S00E00)
 - Creating collection and overlay .yml files which can be used with [Kometa](https://kometa.wiki/en/latest/) (formerly Plex Meta Manager)
 
+UMTK can also use MDBList to create "Trending" categories and create placeholder files for missing items with an overlay indicating that a request is required.
+Optionally applies a TOP 10 ranking overlay.
+
 ## Examples:
 
 ### Movies:
@@ -18,6 +21,11 @@ It accomplishes this by:
 ### TV Shows:
 
 ![Image](https://github.com/user-attachments/assets/3f9beeca-2c7e-4c34-bbda-5293c6d45a8c)
+
+### Trending Movies:
+
+<img width="1636" height="372" alt="Image" src="https://github.com/user-attachments/assets/4cc2511a-40aa-4476-9fb2-7f054708e271" />
+In this example the movie "Dracula" has not been added to Radarr (and is not available).
 
 ---
 
@@ -40,10 +48,11 @@ It accomplishes this by:
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
 - [⚙️ Configuration](#️-configuration)
   - [General](#general)
-  - [Movie Settings](#movie-settings)
-  - [TV Show Settings](#tv-show-settings)
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
+  - [Movie Settings](#movie-settings)
+  - [TV Show Settings](#tv-show-settings)
+  - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
 - [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
@@ -218,8 +227,8 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 
 ### General:
 
-- **movies**: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-- **tv**: 1 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
 - **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
@@ -227,13 +236,25 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
+### Radarr Configuration (for Movies):
+
+- **radarr_url:** Your Radarr URL (default: `http://localhost:7878`)
+- **radarr_api_key:** Found in Radarr under Settings → General → Security
+- **radarr_timeout:** Increase if needed for large libraries
+
+### Sonarr Configuration (for TV Shows):
+
+- **sonarr_url:** Your Sonarr URL (default: `http://localhost:8989`)
+- **sonarr_api_key:** Found in Sonarr under Settings → General → Security
+- **sonarr_timeout:** Increase if needed for large libraries
+  
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** Set to `false` (default) to include already-released but not-downloaded movies
 - **exclude_radarr_tags**: Skip movies with these tags
-- **umtk_root_movies**: Leave empty to use the default Radarr root. Enter a custom root if desired.
+- **umtk_root_movies**: Leave empty to use the default Radarr root. Enter a custom root if desired. Required for using trending_movies.
 
 ### TV Show Settings:
 
@@ -241,17 +262,18 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
 - **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
 - **exclude_sonarr_tags**: Skip TV Shows with these tags
-- **umtk_root_tv**: Leave empty to use the default Sonarr root. Enter a custom root if desired.
+- **umtk_root_tv**: Leave empty to use the default Sonarr root. Enter a custom root if desired. Required for using trending_tv.
 
-### Radarr Configuration (for Movies):
-
-- **radarr_url:** Your Radarr URL (default: `http://localhost:7878`)
-- **radarr_api_key:** Found in Radarr under Settings → General → Security
-
-### Sonarr Configuration (for TV Shows):
-
-- **sonarr_url:** Your Sonarr URL (default: `http://localhost:8989`)
-- **sonarr_api_key:** Found in Sonarr under Settings → General → Security
+### Trending:
+- **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
+- **mdblist_movies:** which trending movies list to use. you can create your own.
+- **mdblist_movies_limit:** How many items to pull from the trending movies list
+- **mdblist_tv:** which trending TV shows list to use. you can create your own.
+- **mdblist_tv_limit:** ow many items to pull from the trending TV shows list
+> [!TIP]
+> With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
 
 ### Overlay & Collection Settings:
 
@@ -300,15 +322,19 @@ Example:
 TV Shows:
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_TRENDING_COLLECTION.yml
   overlay_files:
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_TV_TOP10_OVERLAYS.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
 
 Movies:
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_TRENDING_COLLECTION.yml
   overlay_files:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_TOP10_OVERLAYS.yml
 ```
 
 ---

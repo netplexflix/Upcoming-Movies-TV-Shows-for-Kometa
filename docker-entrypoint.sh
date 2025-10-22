@@ -131,17 +131,47 @@ if len(parts) == 5:
     minute, hour, day, month, dow = parts
     now = datetime.datetime.now()
     
-    # Simple calculation for next run (basic implementation)
-    next_hour = int(hour) if hour != '*' else now.hour
-    next_minute = int(minute) if minute != '*' else now.minute
-    
-    # Calculate next run time
-    next_run = now.replace(hour=next_hour, minute=next_minute, second=0, microsecond=0)
-    
-    # If time has passed today, move to tomorrow
-    if next_run <= datetime.timedelta(days=1)
-    
-    print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
+    try:
+        # Handle minute: if '*' use 0, otherwise try to get the first minute
+        target_minute = int(minute.split(',')[0]) if minute != '*' else 0
+
+        # Handle hours: split and sort the list of hours
+        if hour == '*':
+            hour_list = list(range(24))
+        else:
+            hour_list = [int(h) for h in hour.split(',')]
+            hour_list.sort()
+
+        # Find the next valid run time (today or tomorrow)
+        next_run = None
+        
+        # Check for a run time today
+        for h in hour_list:
+            # Check for simple '*' minute and specific hour
+            if minute == '*':
+                # If minute is '*', run at the top of the next hour
+                test_run = now.replace(hour=h, minute=0, second=0, microsecond=0)
+            else:
+                test_run = now.replace(hour=h, minute=target_minute, second=0, microsecond=0)
+            
+            # If the calculated time is in the future, it's the next run
+            if test_run > now:
+                next_run = test_run
+                break
+
+        # If no valid time found today, pick the earliest time tomorrow
+        if next_run is None:
+            earliest_hour = hour_list[0]
+            if minute == '*':
+                next_run = now.replace(hour=earliest_hour, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+            else:
+                next_run = now.replace(hour=earliest_hour, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
+        
+        print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
+
+    except ValueError:
+        # Catch errors from int() conversion for non-numeric/complex cron expressions
+        print('Unable to reliably parse and calculate next cron expression')
 else:
     print('Unable to parse cron expression')
 "
@@ -168,28 +198,151 @@ fix_media_permissions() {
     fi
 }
 
+# Create a wrapper script that includes the next schedule calculation
+cat > /app/run-umtk.sh << WRAPPER_EOF
+#!/bin/bash
+
+# Set timezone if TZ is set
+if [ -n "\${TZ}" ]; then
+    export TZ="\${TZ}"
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to log with timestamp
+log() {
+    echo -e "[\$(date '+%Y-%m-%d %H:%M:%S')] \$1"
+}
+
+# Function to get next cron run time
+get_next_cron_time() {
+    python3 -c "
+import datetime
+
+cron_expression = '${CRON}'
+parts = cron_expression.split()
+if len(parts) == 5:
+    minute, hour, day, month, dow = parts
+    now = datetime.datetime.now()
+    
+    try:
+        # Handle minute: if '*' use 0, otherwise try to get the first minute
+        target_minute = int(minute.split(',')[0]) if minute != '*' else 0
+
+        # Handle hours: split and sort the list of hours
+        if hour == '*':
+            hour_list = list(range(24))
+        else:
+            hour_list = [int(h) for h in hour.split(',')]
+            hour_list.sort()
+
+        # Find the next valid run time (today or tomorrow)
+        next_run = None
+        
+        # Check for a run time today
+        for h in hour_list:
+            # Check for simple '*' minute and specific hour
+            if minute == '*':
+                # If minute is '*', run at the top of the next hour
+                test_run = now.replace(hour=h, minute=0, second=0, microsecond=0)
+            else:
+                test_run = now.replace(hour=h, minute=target_minute, second=0, microsecond=0)
+            
+            # If the calculated time is in the future, it's the next run
+            if test_run > now:
+                next_run = test_run
+                break
+
+        # If no valid time found today, pick the earliest time tomorrow
+        if next_run is None:
+            earliest_hour = hour_list[0]
+            if minute == '*':
+                next_run = now.replace(hour=earliest_hour, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+            else:
+                next_run = now.replace(hour=earliest_hour, minute=target_minute, second=0, microsecond=0) + datetime.timedelta(days=1)
+        
+        print(next_run.strftime('%Y-%m-%d %H:%M:%S'))
+
+    except ValueError:
+        # Catch errors from int() conversion for non-numeric/complex cron expressions
+        print('Unable to reliably parse and calculate next cron expression')
+else:
+    print('Unable to parse cron expression')
+"
+}
+
+cd /app
+export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH
+/usr/local/bin/python UMTK.py
+
+# Calculate and display next run time
+NEXT_RUN=\$(get_next_cron_time)
+log "\${BLUE}Next execution scheduled for: \${NEXT_RUN}\${NC}"
+WRAPPER_EOF
+
+chmod +x /app/run-umtk.sh
+chown $PUID:$PGID /app/run-umtk.sh
+
 # Get next scheduled run time
 NEXT_RUN=$(get_next_cron_time)
 
-# Setup cron job to run as umtk user
+# Setup cron job - Run as root and use gosu to switch to umtk user
 log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
-echo "$CRON gosu $PUID:$PGID bash -c 'cd /app && DOCKER=true /usr/local/bin/python UMTK.py >> /app/logs/umtk.log 2>&1'" > /etc/cron.d/umtk-cron
+
+# Find the full path to gosu, fallback to su if gosu not available
+if command -v gosu &> /dev/null; then
+    SWITCH_USER_CMD="$(which gosu) ${PUID}:${PGID}"
+    log "${BLUE}Using gosu to switch users${NC}"
+else
+    SWITCH_USER_CMD="su -s /bin/bash umtk -c"
+    log "${BLUE}Using su to switch users${NC}"
+fi
+
+# Get TZ for cron
+CRON_TZ="${TZ:-UTC}"
+
+cat > /etc/cron.d/umtk-cron << 'CRONEOF'
+PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+SHELL=/bin/bash
+CRONEOF
+
+echo "TZ=${CRON_TZ}" >> /etc/cron.d/umtk-cron
+echo "" >> /etc/cron.d/umtk-cron
+
+# FIX 1: Correctly wrap the gosu/su command in /bin/bash -c "..." for system crontab
+if command -v gosu &> /dev/null; then
+    GOSU_CMD=$(which gosu)
+    # The entire command to be executed by 'root' needs to be wrapped for redirection
+    echo "${CRON} root /bin/bash -c \"${GOSU_CMD} ${PUID}:${PGID} /app/run-umtk.sh >> /app/logs/umtk.log 2>&1\"" >> /etc/cron.d/umtk-cron
+else
+    # su command already properly wrapped for redirection
+    echo "${CRON} root /bin/bash -c \"su -s /bin/bash umtk -c '/app/run-umtk.sh' >> /app/logs/umtk.log 2>&1\"" >> /etc/cron.d/umtk-cron
+fi
+
 chmod 0644 /etc/cron.d/umtk-cron
 crontab /etc/cron.d/umtk-cron
 
-log "${GREEN}Next scheduled run: ${NEXT_RUN}${NC}"
+log "${BLUE}Cron job installed. Contents:${NC}"
+cat /etc/cron.d/umtk-cron | tail -1
 
 # Fix media permissions before running
 fix_media_permissions
 
 # Run once on startup as umtk user with explicit UID:GID
 log "${GREEN}Running UMTK on startup...${NC}"
-gosu $PUID:$PGID bash -c "cd /app && DOCKER=true /usr/local/bin/python UMTK.py"
+gosu $PUID:$PGID bash -c "/app/run-umtk.sh"
 
-# Start cron and keep container running
-log "${BLUE}Starting scheduled execution...${NC}"
-log "${BLUE}Container is now running. Next execution scheduled for: ${NEXT_RUN}${NC}"
-log "${BLUE}Use docker logs -f umtk to follow the logs${NC}"
+# FIX 2: Remove duplicate logging of next scheduled run time
+# The next run time is already logged by /app/run-umtk.sh during the startup run.
+log "${BLUE}Container is now running. Use docker logs -f umtk to follow the logs${NC}"
+
+# Tail the log file to docker logs in the background
+tail -F /app/logs/umtk.log &
 
 # Start cron in foreground
 exec cron -f
