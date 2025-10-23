@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.22"
+VERSION = "2025.10.23"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1108,6 +1108,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
                 'ignoreerrors': False,
                 'quiet': not debug,
                 'no_warnings': not debug,
+                'extractor_args': {'youtube': {'player_js_version': ['actual']}}
             }
             
             # Add cookies if available
@@ -1270,6 +1271,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
                 'ignoreerrors': False,
                 'quiet': not debug,
                 'no_warnings': not debug,
+                'extractor_args': {'youtube': {'player_js_version': ['actual']}}
             }
             
             if cookies_path:
