@@ -251,12 +251,13 @@ fix_media_permissions() {
 }
 
 # Create a wrapper script that includes the next schedule calculation
-cat > /app/run-umtk.sh << 'WRAPPER_EOF'
+# NOTE: Using double quotes to allow ${CRON} interpolation at creation time
+cat > /app/run-umtk.sh << WRAPPER_EOF
 #!/bin/bash
 
 # Set timezone if TZ is set
-if [ -n "${TZ}" ]; then
-    export TZ="${TZ}"
+if [ -n "\${TZ}" ]; then
+    export TZ="\${TZ}"
 fi
 
 # Colors for output
@@ -268,7 +269,7 @@ NC='\033[0m' # No Color
 
 # Function to log with timestamp
 log() {
-    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo -e "[\$(date '+%Y-%m-%d %H:%M:%S')] \$1"
 }
 
 # Function to get next cron run time
@@ -381,12 +382,12 @@ except (ValueError, IndexError) as e:
 }
 
 cd /app
-export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:$PATH
+export DOCKER=true PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PATH=/usr/local/bin:\$PATH
 /usr/local/bin/python UMTK.py
 
 # Calculate and display next run time
-NEXT_RUN=$(get_next_cron_time)
-log "${BLUE}Next execution scheduled for: ${NEXT_RUN}${NC}"
+NEXT_RUN=\$(get_next_cron_time)
+log "\${BLUE}Next execution scheduled for: \${NEXT_RUN}\${NC}"
 WRAPPER_EOF
 
 chmod +x /app/run-umtk.sh
