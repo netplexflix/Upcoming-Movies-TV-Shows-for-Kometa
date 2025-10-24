@@ -1,0 +1,266 @@
+################################################################################
+##########                         GENERAL:                           ##########
+################################################################################
+movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+method_fallback: true
+utc_offset: +0
+debug: false
+cleanup: true
+
+skip_channels:
+  - "Starlight Cinema"
+  - "fake trailers"
+  - "Black And White Media"
+  - "CircleX Creations"
+  - "New Movie Updates"
+
+################################################################################
+##########                   RADARR CONFIGURATION:                    ##########
+################################################################################
+radarr_url: 'http://localhost:7878'
+radarr_api_key: 'YOUR_RADARR_API_KEY'
+radarr_timeout: 90
+ 
+################################################################################
+##########                   SONARR CONFIGURATION:                    ##########
+################################################################################
+sonarr_url: 'http://localhost:8989'
+sonarr_api_key: 'YOUR_SONARR_API_KEY'
+sonarr_timeout: 90
+
+################################################################################
+##########                   COMING SOON MOVIES:                      ##########
+################################################################################
+future_days_upcoming_movies: 30
+include_inCinemas: false
+future_only: false
+exclude_radarr_tags: exclude, private
+umtk_root_movies: # Required for trending
+
+################################################################################
+##########                   COMING SOON TV SHOWS:                    ##########
+################################################################################
+future_days_upcoming_shows: 30
+recent_days_new_show: 7
+future_only_tv: false
+exclude_sonarr_tags: exclude, private
+umtk_root_tv: # Required for trending
+
+################################################################################
+##########                        TRENDING:                           ##########
+################################################################################
+trending_movies: 0
+trending_tv: 0
+mdblist_api_key: YOUR_MDBLIST_API_KEY
+mdblist_movies: https://mdblist.com/lists/linaspurinis/trending-movies-list
+mdblist_movies_limit: 10
+mdblist_tv: https://mdblist.com/lists/adamosborne01/trending-shows1
+mdblist_tv_limit: 10
+  
+################################################################################
+##########                UPCOMING MOVIES COLLECTION:                 ##########
+################################################################################
+collection_upcoming_movies:
+  collection_name: "ComingSoon"
+  item_label: Coming Soon
+  non_item_remove_label: Coming Soon
+  build_collection: false
+
+################################################################################
+##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########
+################################################################################  
+backdrop_upcoming_movies_future:
+  enable: true
+  name: comingsoon_movies_future
+  file: config/overlays/Tallinex_overlay.png
+
+text_upcoming_movies_future:
+  use_text: ""
+  date_format: "d mmmm"
+  capitalize_dates: true
+  horizontal_align: center
+  horizontal_offset: 30
+  vertical_align: top
+  vertical_offset: 280
+  font_size: 80
+  font_color: "#e0e0e0"
+
+################################################################################
+##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########
+################################################################################  
+backdrop_upcoming_movies_released:
+  enable: true
+  name: comingsoon_movies_released
+  file: config/overlays/Tallinex_overlay.png
+
+text_upcoming_movies_released:
+  use_text: ""
+  horizontal_align: center
+  horizontal_offset: 30
+  vertical_align: top
+  vertical_offset: 280
+  font_size: 80
+  font_color: "#e0e0e0"
+
+################################################################################
+##########                UPCOMING SHOWS COLLECTION:                  ##########
+################################################################################
+collection_upcoming_shows:
+  collection_name: "ComingSoon"
+  item_label: Coming Soon
+  non_item_remove_label: Coming Soon
+  build_collection: false
+
+################################################################################
+##########               UPCOMING SHOWS OVERLAY FUTURE:               ##########
+################################################################################
+backdrop_upcoming_shows:
+  enable: true
+  name: comingsoon_tv_future
+  file: config/overlays/Tallinex_overlay.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_upcoming_shows:
+  use_text: ""
+  date_format: "d mmmm"
+  capitalize_dates: true
+  horizontal_align: center
+  horizontal_offset: 30
+  vertical_align: top
+  vertical_offset: 280
+  font_size: 80
+  font_color: "#e0e0e0"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########                UPCOMING SHOWS OVERLAY AIRED:               ##########
+################################################################################  
+backdrop_upcoming_shows_aired:
+  enable: true
+  name: comingsoon_tv_aired
+  file: config/overlays/Tallinex_overlay.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_upcoming_shows_aired:
+  use_text: ""
+  horizontal_align: center
+  horizontal_offset: 30
+  vertical_align: top
+  vertical_offset: 280
+  font_size: 80
+  font_color: "#e0e0e0"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########                        NEW SHOWS:                          ##########
+################################################################################
+backdrop_new_show:
+  enable: true
+  back_color: "#EB3233"
+  back_height: 90
+  back_width: 950
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 20
+  group: TSSK_backdrop
+  weight: 50
+
+text_new_show:
+  use_text: "RECENTLY ADDED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 35
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 50
+
+################################################################################
+##########                TRENDING MOVIES COLLECTION:                 ##########
+################################################################################
+collection_trending_movies:
+  collection_name: "Trending Movies"
+  item_label: UMTKTrending
+  non_item_remove_label: UMTKTrending
+  collection_order: custom
+  sync_mode: sync
+
+
+################################################################################
+##########           TRENDING MOVIES OVERLAY REQUEST NEEDED:          ##########
+################################################################################  
+backdrop_trending_movies_request_needed:
+  enable: true
+  name: red_frame
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame.png
+
+text_trending_movies_request_needed:
+  use_text: "REQUEST NEEDED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: top
+  vertical_offset: 20
+  font_size: 70
+  font_color: "#FFFFFF"
+
+################################################################################
+##########                TRENDING SHOWS COLLECTION:                  ##########
+################################################################################
+collection_trending_shows:
+  collection_name: "Trending Shows"
+  item_label: UMTKTrending
+  non_item_remove_label: UMTKTrending
+  collection_order: custom
+  sync_mode: sync
+
+
+################################################################################
+##########           TRENDING SHOWS OVERLAY REQUEST NEEDED:           ##########
+################################################################################  
+backdrop_trending_shows_request_needed:
+  enable: true
+  name: red_frame_bottom
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame_bottom.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_trending_shows_request_needed:
+  use_text: "REQUEST NEEDED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 17
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########                  TRENDING TOP 10 OVERLAY:                  ##########
+################################################################################
+backdrop_trending_top_10:
+  enable: false
+  name: top10
+  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/TOP10.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_trending_top_10:
+  horizontal_align: right
+  horizontal_offset: 25
+  vertical_align: bottom
+  vertical_offset: 25
+  font: fonts/Roboto-Black.ttf
+  font_size: 300
+  font_color: "#ff0000"
+  stroke_color: "#ffffff"
+  stroke_width: 6
+  group: TSSK_text
+  weight: 100
