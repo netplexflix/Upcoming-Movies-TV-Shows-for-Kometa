@@ -1,8 +1,0 @@
-name: Disabled Workflow
-on:
-  workflow_dispatch:
-jobs:
-  disabled:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo 'This workflow is temporarily disabled'
