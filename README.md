@@ -394,7 +394,7 @@ python UMTK.py
 
 ## 💡 Tips & Best Practices
 
-### Exclude Upcoming Content from "Recently Added" Sections
+### Exclude UMTK Content from "Recently Added" Sections
 
 Since UMTK adds content before it's actually available, you'll want to exclude it from "Recently Added" sections:
 
@@ -403,7 +403,7 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 1. Go to your TV show library
 2. Sort by "Last Episode Date Added"
 3. Click '+' → "Create Smart Collection"
-4. Add filter: `Label` `is not` `Coming Soon` (or whatever you used as collection_name. Since the collection yml uses smart_label, Kometa adds that label to the relevant shows, so you can exclude these shows based on that label. The label will be automatically removed by Kometa once the show is no longer 'upcoming' so when the first episode is added, it will show up)
+4. Add filter: `Label` `is not` `Coming Soon` (or whatever you used as collection_name. Since the collection yml uses smart_label, Kometa adds that label to the relevant shows, so you can exclude these shows based on that label. The label will be automatically removed by Kometa once the show is no longer 'upcoming' so when the first episode is added, it will show up). If you are using the Trending feature then also add a filter for `folder location` `is not` `your umtk_root_tv folder`.
 5. Press 'Save As' > 'Save As Smart Collection'
 6. Name it something like "New in TV Shows📺"
 7. In the new collection click the three dots then "Visible on" > "Home"
