@@ -65,6 +65,13 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
   - [Prevent Request Platforms from marking coming soon items as available](#Prevent-Request-Platforms-from-marking-coming-soon-items-as-available)
 - [🩺 Troubleshooting Common Issues:](#-troubleshooting-common-issues)
+  - [❌ "Connection refused" to Sonarr/Radarr](#-connection-refused-to-sonarrradarr)
+  - [❌ "Permission denied" errors](#-permission-denied-errors)
+  - [❌ "No config.yml found"](#-no-configyml-found)
+  - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
+  - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
+
+
 
 ---
 
@@ -473,34 +480,25 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 
 ## 🩺 Troubleshooting Common Issues:
 
-**❌ "Connection refused" to Sonarr/Radarr:**
+### ❌ "Connection refused" to Sonarr/Radarr:
+- **First**: Make sure Sonarr and Radarr are actually running on your computer.
+- Check that the URLs in `config.yml` are correct (e.g., `http://localhost:8989` for Sonarr).
+- If using docker, use `ipaddress:8989` or `host.docker.internal:8989`.
+- If using IP addresses (e.g., `192.168.1.100`), make sure they're correct and accessible.
 
-- **First**: Make sure Sonarr and Radarr are actually running on your computer
-- Check that the URLs in `config.yml` are correct (e.g., `http://localhost:8989` for Sonarr)
-- If using `localhost`, make sure the services are running on the same computer as Docker
-- If using IP addresses (e.g., `192.168.1.100`), make sure they're correct and accessible
-- The container uses `network_mode: "host"` to access localhost services
+### ❌ "Permission denied" errors:
+- Check your Docker path mounts in your container or docker-compose.
+- Check whether the PGID:PUID you set in docker-compose has the correct permissions .
 
-**❌ "Permission denied" errors:**
-
-- Make sure Docker Desktop is running
-- Try running: `docker-compose down && docker-compose up -d`
-
-**❌ "No config.yml found":**
-
+### ❌ "No config.yml found":
 - Make sure you renamed `config.sample.yml` to `config.yml`
 - Check that the `config` folder is properly mounted
 
-**❌ Container keeps restarting:**
-
-- Check logs: `docker-compose logs umtk`
-- Verify your `config.yml` settings are correct
-
-**❌ yt-dlp fails to download Trailers:**
+### ❌ yt-dlp fails to download Trailers:
 - There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. If you manually run the script, you can try updating yt-dlp. Report the issue so the requirements can be updated in the Docker image if needed.
-- As a temporary workaround, set `method_fallback: true` in config to fallback to the Placeholder video method if trailer downloads fail.
+- Make sure you set `method_fallback: true` in config to fallback to the Placeholder video method when trailer downloads fail.
 
-**❌ A bunch of old movies/shows are being added as Coming Soon**
+### ❌ A bunch of old movies/shows are being added as Coming Soon
 - That means you have those items monitored in Radarr/Sonarr but not downloaded.
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
