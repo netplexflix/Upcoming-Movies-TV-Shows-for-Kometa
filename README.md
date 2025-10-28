@@ -68,7 +68,6 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [❌ "Connection refused" to Sonarr/Radarr](#-connection-refused-to-sonarrradarr)
   - [❌ "Permission denied" errors](#-permission-denied-errors)
   - [❌ "No config.yml found"](#-no-configyml-found)
-  - [❌ Container keeps restarting](#-container-keeps-restarting)
   - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
 
