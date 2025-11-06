@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.23"
+VERSION = "2025.11.06"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -1159,6 +1159,9 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
                     if debug:
                         print(f"{ORANGE}[DEBUG] Could not create trending marker: {e}{RESET}")
             
+            # Mark as actual trailer (not placeholder)
+            show['used_trailer'] = True
+            
             return True
 
         print(f"{RED}Trailer file not found after download for {show['title']}{RESET}")
@@ -1362,7 +1365,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         season_00_path = parent_dir / "Season 00"
         
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
+    dest_file = season_00_path / f"{clean_title}.S00E00.Coming.Soon{video_extension}"
     
     if debug:
         print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
@@ -1376,6 +1379,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     if dest_file.exists():
         if debug:
             print(f"{ORANGE}[DEBUG] Placeholder file already exists for {show['title']}: {dest_file}{RESET}")
+        show['used_trailer'] = False
         return True
     
     # Create parent directory if it doesn't exist
@@ -1447,6 +1451,9 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             except Exception as e:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not create trending marker: {e}{RESET}")
+        
+        # Mark as placeholder (not trailer)
+        show['used_trailer'] = False
         
         return True
     except Exception as e:
@@ -1694,12 +1701,13 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         if debug:
             print(f"{BLUE}[DEBUG] Checking show folder: {show_folder_name} (trending: {is_trending}, in Sonarr: {series is not None}){RESET}")
         
-        trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*"))
+        # Look for both trailer and coming soon files
+        trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*")) + list(season_00_path.glob("*.S00E00.Coming.Soon.*"))
         
         for trailer_file in trailer_files:
             checked_count += 1
             if debug:
-                print(f"{BLUE}[DEBUG] Checking trailer: {trailer_file.name} (trending: {is_trending}){RESET}")
+                print(f"{BLUE}[DEBUG] Checking file: {trailer_file.name} (trending: {is_trending}){RESET}")
             
             should_remove = False
             removal_reason = ""
@@ -1797,66 +1805,126 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                         print(f"{BLUE}[DEBUG] Keeping content for {series['title']} - still in valid shows list{RESET}")
             
             if should_remove:
-                # Check write permission before attempting deletion
-                if not os.access(trailer_file, os.W_OK):
-                    print(f"{RED}Permission denied: Cannot remove {trailer_file.name} for {display_title}{RESET}")
-                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
-                    continue
-                
-                # Check parent directory write permission
-                if not os.access(season_00_path, os.W_OK):
-                    print(f"{RED}Permission denied: No write access to directory {season_00_path}{RESET}")
-                    print(f"{RED}Directory owner: {get_file_owner(season_00_path)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}Directory permissions: {oct(season_00_path.stat().st_mode)[-3:]}{RESET}")
-                    continue
-                
-                try:
-                    # Ensure directory has write permission before deletion
+                # If using umtk_root_tv, delete the entire show folder
+                if umtk_root_tv:
+                    # Check write permission before attempting deletion
+                    if not os.access(show_dir, os.W_OK):
+                        print(f"{RED}Permission denied: Cannot remove show folder {show_dir.name} for {display_title}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    # Check parent directory write permission
+                    parent_dir = show_dir.parent
+                    if not os.access(parent_dir, os.W_OK):
+                        print(f"{RED}Permission denied: No write access to parent directory {parent_dir}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
                     try:
-                        os.chmod(season_00_path, 0o755)
+                        # Ensure directory has write permission before deletion
+                        try:
+                            os.chmod(show_dir, 0o755)
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Set permissions 755 on {show_dir}{RESET}")
+                        except Exception as perm_err:
+                            if debug:
+                                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                        
+                        # Calculate total size
+                        total_size = sum(f.stat().st_size for f in show_dir.rglob('*') if f.is_file())
+                        size_mb = total_size / (1024 * 1024)
+                        
+                        shutil.rmtree(show_dir)
+                        
+                        removed_count += 1
+                        content_type = "trending content" if is_trending else "content"
+                        print(f"{GREEN}Removed show folder for {display_title} - {removal_reason} ({size_mb:.1f} MB freed){RESET}")
                         if debug:
-                            print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
-                    except Exception as perm_err:
-                        if debug:
-                            print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
-                    
-                    file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
-                    trailer_file.unlink()
-                    
-                    # Also remove trending marker if it exists
-                    marker_file = season_00_path / ".trending"
-                    if marker_file.exists():
-                        marker_file.unlink()
-                        if debug:
-                            print(f"{BLUE}[DEBUG] Removed trending marker{RESET}")
-                    
-                    removed_count += 1
-                    content_type = "trending content" if is_trending else "content"
-                    print(f"{GREEN}Removed {content_type} for {display_title} - {removal_reason} ({file_size_mb:.1f} MB freed){RESET}")
-                    if debug:
-                        print(f"{BLUE}[DEBUG] Deleted: {trailer_file}{RESET}")
-                except PermissionError as e:
-                    print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
-                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
-                    # If it's a permission error caught as generic exception, show details
-                    if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{BLUE}[DEBUG] Deleted entire folder: {show_dir}{RESET}")
+                        
+                        # Break after deleting folder since all files are gone
+                        break
+                        
+                    except PermissionError as e:
+                        print(f"{RED}Permission error removing show folder for {display_title}: {e}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"{RED}Error removing show folder for {display_title}: {e}{RESET}")
+                        # If it's a permission error caught as generic exception, show details
+                        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                            print(f"{RED}Current user: {get_user_info()}{RESET}")
+                            if show_dir.exists():
+                                print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                else:
+                    # Original behavior: just delete the file
+                    # Check write permission before attempting deletion
+                    if not os.access(trailer_file, os.W_OK):
+                        print(f"{RED}Permission denied: Cannot remove {trailer_file.name} for {display_title}{RESET}")
                         print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
                         print(f"{RED}Current user: {get_user_info()}{RESET}")
-                        if trailer_file.exists():
-                            print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                        print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    # Check parent directory write permission
+                    if not os.access(season_00_path, os.W_OK):
+                        print(f"{RED}Permission denied: No write access to directory {season_00_path}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(season_00_path)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(season_00_path.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    try:
+                        # Ensure directory has write permission before deletion
+                        try:
+                            os.chmod(season_00_path, 0o755)
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                        except Exception as perm_err:
+                            if debug:
+                                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                        
+                        file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
+                        trailer_file.unlink()
+                        
+                        # Also remove trending marker if it exists
+                        marker_file = season_00_path / ".trending"
+                        if marker_file.exists():
+                            marker_file.unlink()
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Removed trending marker{RESET}")
+                        
+                        removed_count += 1
+                        content_type = "trending content" if is_trending else "content"
+                        print(f"{GREEN}Removed {content_type} for {display_title} - {removal_reason} ({file_size_mb:.1f} MB freed){RESET}")
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Deleted: {trailer_file}{RESET}")
+                    except PermissionError as e:
+                        print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
+                        print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
+                        # If it's a permission error caught as generic exception, show details
+                        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                            print(f"{RED}Current user: {get_user_info()}{RESET}")
+                            if trailer_file.exists():
+                                print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
     
     if removed_count > 0:
-        print(f"{GREEN}TV cleanup complete: Removed {removed_count} file(s) from {checked_count} checked{RESET}")
+        print(f"{GREEN}TV cleanup complete: Removed {removed_count} item(s) from {checked_count} checked{RESET}")
     elif checked_count > 0:
-        print(f"{GREEN}TV cleanup complete: No files needed removal ({checked_count} checked){RESET}")
+        print(f"{GREEN}TV cleanup complete: No items needed removal ({checked_count} checked){RESET}")
     elif debug:
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
@@ -3135,6 +3203,106 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False)
 
+def sanitize_sort_title(title):
+    """Sanitize title for sort_title by removing special characters"""
+    # Remove special characters but keep spaces
+    sanitized = re.sub(r'[:\'"()\[\]{}<>|/\\?*]', '', title)
+    # Clean up multiple spaces
+    sanitized = ' '.join(sanitized.split())
+    return sanitized.strip()
+
+def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False):
+    """Create metadata YAML file for TV shows"""
+    if not all_shows_with_content:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No TV shows with content found")
+        return
+    
+    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    
+    metadata_dict = {}
+    
+    for show in all_shows_with_content:
+        tvdb_id = show.get('tvdbId')
+        if not tvdb_id:
+            continue
+        
+        # Determine if this show used a trailer or placeholder
+        used_trailer = show.get('used_trailer', False)
+        episode_title = "Trailer" if used_trailer else "Coming Soon"
+        
+        show_metadata = {
+            "episodes": {
+                "S00E00": {
+                    "title": episode_title
+                }
+            }
+        }
+        
+        # Add sort_title if append_dates is enabled
+        if append_dates:
+            air_date = show.get('airDate')
+            show_title = show.get('title', 'Unknown')
+            
+            if air_date:
+                # Convert YYYY-MM-DD to YYYYMMDD
+                date_str = air_date.replace('-', '')
+                sanitized_title = sanitize_sort_title(show_title)
+                sort_title = f"{date_str} {sanitized_title}"
+                show_metadata["sort_title"] = sort_title
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] TV metadata for {show_title}: sort_title = {sort_title}, episode_title = {episode_title}{RESET}")
+        
+        metadata_dict[tvdb_id] = show_metadata
+    
+    final_output = {"metadata": metadata_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
+
+def create_movies_metadata_yaml(output_file, all_movies_with_content, config, debug=False):
+    """Create metadata YAML file for movies"""
+    if not all_movies_with_content:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No movies with content found")
+        return
+    
+    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    
+    if not append_dates:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#append_dates_to_sort_titles is disabled")
+        return
+    
+    metadata_dict = {}
+    
+    for movie in all_movies_with_content:
+        tmdb_id = movie.get('tmdbId')
+        if not tmdb_id:
+            continue
+        
+        release_date = movie.get('releaseDate')
+        movie_title = movie.get('title', 'Unknown')
+        
+        if release_date:
+            # Convert YYYY-MM-DD to YYYYMMDD
+            date_str = release_date.replace('-', '')
+            sanitized_title = sanitize_sort_title(movie_title)
+            sort_title = f"{date_str} {sanitized_title}"
+            
+            metadata_dict[tmdb_id] = {
+                "sort_title": sort_title
+            }
+            
+            if debug:
+                print(f"{BLUE}[DEBUG] Movie metadata for {movie_title}: sort_title = {sort_title}{RESET}")
+    
+    final_output = {"metadata": metadata_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
+
 def main():
     start_time = datetime.now()
     print(f"{BLUE}{'*' * 50}\n{'*' * 1}Upcoming Movies & TV Shows for Kometa {VERSION}{'*' * 1}\n{'*' * 50}{RESET}")
@@ -3274,6 +3442,7 @@ def main():
             future_shows = []
             aired_shows = []
             new_shows = []
+            all_shows_with_content = []  # Track shows that got content
             
             if tv_method > 0:
                 # Find upcoming shows
@@ -3334,26 +3503,21 @@ def main():
                             
                             clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
                             
+                            # Check for both trailer and coming soon files
                             trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                            existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                            coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                            existing_trailers = []
+                            if season_00_path.exists():
+                                existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
                             
                             if existing_trailers:
                                 existing_file = existing_trailers[0]
+                                # Determine if it's a trailer or placeholder
+                                show['used_trailer'] = '.Trailer.' in existing_file.name
                                 print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
                                 skipped_existing += 1
                                 successful += 1
-                                continue
-                            
-                            clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                            
-                            trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                            existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
-                            
-                            if existing_trailers:
-                                existing_file = existing_trailers[0]
-                                print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                skipped_existing += 1
-                                successful += 1
+                                all_shows_with_content.append(show)
                                 continue
                         
                         # Process based on method
@@ -3387,6 +3551,7 @@ def main():
                         
                         if success:
                             successful += 1
+                            all_shows_with_content.append(show)
                         else:
                             failed += 1
                     
@@ -3483,46 +3648,21 @@ def main():
                                 # Check for existing content
                                 if season_00_path:
                                     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                    # Check for both trailer and coming soon files
                                     trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                                    coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                                    existing_trailers = []
+                                    if season_00_path.exists():
+                                        existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
                                     
                                     if existing_trailers:
                                         existing_file = existing_trailers[0]
+                                        # Determine if it's a trailer or placeholder
+                                        show['used_trailer'] = '.Trailer.' in existing_file.name
                                         print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
                                         skipped_existing += 1
                                         successful += 1
-                                        continue
-                                
-                                # Determine the path to check
-                                if show_path:
-                                    if umtk_root_tv:
-                                        show_name = Path(show_path).name
-                                        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
-                                    else:
-                                        season_00_path = Path(show_path) / "Season 00"
-                                elif umtk_root_tv:
-                                    # For shows without a path, construct from umtk_root_tv
-                                    show_title = show.get('title', 'Unknown')
-                                    show_year = show.get('year', '')
-                                    if show_year:
-                                        show_folder = sanitize_filename(f"{show_title} ({show_year})")
-                                    else:
-                                        show_folder = sanitize_filename(show_title)
-                                    season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
-                                else:
-                                    season_00_path = None
-                                
-                                # Check for existing content
-                                if season_00_path:
-                                    clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                                    trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
-                                    
-                                    if existing_trailers:
-                                        existing_file = existing_trailers[0]
-                                        print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                        skipped_existing += 1
-                                        successful += 1
+                                        all_shows_with_content.append(show)
                                         continue
                                 
                                 # Process based on method
@@ -3556,6 +3696,7 @@ def main():
                                 
                                 if success:
                                     successful += 1
+                                    all_shows_with_content.append(show)
                                 else:
                                     failed += 1
                             
@@ -3582,6 +3723,7 @@ def main():
             if tv_method > 0 or trending_tv_method > 0:
                 overlay_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
+                metadata_file = kometa_folder / "UMTK_TV_METADATA.yml"
                 
                 create_overlay_yaml_tv(
                     str(overlay_file), future_shows, aired_shows, 
@@ -3602,6 +3744,9 @@ def main():
                                                    "text": config.get("text_new_show", {})})
                 
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
+                
+                # Create metadata file
+                create_tv_metadata_yaml(str(metadata_file), all_shows_with_content, config, debug)
                 
                 print(f"\n{GREEN}TV YAML files created successfully{RESET}")
             
@@ -3664,6 +3809,7 @@ def main():
             # Process regular upcoming movies if movie_method is enabled
             future_movies = []
             released_movies = []
+            all_movies_with_content = []  # Track movies that got content
             
             if movie_method > 0:
                 # Find upcoming movies
@@ -3720,6 +3866,7 @@ def main():
                                     existing_file = existing_files[0]
                                     print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
                                     successful += 1
+                                    all_movies_with_content.append(movie)
                                     continue
                         
                         # Process based on method
@@ -3753,6 +3900,7 @@ def main():
                         
                         if success:
                             successful += 1
+                            all_movies_with_content.append(movie)
                         else:
                             failed += 1
                     
@@ -3850,6 +3998,7 @@ def main():
                                             print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
                                             skipped_existing += 1
                                             successful += 1
+                                            all_movies_with_content.append(movie)
                                             content_exists = True
                                 
                                 if content_exists:
@@ -3886,6 +4035,7 @@ def main():
                                 
                                 if success:
                                     successful += 1
+                                    all_movies_with_content.append(movie)
                                 else:
                                     failed += 1
                             
@@ -3911,6 +4061,7 @@ def main():
             if movie_method > 0 or trending_movies_method > 0:
                 overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_MOVIES_UPCOMING_COLLECTION.yml"
+                metadata_file = kometa_folder / "UMTK_MOVIES_METADATA.yml"
                 
                 create_overlay_yaml_movies(
                     str(overlay_file), future_movies, released_movies,
@@ -3925,6 +4076,9 @@ def main():
                 )
                 
                 create_collection_yaml_movies(str(collection_file), future_movies, released_movies, config)
+                
+                # Create metadata file
+                create_movies_metadata_yaml(str(metadata_file), all_movies_with_content, config, debug)
                 
                 print(f"\n{GREEN}Movie YAML files created successfully{RESET}")
             

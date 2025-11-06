@@ -21,8 +21,8 @@ services:
       # Output directory for generated YAML files (required)
       - ./kometa:/app/kometa
 
-      # Media directories - MUST match your Sonarr/Radarr paths exactly
-      - /mnt/media/movies:/media/movies
-      - /mnt/media/tv:/media/tv
+      # UMTK root folders
+      - /your/actual/path:/umtkmovies #example: /mnt/media/umtk/movies:/umtkmovies
+      - /your/actual/path:/umtktv #example: /mnt/media/umtk/tv:/umtktv
 
     restart: unless-stopped

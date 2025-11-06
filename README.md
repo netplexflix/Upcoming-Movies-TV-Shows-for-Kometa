@@ -54,6 +54,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [TV Show Settings](#tv-show-settings)
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
+- [🗂️ Create your Coming Soon Collection](#️-create-your-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
@@ -115,9 +116,9 @@ services:
       # Output directory for generated YAML files (required)
       - ./kometa:/app/kometa
 
-      # Media directories - MUST match your Sonarr/Radarr paths exactly
-      - /mnt/media/movies:/media/movies
-      - /mnt/media/tv:/media/tv
+      # UMTK root folders
+      - /your/actual/path:/umtkmovies #example: /mnt/media/umtk/movies:/umtkmovies
+      - /your/actual/path:/umtktv #example: /mnt/media/umtk/tv:/umtktv
 
     restart: unless-stopped
 ```
@@ -137,22 +138,30 @@ services:
    - Go to the [GitHub repository](https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa)
    - Download `config/config.sample.yml` and save it as `config/config.yml` in your UMTK folder
    - Download `video/UMTK.mp4` and save it in your `video` folder (if using placeholder method)
-     - You can also use your own video file. Just make sure it is called `UMTK`.
+   - You can also use your own video file. Just make sure it is called `UMTK`.
 
+3. **Create your UMTK video file roots**:
+   - These will be the folders UMTK creates the trailer or placeholder files in. Make sure it's not within your Arr root path.
+   - For example if your Arr roots are `/mnt/media/movies` and `/mnt/media/tv`then you can create `/mnt/media/umtk/movies` and `/mnt/media/umtk/tv`
+   - These are the UMTK roots you have to mount in your docker-compose
+   
 #### Step 4: Configure Your Settings
 - See [⚙️ Configuration](#️-configuration)
 
 #### Step 5: Update Media Paths
-You must update the media paths in the existing `docker-compose.yml` file to match your Sonarr/Radarr setup.
+You must update the media paths in the existing `docker-compose.yml` file.
 
 > [!IMPORTANT]
 > **The format is**: `your-actual-path:container-path`
-1. **Check your Sonarr/Radarr**
-   - To see what paths they use for your media, go to Settings>Media Management>Root Folders
-   - Let's say your Radarr Root folder is simply `/movies`, and the actual full path is `/mnt/media/movies`
-   - Then you have to mount `/mnt/media/movies:/movies`
-   - If you have multiple roots, simply mount all of them.
-3. **Edit the volume paths** in `docker-compose.yml`:
+
+Example:
+   - You created `/mnt/media/umtk/movies` and `/mnt/media/umtk/tv`
+   - In your config you used `umtk_root_movies: /umtkmovies` and `umtk_root_tv: /umtktv`
+   - Then your mounts should look like this:
+   ```
+         - /mnt/media/umtk/movies:/umtkmovies
+         - /mnt/media/umtk/tv:/umtktv
+   ```
 
 > [!TIP]
 > By default UMTK will output the yml files in a subfolder named `kometa`.<br>
@@ -241,6 +250,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues
 - **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
+- **append_dates_to_sort_titles:** Using the metadata files, release dates will be added to sort titles so you can sort in order of release date.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
 ### Radarr Configuration (for Movies):
@@ -261,7 +271,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** Set to `false` (default) to include already-released but not-downloaded movies
 - **exclude_radarr_tags**: Skip movies with these tags
-- **umtk_root_movies**: Leave empty to use the default Radarr root. Enter a custom root if desired. Required for using trending_movies.
+- **umtk_root_movies**: Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ### TV Show Settings:
 
@@ -269,7 +279,12 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
 - **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
 - **exclude_sonarr_tags**: Skip TV Shows with these tags
-- **umtk_root_tv**: Leave empty to use the default Sonarr root. Enter a custom root if desired. Required for using trending_tv.
+- **umtk_root_tv**: Where UMTK will output the tv folder. Docker users: use `/umtktv`
+
+> [!IMPORTANT]
+> You need to add the `umtk_root` folders to your library folders in Plex (or create separate libraries if you prefer).<br>
+> Example for TV:<br>
+> <img width="729" height="525" alt="Image" src="https://github.com/user-attachments/assets/8e3e4f4e-b6b7-4ea2-8238-3040a1ff30fe" />
 
 ### Trending:
 - **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
@@ -311,22 +326,30 @@ The remaining settings customize the output .yml files for Kometa.
 >
 > Dividers can be `/`, `-` or a space
 
-> [!NOTE] 
-> In the config example, I use `build_collection: false`, only applying labels to the content without having Kometa actually creating the collection.
-> I do this because I can then create a smart filter which includes both `Coming Soon` items from UMTK and `New Season Soon` items from TSSK.
-> It also makes the collection more flexible allowing me to easily add/remove filters
-> You can remove `build_collection: false` if you want Kometa to create the collection directly.
+---
+
+## 🗂️ Create your Coming Soon Collection
+
+In the config example, we use `build_collection: false`.<br>
+This will tell Kometa to only apply labels to the content without actually creating the collection directly.<br>
+That way we can manually create a smart filter which includes both `Coming Soon` items from UMTK and `New Season Soon` items from TSSK:<br>
+<img width="754" height="198" alt="Image" src="https://github.com/user-attachments/assets/acd4b521-27a8-457f-b056-9f3a8d130442" /><br>
+It also makes the collection more flexible allowing filters to be easily added and removed.
+
+You can replace `build_collection: false` with your own [Kometa collection variables](https://metamanager.wiki/en/latest/files/collections/) to have Kometa create the collection directly.
 
 ---
 
 ## ☄️ Add to Kometa Configuration
 
-Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMFK .yml files under `collection_files` and `overlay_files`.
+Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `metadata_files`, `collection_files` and `overlay_files`.
 
 Example:
 
 ```yaml
 TV Shows:
+  metadata_files:
+    - file: /path/to/UMTK/kometa/UMTK_TV_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_TRENDING_COLLECTION.yml
@@ -336,6 +359,8 @@ TV Shows:
     - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
 
 Movies:
+  metadata_files:
+    - file: /path/to/UMTK/kometa/UMTK_MOVIES_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_TRENDING_COLLECTION.yml
@@ -410,7 +435,7 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 1. Go to your TV show library
 2. Sort by "Last Episode Date Added"
 3. Click '+' → "Create Smart Collection"
-4. Add filter: `Label` `is not` `Coming Soon` (or whatever you used as collection_name. Since the collection yml uses smart_label, Kometa adds that label to the relevant shows, so you can exclude these shows based on that label. The label will be automatically removed by Kometa once the show is no longer 'upcoming' so when the first episode is added, it will show up). If you are using the Trending feature then also add a filter for `folder location` `is not` `your umtk_root_tv folder`.
+4. Add filter: `Folder Location` `is not` `your umtk_root_tv folder` 
 5. Press 'Save As' > 'Save As Smart Collection'
 6. Name it something like "New in TV Shows📺"
 7. In the new collection click the three dots then "Visible on" > "Home"
@@ -456,20 +481,7 @@ Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 Request platforms such as Ombi and Overseerr check Plex for availability instead of Radarr/Sonarr. Therefor they will mark 'coming soon' items as available even though Radarr and Sonarr will correctly see them as 'missing'<br>
 To avoid this you can choose to create seperate libraries for your 'coming soon' items.
 
-- Use new custom roots for coming soon content under `umtk_root_movies` and `umtk_root_tv`
-Examples:
-
-```yaml
-umtk_root_movies: P:/umtk movies
-umtk_root_tv: P:/umtk tv
-```
-
-```yaml
-umtk_root_movies: /mnt/media/umtk movies
-umtk_root_tv: /mnt/media/umtk tv
-```
-
-- In Plex, create new Coming Soon Libraries pointed to these new roots.
+- In Plex, create new Coming Soon Libraries pointed to the umtk_root folder.
 - Add these new libraries to your Kometa config and add the collection and overlay .yml files there.
 - In Ombi/Overseerr/... unmonitor these libraries
 <img width="638" height="191" alt="Image" src="https://github.com/user-attachments/assets/6a7ff130-12dc-42dd-bb50-4686af9e0e28" />
