@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.06"
+VERSION = "2025.11.07"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -475,7 +475,7 @@ def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_sh
             }
             
             # Categorize based on whether it has aired or not
-            if air_date > now_local:
+            if air_date >= now_local:
                 future_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
@@ -637,11 +637,11 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
             'releaseType': release_type
         }
         
-        if release_date > now_local and release_date <= cutoff_date:
+        if release_date >= now_local and release_date <= cutoff_date:
             future_movies.append(movie_dict)
             if debug:
                 print(f"{GREEN}[DEBUG] Added to future movies: {movie['title']}{RESET}")
-        elif release_date <= now_local and not future_only:
+        elif release_date < now_local and not future_only:
             released_movies.append(movie_dict)
             if debug:
                 print(f"{GREEN}[DEBUG] Added to released movies: {movie['title']}{RESET}")
@@ -1795,7 +1795,7 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                                 if air_date > cutoff_date:
                                     should_remove = True
                                     removal_reason = f"first episode is beyond {future_days_upcoming_shows} day range"
-                                elif future_only_tv and air_date <= now_local:
+                                elif future_only_tv and air_date < now_local:
                                     should_remove = True
                                     removal_reason = "aired show excluded due to future_only_tv=True"
                             else:
@@ -3211,21 +3211,39 @@ def sanitize_sort_title(title):
     sanitized = ' '.join(sanitized.split())
     return sanitized.strip()
 
-def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False):
+def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False, sonarr_url=None, api_key=None, all_series=None, sonarr_timeout=90):
     """Create metadata YAML file for TV shows"""
-    if not all_shows_with_content:
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("#No TV shows with content found")
-        return
+    # Read existing metadata file to track previously modified shows
+    previously_modified_tvdb_ids = set()
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'metadata' in existing_data:
+                # Only include shows that have sort_title starting with !yyyymmdd
+                for tvdb_id, metadata in existing_data['metadata'].items():
+                    sort_title = metadata.get('sort_title', '')
+                    # Check if sort_title starts with ! followed by 8 digits
+                    if sort_title and sort_title.startswith('!') and len(sort_title) > 9:
+                        date_part = sort_title[1:9]  # Extract the 8 characters after !
+                        if date_part.isdigit():
+                            previously_modified_tvdb_ids.add(tvdb_id)
+    except FileNotFoundError:
+        pass  # First run, no existing file
+    except Exception as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
     
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     
     metadata_dict = {}
+    current_tvdb_ids = set()
     
     for show in all_shows_with_content:
         tvdb_id = show.get('tvdbId')
         if not tvdb_id:
             continue
+        
+        current_tvdb_ids.add(tvdb_id)
         
         # Determine if this show used a trailer or placeholder
         used_trailer = show.get('used_trailer', False)
@@ -3248,13 +3266,47 @@ def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=F
                 # Convert YYYY-MM-DD to YYYYMMDD
                 date_str = air_date.replace('-', '')
                 sanitized_title = sanitize_sort_title(show_title)
-                sort_title = f"{date_str} {sanitized_title}"
+                sort_title = f"!{date_str} {sanitized_title}"
                 show_metadata["sort_title"] = sort_title
                 
                 if debug:
                     print(f"{BLUE}[DEBUG] TV metadata for {show_title}: sort_title = {sort_title}, episode_title = {episode_title}{RESET}")
         
         metadata_dict[tvdb_id] = show_metadata
+    
+    # Find shows that were previously modified but are no longer in current matches
+    # These need to have their sort_title reverted to original title
+    shows_to_revert = previously_modified_tvdb_ids - current_tvdb_ids
+    
+    if shows_to_revert and all_series:
+        # Create a mapping of tvdb_id to series title from all_series
+        tvdb_to_title = {series.get('tvdbId'): series.get('title', '') 
+                       for series in all_series if series.get('tvdbId')}
+        
+        for tvdb_id in shows_to_revert:
+            # Get the original title from Sonarr data
+            original_title = tvdb_to_title.get(tvdb_id)
+            if original_title:
+                # Sanitize the title to match what we did for the prefixed version
+                clean_title = sanitize_sort_title(original_title)
+                
+                # If we don't have existing metadata for this show, create it
+                if tvdb_id not in metadata_dict:
+                    metadata_dict[tvdb_id] = {}
+                
+                # Add the reverted sort_title
+                metadata_dict[tvdb_id]["sort_title"] = clean_title
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] Reverting sort_title for tvdb_id {tvdb_id}: {clean_title}{RESET}")
+    
+    if not metadata_dict:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No TV shows with content found")
+        return
+    
+    if shows_to_revert:
+        print(f"{GREEN}Reverting sort_title for {len(shows_to_revert)} TV shows no longer in upcoming category{RESET}")
     
     final_output = {"metadata": metadata_dict}
     
@@ -3289,7 +3341,7 @@ def create_movies_metadata_yaml(output_file, all_movies_with_content, config, de
             # Convert YYYY-MM-DD to YYYYMMDD
             date_str = release_date.replace('-', '')
             sanitized_title = sanitize_sort_title(movie_title)
-            sort_title = f"{date_str} {sanitized_title}"
+            sort_title = f"!{date_str} {sanitized_title}"
             
             metadata_dict[tmdb_id] = {
                 "sort_title": sort_title
@@ -3746,7 +3798,7 @@ def main():
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
                 
                 # Create metadata file
-                create_tv_metadata_yaml(str(metadata_file), all_shows_with_content, config, debug)
+                create_tv_metadata_yaml(str(metadata_file), all_shows_with_content, config, debug, sonarr_url, sonarr_api_key, all_series, sonarr_timeout)
                 
                 print(f"\n{GREEN}TV YAML files created successfully{RESET}")
             
