@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.07"
+VERSION = "2025.11.09"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -325,25 +325,46 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
         validated_items = []
         for item in items:
             if isinstance(item, dict):
+                mediatype = item.get('mediatype')
+                
                 # Normalize the item to match expected format
                 normalized_item = {
                     'title': item.get('title', 'Unknown'),
                     'year': item.get('release_year'),
                     'imdb_id': item.get('imdb_id'),
-                    'mediatype': item.get('mediatype'),
-                    'rank': item.get('rank')  # ADD THIS LINE - preserve rank
+                    'mediatype': mediatype,
+                    'rank': item.get('rank')  # Preserve rank
                 }
                 
-                # MDBList uses 'id' for TMDB ID for movies, 'tvdb_id' for TV shows
-                if item.get('mediatype') == 'movie':
+                # Handle IDs differently for movies vs TV shows
+                if mediatype == 'movie':
+                    # For movies, use 'id' field as TMDB ID
                     normalized_item['tmdb_id'] = item.get('id')
-                elif item.get('mediatype') == 'show':
-                    normalized_item['tvdb_id'] = item.get('tvdb_id')
-                    # Some shows might have TMDB ID in 'id' field
-                    if not normalized_item['tvdb_id'] and item.get('id'):
-                        normalized_item['tvdb_id'] = item.get('id')
+                elif mediatype == 'show':
+                    # For TV shows, prefer tvdb_id but fallback to tmdb_id (from 'id' field)
+                    tvdb_id = item.get('tvdb_id')
+                    tmdb_id = item.get('id')
+                    
+                    if tvdb_id:
+                        normalized_item['tvdb_id'] = tvdb_id
+                        if debug:
+                            print(f"{BLUE}[DEBUG] TV show '{item.get('title')}' using TVDB ID: {tvdb_id}{RESET}")
+                    elif tmdb_id:
+                        # Use TMDB ID as fallback
+                        normalized_item['tmdb_id'] = tmdb_id
+                        if debug:
+                            print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB ID, using TMDB ID: {tmdb_id}{RESET}")
+                    else:
+                        if debug:
+                            print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB or TMDB ID{RESET}")
                 
-                validated_items.append(normalized_item)
+                # Only add items that have at least one required ID
+                if mediatype == 'movie' and normalized_item.get('tmdb_id'):
+                    validated_items.append(normalized_item)
+                elif mediatype == 'show' and (normalized_item.get('tvdb_id') or normalized_item.get('tmdb_id')):
+                    validated_items.append(normalized_item)
+                elif debug:
+                    print(f"{ORANGE}[DEBUG] Skipping item without required ID: {item.get('title')} (mediatype: {mediatype}){RESET}")
             else:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Skipping non-dictionary item: {item} (type: {type(item).__name__}){RESET}")
@@ -790,27 +811,33 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
     # Create lookup dictionaries for Sonarr series
     sonarr_by_tvdb = {}
     sonarr_by_imdb = {}
+    sonarr_by_tmdb = {}  # Add TMDB lookup
     
     for series in all_series:
         if series.get('tvdbId'):
             sonarr_by_tvdb[str(series['tvdbId'])] = series
         if series.get('imdbId'):
             sonarr_by_imdb[series['imdbId']] = series
+        if series.get('tmdbId'):  # Add TMDB to lookup
+            sonarr_by_tmdb[str(series['tmdbId'])] = series
     
     for item in mdblist_items:
-        # MDBList items have tvdb_id, imdb_id, title, year
-        tvdb_id = str(item.get('tvdb_id', ''))
+        # MDBList items may have tvdb_id, tmdb_id, imdb_id, title, year
+        tvdb_id = str(item.get('tvdb_id', '')) if item.get('tvdb_id') else None
+        tmdb_id = str(item.get('tmdb_id', '')) if item.get('tmdb_id') else None
         imdb_id = item.get('imdb_id', '')
         title = item.get('title', 'Unknown')
         year = item.get('year')
         
         if debug:
-            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, IMDB: {imdb_id}{RESET}")
+            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, TMDB: {tmdb_id}, IMDB: {imdb_id}{RESET}")
         
-        # Try to find in Sonarr
+        # Try to find in Sonarr - check TVDB first, then TMDB, then IMDB
         sonarr_series = None
         if tvdb_id and tvdb_id in sonarr_by_tvdb:
             sonarr_series = sonarr_by_tvdb[tvdb_id]
+        elif tmdb_id and tmdb_id in sonarr_by_tmdb:
+            sonarr_series = sonarr_by_tmdb[tmdb_id]
         elif imdb_id and imdb_id in sonarr_by_imdb:
             sonarr_series = sonarr_by_imdb[imdb_id]
         
@@ -823,9 +850,11 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 if debug:
                     print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
                 
+                # Use the ID we have (prefer TVDB, fallback to TMDB)
                 show_dict = {
                     'title': sonarr_series['title'],
                     'tvdbId': sonarr_series.get('tvdbId'),
+                    'tmdbId': sonarr_series.get('tmdbId'),
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
@@ -851,6 +880,7 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 show_dict = {
                     'title': sonarr_series['title'],
                     'tvdbId': sonarr_series.get('tvdbId'),
+                    'tmdbId': sonarr_series.get('tmdbId'),
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
@@ -862,9 +892,11 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 print(f"{BLUE}[DEBUG] Not found in Sonarr - adding to not_found_or_unmonitored{RESET}")
             
             # Create show dict from MDBList data
+            # Include both TVDB and TMDB IDs if available
             show_dict = {
                 'title': title,
                 'tvdbId': int(tvdb_id) if tvdb_id and tvdb_id.isdigit() else None,
+                'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
                 'path': None,
                 'imdbId': imdb_id,
                 'year': year,
@@ -2378,88 +2410,179 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     
     # Process trending monitored shows (in Sonarr, monitored, not available)
     if trending_monitored:
-        all_trending_monitored_tvdb_ids = set()
+        # Separate shows by ID type (TVDB vs TMDB)
+        tvdb_monitored = []
+        tmdb_monitored = []
         
         for s in trending_monitored:
             if s.get("tvdbId"):
-                all_trending_monitored_tvdb_ids.add(s['tvdbId'])
+                tvdb_monitored.append(s['tvdbId'])
+            elif s.get("tmdbId"):
+                tmdb_monitored.append(s['tmdbId'])
         
-        # Use the same backdrop/text config as aired shows for trending monitored
-        backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
+        # Create backdrop for TVDB shows
+        if tvdb_monitored:
+            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
+            
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
+                
+                overlays_dict["backdrop_trending_monitored_tvdb"] = {
+                    "overlay": backdrop_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_backdrop and all_trending_monitored_tvdb_ids:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+        # Create backdrop for TMDB shows
+        if tmdb_monitored:
+            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
             
-            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tvdb_ids) if i)
-            
-            overlays_dict["backdrop_trending_monitored"] = {
-                "overlay": backdrop_config,
-                "tvdb_show": all_tvdb_ids_str
-            }
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
+                
+                overlays_dict["backdrop_trending_monitored_tmdb"] = {
+                    "overlay": backdrop_config,
+                    "tmdb_show": tmdb_ids_str
+                }
         
-        text_config = deepcopy(config_sections.get("text_aired", {}))
-        enable_text = text_config.pop("enable", True)
+        # Create text overlay for TVDB shows
+        if tvdb_monitored:
+            text_config = deepcopy(config_sections.get("text_aired", {}))
+            enable_text = text_config.pop("enable", True)
+            
+            if enable_text:
+                use_text = text_config.pop("use_text", "Available Now")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
+                
+                overlays_dict["UMTK_trending_monitored_tvdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_text and all_trending_monitored_tvdb_ids:
-            use_text = text_config.pop("use_text", "Available Now")
-            text_config.pop("date_format", None)
-            text_config.pop("capitalize_dates", None)
+        # Create text overlay for TMDB shows
+        if tmdb_monitored:
+            text_config = deepcopy(config_sections.get("text_aired", {}))
+            enable_text = text_config.pop("enable", True)
             
-            sub_overlay_config = deepcopy(text_config)
-            
-            if "name" not in sub_overlay_config:
-                sub_overlay_config["name"] = f"text({use_text})"
-            
-            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tvdb_ids) if i)
-            
-            overlays_dict["UMTK_trending_monitored"] = {
-                "overlay": sub_overlay_config,
-                "tvdb_show": tvdb_ids_str
-            }
+            if enable_text:
+                use_text = text_config.pop("use_text", "Available Now")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
+                
+                overlays_dict["UMTK_trending_monitored_tmdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tmdb_show": tmdb_ids_str
+                }
     
     # Process trending request needed shows (not in Sonarr or unmonitored)
     if trending_request_needed:
-        all_trending_request_tvdb_ids = set()
+        # Separate shows by ID type (TVDB vs TMDB)
+        tvdb_request = []
+        tmdb_request = []
         
         for s in trending_request_needed:
             if s.get("tvdbId"):
-                all_trending_request_tvdb_ids.add(s['tvdbId'])
+                tvdb_request.append(s['tvdbId'])
+            elif s.get("tmdbId"):
+                tmdb_request.append(s['tmdbId'])
         
-        backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
+        # Create backdrop for TVDB shows
+        if tvdb_request:
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
+            
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
+                
+                overlays_dict["backdrop_trending_request_tvdb"] = {
+                    "overlay": backdrop_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_backdrop and all_trending_request_tvdb_ids:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+        # Create backdrop for TMDB shows
+        if tmdb_request:
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
             
-            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tvdb_ids) if i)
-            
-            overlays_dict["backdrop_trending_request"] = {
-                "overlay": backdrop_config,
-                "tvdb_show": all_tvdb_ids_str
-            }
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
+                
+                overlays_dict["backdrop_trending_request_tmdb"] = {
+                    "overlay": backdrop_config,
+                    "tmdb_show": tmdb_ids_str
+                }
         
-        text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
-        enable_text = text_config.pop("enable", True)
+        # Create text overlay for TVDB shows
+        if tvdb_request:
+            text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
+            enable_text = text_config.pop("enable", True)
+            
+            if enable_text:
+                use_text = text_config.pop("use_text", "Request Needed")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
+                
+                overlays_dict["UMTK_trending_request_tvdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_text and all_trending_request_tvdb_ids:
-            use_text = text_config.pop("use_text", "Request Needed")
-            text_config.pop("date_format", None)
-            text_config.pop("capitalize_dates", None)
+        # Create text overlay for TMDB shows
+        if tmdb_request:
+            text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
+            enable_text = text_config.pop("enable", True)
             
-            sub_overlay_config = deepcopy(text_config)
-            
-            if "name" not in sub_overlay_config:
-                sub_overlay_config["name"] = f"text({use_text})"
-            
-            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tvdb_ids) if i)
-            
-            overlays_dict["UMTK_trending_request"] = {
-                "overlay": sub_overlay_config,
-                "tvdb_show": tvdb_ids_str
-            }
+            if enable_text:
+                use_text = text_config.pop("use_text", "Request Needed")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
+                
+                overlays_dict["UMTK_trending_request_tmdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tmdb_show": tmdb_ids_str
+                }
     
     final_output = {"overlays": overlays_dict}
     
@@ -3149,27 +3272,47 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     overlays_dict = {}
     
-    # Get all TVDB IDs for the backdrop overlay
-    all_tvdb_ids = []
+    # Separate shows by ID type for backdrop
+    tvdb_ids = []
+    tmdb_ids = []
+    
     for item in top_items:
-        tvdb_id = item.get('tvdb_id')
-        if tvdb_id:
-            all_tvdb_ids.append(str(tvdb_id))
+        if item.get('tvdb_id'):
+            tvdb_ids.append(str(item['tvdb_id']))
+        elif item.get('tmdb_id'):
+            tmdb_ids.append(str(item['tmdb_id']))
     
-    # Create backdrop overlay
-    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
-    enable_backdrop = backdrop_config.pop("enable", True)
+    # Create backdrop overlay for TVDB shows
+    if tvdb_ids:
+        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
+        
+        if enable_backdrop:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            
+            tvdb_ids_str = ", ".join(tvdb_ids)
+            
+            overlays_dict["backdrop_trending_top_10_tvdb"] = {
+                "overlay": backdrop_config,
+                "tvdb_show": tvdb_ids_str
+            }
     
-    if enable_backdrop and all_tvdb_ids:
-        if "name" not in backdrop_config:
-            backdrop_config["name"] = "backdrop"
+    # Create backdrop overlay for TMDB shows
+    if tmdb_ids:
+        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
         
-        tvdb_ids_str = ", ".join(all_tvdb_ids)
-        
-        overlays_dict["backdrop_trending_top_10"] = {
-            "overlay": backdrop_config,
-            "tvdb_show": tvdb_ids_str
-        }
+        if enable_backdrop:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            
+            overlays_dict["backdrop_trending_top_10_tmdb"] = {
+                "overlay": backdrop_config,
+                "tmdb_show": tmdb_ids_str
+            }
     
     # Create individual text overlays for each ranked item
     text_config = deepcopy(config_sections.get("text", {}))
@@ -3184,19 +3327,28 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
         for item in top_items:
             rank = item.get('rank')
             tvdb_id = item.get('tvdb_id')
+            tmdb_id = item.get('tmdb_id')
             
-            if not rank or not tvdb_id:
+            if not rank:
                 continue
             
             # Create a copy of text config for this rank
             rank_text_config = deepcopy(text_config)
             rank_text_config["name"] = f"text({rank})"
             
-            block_key = f"trending_top10_{rank}"
-            overlays_dict[block_key] = {
-                "overlay": rank_text_config,
-                "tvdb_show": str(tvdb_id)
-            }
+            # Use TVDB if available, otherwise TMDB
+            if tvdb_id:
+                block_key = f"trending_top10_{rank}_tvdb"
+                overlays_dict[block_key] = {
+                    "overlay": rank_text_config,
+                    "tvdb_show": str(tvdb_id)
+                }
+            elif tmdb_id:
+                block_key = f"trending_top10_{rank}_tmdb"
+                overlays_dict[block_key] = {
+                    "overlay": rank_text_config,
+                    "tmdb_show": str(tmdb_id)
+                }
     
     final_output = {"overlays": overlays_dict}
     
