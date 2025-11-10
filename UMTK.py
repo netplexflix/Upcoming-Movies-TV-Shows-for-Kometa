@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.09"
+VERSION = "2025.11.10"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -3102,7 +3102,8 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+		"sort_by": "usort.desc"
     }
     
     if "sync_mode" not in collection_data:
@@ -3162,7 +3163,8 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+        "sort_by": "usort.desc"
     }
     
     if "sync_mode" not in collection_data:
