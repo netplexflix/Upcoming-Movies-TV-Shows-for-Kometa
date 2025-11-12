@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.10"
+VERSION = "2025.11.12"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -2614,7 +2614,10 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         
         overlays_dict["backdrop"] = {
             "overlay": backdrop_config,
-            "tvdb_show": all_tvdb_ids_str
+            "tvdb_show": all_tvdb_ids_str,
+            "filters": {
+                "label.not": "RequestNeeded"
+            }
         }
     
     text_config = deepcopy(config_sections.get("text", {}))
@@ -2634,7 +2637,10 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         
         overlays_dict["UMTK_new_shows"] = {
             "overlay": sub_overlay_config,
-            "tvdb_show": tvdb_ids_str
+            "tvdb_show": tvdb_ids_str,
+            "filters": {
+                "label.not": "RequestNeeded"
+            }
         }
     
     final_output = {"overlays": overlays_dict}
@@ -3072,10 +3078,8 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
-def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config):
+def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for movies"""
-
-
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -3102,8 +3106,7 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit,
-		"sort_by": "usort.desc"
+        "limit": mdblist_limit
     }
     
     if "sync_mode" not in collection_data:
@@ -3131,11 +3134,30 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
         }
     }
 
+    # Add RequestNeededMovies collection if enabled and we have request-needed items
+    label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
+    if label_request_needed and trending_request_needed:
+        # Extract TMDB IDs from request-needed movies
+        tmdb_ids = []
+        for movie in trending_request_needed:
+            if movie.get("tmdbId"):
+                tmdb_ids.append(str(movie['tmdbId']))
+        
+        if tmdb_ids:
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            data["collections"]["RequestNeededMovies"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tmdb_movie": tmdb_ids_str
+            }
+
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config):
+def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for TV shows"""
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
@@ -3163,8 +3185,7 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit,
-        "sort_by": "usort.desc"
+        "limit": mdblist_limit
     }
     
     if "sync_mode" not in collection_data:
@@ -3191,6 +3212,40 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
             collection_name: ordered_collection
         }
     }
+
+    # Add RequestNeededTV collection if enabled and we have request-needed items
+    label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
+    if label_request_needed and trending_request_needed:
+        # Extract IDs from request-needed shows (prefer TVDB, fallback to TMDB)
+        tvdb_ids = []
+        tmdb_ids = []
+        
+        for show in trending_request_needed:
+            if show.get("tvdbId"):
+                tvdb_ids.append(str(show['tvdbId']))
+            elif show.get("tmdbId"):
+                tmdb_ids.append(str(show['tmdbId']))
+        
+        # Create collection with TVDB IDs if available
+        if tvdb_ids:
+            tvdb_ids_str = ", ".join(tvdb_ids)
+            data["collections"]["RequestNeededTV"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tvdb_show": tvdb_ids_str
+            }
+        # Fallback to TMDB IDs if no TVDB IDs available
+        elif tmdb_ids:
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            data["collections"]["RequestNeededTV"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tmdb_show": tmdb_ids_str
+            }
 
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
@@ -3962,7 +4017,7 @@ def main():
                 mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
                 if mdblist_tv_url:
                     trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config)
+                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config, trending_tv_request_needed)
                     print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
 
                     # Create Top 10 TV overlay YAML
@@ -4294,7 +4349,7 @@ def main():
                 mdblist_movies_limit = config.get('mdblist_movies_limit', 10)
                 if mdblist_movies_url:
                     trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config)
+                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config, trending_movies_request_needed)
                     print(f"{GREEN}Trending Movies collection YAML created successfully{RESET}")
 
                     # Create Top 10 Movies overlay YAML
