@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.10.23"
+VERSION = "2025.11.13"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -325,25 +325,46 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
         validated_items = []
         for item in items:
             if isinstance(item, dict):
+                mediatype = item.get('mediatype')
+                
                 # Normalize the item to match expected format
                 normalized_item = {
                     'title': item.get('title', 'Unknown'),
                     'year': item.get('release_year'),
                     'imdb_id': item.get('imdb_id'),
-                    'mediatype': item.get('mediatype'),
-                    'rank': item.get('rank')  # ADD THIS LINE - preserve rank
+                    'mediatype': mediatype,
+                    'rank': item.get('rank')  # Preserve rank
                 }
                 
-                # MDBList uses 'id' for TMDB ID for movies, 'tvdb_id' for TV shows
-                if item.get('mediatype') == 'movie':
+                # Handle IDs differently for movies vs TV shows
+                if mediatype == 'movie':
+                    # For movies, use 'id' field as TMDB ID
                     normalized_item['tmdb_id'] = item.get('id')
-                elif item.get('mediatype') == 'show':
-                    normalized_item['tvdb_id'] = item.get('tvdb_id')
-                    # Some shows might have TMDB ID in 'id' field
-                    if not normalized_item['tvdb_id'] and item.get('id'):
-                        normalized_item['tvdb_id'] = item.get('id')
+                elif mediatype == 'show':
+                    # For TV shows, prefer tvdb_id but fallback to tmdb_id (from 'id' field)
+                    tvdb_id = item.get('tvdb_id')
+                    tmdb_id = item.get('id')
+                    
+                    if tvdb_id:
+                        normalized_item['tvdb_id'] = tvdb_id
+                        if debug:
+                            print(f"{BLUE}[DEBUG] TV show '{item.get('title')}' using TVDB ID: {tvdb_id}{RESET}")
+                    elif tmdb_id:
+                        # Use TMDB ID as fallback
+                        normalized_item['tmdb_id'] = tmdb_id
+                        if debug:
+                            print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB ID, using TMDB ID: {tmdb_id}{RESET}")
+                    else:
+                        if debug:
+                            print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB or TMDB ID{RESET}")
                 
-                validated_items.append(normalized_item)
+                # Only add items that have at least one required ID
+                if mediatype == 'movie' and normalized_item.get('tmdb_id'):
+                    validated_items.append(normalized_item)
+                elif mediatype == 'show' and (normalized_item.get('tvdb_id') or normalized_item.get('tmdb_id')):
+                    validated_items.append(normalized_item)
+                elif debug:
+                    print(f"{ORANGE}[DEBUG] Skipping item without required ID: {item.get('title')} (mediatype: {mediatype}){RESET}")
             else:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Skipping non-dictionary item: {item} (type: {type(item).__name__}){RESET}")
@@ -475,7 +496,7 @@ def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_sh
             }
             
             # Categorize based on whether it has aired or not
-            if air_date > now_local:
+            if air_date >= now_local:
                 future_shows.append(show_dict)
                 if debug:
                     print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
@@ -637,11 +658,11 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
             'releaseType': release_type
         }
         
-        if release_date > now_local and release_date <= cutoff_date:
+        if release_date >= now_local and release_date <= cutoff_date:
             future_movies.append(movie_dict)
             if debug:
                 print(f"{GREEN}[DEBUG] Added to future movies: {movie['title']}{RESET}")
-        elif release_date <= now_local and not future_only:
+        elif release_date < now_local and not future_only:
             released_movies.append(movie_dict)
             if debug:
                 print(f"{GREEN}[DEBUG] Added to released movies: {movie['title']}{RESET}")
@@ -790,27 +811,33 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
     # Create lookup dictionaries for Sonarr series
     sonarr_by_tvdb = {}
     sonarr_by_imdb = {}
+    sonarr_by_tmdb = {}  # Add TMDB lookup
     
     for series in all_series:
         if series.get('tvdbId'):
             sonarr_by_tvdb[str(series['tvdbId'])] = series
         if series.get('imdbId'):
             sonarr_by_imdb[series['imdbId']] = series
+        if series.get('tmdbId'):  # Add TMDB to lookup
+            sonarr_by_tmdb[str(series['tmdbId'])] = series
     
     for item in mdblist_items:
-        # MDBList items have tvdb_id, imdb_id, title, year
-        tvdb_id = str(item.get('tvdb_id', ''))
+        # MDBList items may have tvdb_id, tmdb_id, imdb_id, title, year
+        tvdb_id = str(item.get('tvdb_id', '')) if item.get('tvdb_id') else None
+        tmdb_id = str(item.get('tmdb_id', '')) if item.get('tmdb_id') else None
         imdb_id = item.get('imdb_id', '')
         title = item.get('title', 'Unknown')
         year = item.get('year')
         
         if debug:
-            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, IMDB: {imdb_id}{RESET}")
+            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, TMDB: {tmdb_id}, IMDB: {imdb_id}{RESET}")
         
-        # Try to find in Sonarr
+        # Try to find in Sonarr - check TVDB first, then TMDB, then IMDB
         sonarr_series = None
         if tvdb_id and tvdb_id in sonarr_by_tvdb:
             sonarr_series = sonarr_by_tvdb[tvdb_id]
+        elif tmdb_id and tmdb_id in sonarr_by_tmdb:
+            sonarr_series = sonarr_by_tmdb[tmdb_id]
         elif imdb_id and imdb_id in sonarr_by_imdb:
             sonarr_series = sonarr_by_imdb[imdb_id]
         
@@ -823,9 +850,11 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 if debug:
                     print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
                 
+                # Use the ID we have (prefer TVDB, fallback to TMDB)
                 show_dict = {
                     'title': sonarr_series['title'],
                     'tvdbId': sonarr_series.get('tvdbId'),
+                    'tmdbId': sonarr_series.get('tmdbId'),
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
@@ -851,6 +880,7 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 show_dict = {
                     'title': sonarr_series['title'],
                     'tvdbId': sonarr_series.get('tvdbId'),
+                    'tmdbId': sonarr_series.get('tmdbId'),
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
@@ -862,9 +892,11 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 print(f"{BLUE}[DEBUG] Not found in Sonarr - adding to not_found_or_unmonitored{RESET}")
             
             # Create show dict from MDBList data
+            # Include both TVDB and TMDB IDs if available
             show_dict = {
                 'title': title,
                 'tvdbId': int(tvdb_id) if tvdb_id and tvdb_id.isdigit() else None,
+                'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
                 'path': None,
                 'imdbId': imdb_id,
                 'year': year,
@@ -1159,6 +1191,9 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
                     if debug:
                         print(f"{ORANGE}[DEBUG] Could not create trending marker: {e}{RESET}")
             
+            # Mark as actual trailer (not placeholder)
+            show['used_trailer'] = True
+            
             return True
 
         print(f"{RED}Trailer file not found after download for {show['title']}{RESET}")
@@ -1362,7 +1397,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         season_00_path = parent_dir / "Season 00"
         
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-    dest_file = season_00_path / f"{clean_title}.S00E00.Trailer{video_extension}"
+    dest_file = season_00_path / f"{clean_title}.S00E00.Coming.Soon{video_extension}"
     
     if debug:
         print(f"{BLUE}[DEBUG] Show path from Sonarr: {show_path}{RESET}")
@@ -1376,6 +1411,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     if dest_file.exists():
         if debug:
             print(f"{ORANGE}[DEBUG] Placeholder file already exists for {show['title']}: {dest_file}{RESET}")
+        show['used_trailer'] = False
         return True
     
     # Create parent directory if it doesn't exist
@@ -1447,6 +1483,9 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             except Exception as e:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not create trending marker: {e}{RESET}")
+        
+        # Mark as placeholder (not trailer)
+        show['used_trailer'] = False
         
         return True
     except Exception as e:
@@ -1694,12 +1733,13 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         if debug:
             print(f"{BLUE}[DEBUG] Checking show folder: {show_folder_name} (trending: {is_trending}, in Sonarr: {series is not None}){RESET}")
         
-        trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*"))
+        # Look for both trailer and coming soon files
+        trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*")) + list(season_00_path.glob("*.S00E00.Coming.Soon.*"))
         
         for trailer_file in trailer_files:
             checked_count += 1
             if debug:
-                print(f"{BLUE}[DEBUG] Checking trailer: {trailer_file.name} (trending: {is_trending}){RESET}")
+                print(f"{BLUE}[DEBUG] Checking file: {trailer_file.name} (trending: {is_trending}){RESET}")
             
             should_remove = False
             removal_reason = ""
@@ -1787,7 +1827,7 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                                 if air_date > cutoff_date:
                                     should_remove = True
                                     removal_reason = f"first episode is beyond {future_days_upcoming_shows} day range"
-                                elif future_only_tv and air_date <= now_local:
+                                elif future_only_tv and air_date < now_local:
                                     should_remove = True
                                     removal_reason = "aired show excluded due to future_only_tv=True"
                             else:
@@ -1797,66 +1837,126 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                         print(f"{BLUE}[DEBUG] Keeping content for {series['title']} - still in valid shows list{RESET}")
             
             if should_remove:
-                # Check write permission before attempting deletion
-                if not os.access(trailer_file, os.W_OK):
-                    print(f"{RED}Permission denied: Cannot remove {trailer_file.name} for {display_title}{RESET}")
-                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
-                    continue
-                
-                # Check parent directory write permission
-                if not os.access(season_00_path, os.W_OK):
-                    print(f"{RED}Permission denied: No write access to directory {season_00_path}{RESET}")
-                    print(f"{RED}Directory owner: {get_file_owner(season_00_path)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}Directory permissions: {oct(season_00_path.stat().st_mode)[-3:]}{RESET}")
-                    continue
-                
-                try:
-                    # Ensure directory has write permission before deletion
+                # If using umtk_root_tv, delete the entire show folder
+                if umtk_root_tv:
+                    # Check write permission before attempting deletion
+                    if not os.access(show_dir, os.W_OK):
+                        print(f"{RED}Permission denied: Cannot remove show folder {show_dir.name} for {display_title}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    # Check parent directory write permission
+                    parent_dir = show_dir.parent
+                    if not os.access(parent_dir, os.W_OK):
+                        print(f"{RED}Permission denied: No write access to parent directory {parent_dir}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
                     try:
-                        os.chmod(season_00_path, 0o755)
+                        # Ensure directory has write permission before deletion
+                        try:
+                            os.chmod(show_dir, 0o755)
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Set permissions 755 on {show_dir}{RESET}")
+                        except Exception as perm_err:
+                            if debug:
+                                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                        
+                        # Calculate total size
+                        total_size = sum(f.stat().st_size for f in show_dir.rglob('*') if f.is_file())
+                        size_mb = total_size / (1024 * 1024)
+                        
+                        shutil.rmtree(show_dir)
+                        
+                        removed_count += 1
+                        content_type = "trending content" if is_trending else "content"
+                        print(f"{GREEN}Removed show folder for {display_title} - {removal_reason} ({size_mb:.1f} MB freed){RESET}")
                         if debug:
-                            print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
-                    except Exception as perm_err:
-                        if debug:
-                            print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
-                    
-                    file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
-                    trailer_file.unlink()
-                    
-                    # Also remove trending marker if it exists
-                    marker_file = season_00_path / ".trending"
-                    if marker_file.exists():
-                        marker_file.unlink()
-                        if debug:
-                            print(f"{BLUE}[DEBUG] Removed trending marker{RESET}")
-                    
-                    removed_count += 1
-                    content_type = "trending content" if is_trending else "content"
-                    print(f"{GREEN}Removed {content_type} for {display_title} - {removal_reason} ({file_size_mb:.1f} MB freed){RESET}")
-                    if debug:
-                        print(f"{BLUE}[DEBUG] Deleted: {trailer_file}{RESET}")
-                except PermissionError as e:
-                    print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
-                    print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
-                    print(f"{RED}Current user: {get_user_info()}{RESET}")
-                    print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
-                    # If it's a permission error caught as generic exception, show details
-                    if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{BLUE}[DEBUG] Deleted entire folder: {show_dir}{RESET}")
+                        
+                        # Break after deleting folder since all files are gone
+                        break
+                        
+                    except PermissionError as e:
+                        print(f"{RED}Permission error removing show folder for {display_title}: {e}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"{RED}Error removing show folder for {display_title}: {e}{RESET}")
+                        # If it's a permission error caught as generic exception, show details
+                        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{RED}Directory owner: {get_file_owner(show_dir)}{RESET}")
+                            print(f"{RED}Current user: {get_user_info()}{RESET}")
+                            if show_dir.exists():
+                                print(f"{RED}Directory permissions: {oct(show_dir.stat().st_mode)[-3:]}{RESET}")
+                else:
+                    # Original behavior: just delete the file
+                    # Check write permission before attempting deletion
+                    if not os.access(trailer_file, os.W_OK):
+                        print(f"{RED}Permission denied: Cannot remove {trailer_file.name} for {display_title}{RESET}")
                         print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
                         print(f"{RED}Current user: {get_user_info()}{RESET}")
-                        if trailer_file.exists():
-                            print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                        print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    # Check parent directory write permission
+                    if not os.access(season_00_path, os.W_OK):
+                        print(f"{RED}Permission denied: No write access to directory {season_00_path}{RESET}")
+                        print(f"{RED}Directory owner: {get_file_owner(season_00_path)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}Directory permissions: {oct(season_00_path.stat().st_mode)[-3:]}{RESET}")
+                        continue
+                    
+                    try:
+                        # Ensure directory has write permission before deletion
+                        try:
+                            os.chmod(season_00_path, 0o755)
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                        except Exception as perm_err:
+                            if debug:
+                                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+                        
+                        file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
+                        trailer_file.unlink()
+                        
+                        # Also remove trending marker if it exists
+                        marker_file = season_00_path / ".trending"
+                        if marker_file.exists():
+                            marker_file.unlink()
+                            if debug:
+                                print(f"{BLUE}[DEBUG] Removed trending marker{RESET}")
+                        
+                        removed_count += 1
+                        content_type = "trending content" if is_trending else "content"
+                        print(f"{GREEN}Removed {content_type} for {display_title} - {removal_reason} ({file_size_mb:.1f} MB freed){RESET}")
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Deleted: {trailer_file}{RESET}")
+                    except PermissionError as e:
+                        print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
+                        print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                        print(f"{RED}Current user: {get_user_info()}{RESET}")
+                        print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
+                        # If it's a permission error caught as generic exception, show details
+                        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+                            print(f"{RED}File owner: {get_file_owner(trailer_file)}{RESET}")
+                            print(f"{RED}Current user: {get_user_info()}{RESET}")
+                            if trailer_file.exists():
+                                print(f"{RED}File permissions: {oct(trailer_file.stat().st_mode)[-3:]}{RESET}")
     
     if removed_count > 0:
-        print(f"{GREEN}TV cleanup complete: Removed {removed_count} file(s) from {checked_count} checked{RESET}")
+        print(f"{GREEN}TV cleanup complete: Removed {removed_count} item(s) from {checked_count} checked{RESET}")
     elif checked_count > 0:
-        print(f"{GREEN}TV cleanup complete: No files needed removal ({checked_count} checked){RESET}")
+        print(f"{GREEN}TV cleanup complete: No items needed removal ({checked_count} checked){RESET}")
     elif debug:
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
@@ -2310,88 +2410,179 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     
     # Process trending monitored shows (in Sonarr, monitored, not available)
     if trending_monitored:
-        all_trending_monitored_tvdb_ids = set()
+        # Separate shows by ID type (TVDB vs TMDB)
+        tvdb_monitored = []
+        tmdb_monitored = []
         
         for s in trending_monitored:
             if s.get("tvdbId"):
-                all_trending_monitored_tvdb_ids.add(s['tvdbId'])
+                tvdb_monitored.append(s['tvdbId'])
+            elif s.get("tmdbId"):
+                tmdb_monitored.append(s['tmdbId'])
         
-        # Use the same backdrop/text config as aired shows for trending monitored
-        backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
+        # Create backdrop for TVDB shows
+        if tvdb_monitored:
+            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
+            
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
+                
+                overlays_dict["backdrop_trending_monitored_tvdb"] = {
+                    "overlay": backdrop_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_backdrop and all_trending_monitored_tvdb_ids:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+        # Create backdrop for TMDB shows
+        if tmdb_monitored:
+            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
             
-            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tvdb_ids) if i)
-            
-            overlays_dict["backdrop_trending_monitored"] = {
-                "overlay": backdrop_config,
-                "tvdb_show": all_tvdb_ids_str
-            }
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
+                
+                overlays_dict["backdrop_trending_monitored_tmdb"] = {
+                    "overlay": backdrop_config,
+                    "tmdb_show": tmdb_ids_str
+                }
         
-        text_config = deepcopy(config_sections.get("text_aired", {}))
-        enable_text = text_config.pop("enable", True)
+        # Create text overlay for TVDB shows
+        if tvdb_monitored:
+            text_config = deepcopy(config_sections.get("text_aired", {}))
+            enable_text = text_config.pop("enable", True)
+            
+            if enable_text:
+                use_text = text_config.pop("use_text", "Available Now")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
+                
+                overlays_dict["UMTK_trending_monitored_tvdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_text and all_trending_monitored_tvdb_ids:
-            use_text = text_config.pop("use_text", "Available Now")
-            text_config.pop("date_format", None)
-            text_config.pop("capitalize_dates", None)
+        # Create text overlay for TMDB shows
+        if tmdb_monitored:
+            text_config = deepcopy(config_sections.get("text_aired", {}))
+            enable_text = text_config.pop("enable", True)
             
-            sub_overlay_config = deepcopy(text_config)
-            
-            if "name" not in sub_overlay_config:
-                sub_overlay_config["name"] = f"text({use_text})"
-            
-            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tvdb_ids) if i)
-            
-            overlays_dict["UMTK_trending_monitored"] = {
-                "overlay": sub_overlay_config,
-                "tvdb_show": tvdb_ids_str
-            }
+            if enable_text:
+                use_text = text_config.pop("use_text", "Available Now")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
+                
+                overlays_dict["UMTK_trending_monitored_tmdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tmdb_show": tmdb_ids_str
+                }
     
     # Process trending request needed shows (not in Sonarr or unmonitored)
     if trending_request_needed:
-        all_trending_request_tvdb_ids = set()
+        # Separate shows by ID type (TVDB vs TMDB)
+        tvdb_request = []
+        tmdb_request = []
         
         for s in trending_request_needed:
             if s.get("tvdbId"):
-                all_trending_request_tvdb_ids.add(s['tvdbId'])
+                tvdb_request.append(s['tvdbId'])
+            elif s.get("tmdbId"):
+                tmdb_request.append(s['tmdbId'])
         
-        backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
+        # Create backdrop for TVDB shows
+        if tvdb_request:
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
+            
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
+                
+                overlays_dict["backdrop_trending_request_tvdb"] = {
+                    "overlay": backdrop_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_backdrop and all_trending_request_tvdb_ids:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+        # Create backdrop for TMDB shows
+        if tmdb_request:
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_request_needed", {}))
+            enable_backdrop = backdrop_config.pop("enable", True)
             
-            all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tvdb_ids) if i)
-            
-            overlays_dict["backdrop_trending_request"] = {
-                "overlay": backdrop_config,
-                "tvdb_show": all_tvdb_ids_str
-            }
+            if enable_backdrop:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
+                
+                overlays_dict["backdrop_trending_request_tmdb"] = {
+                    "overlay": backdrop_config,
+                    "tmdb_show": tmdb_ids_str
+                }
         
-        text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
-        enable_text = text_config.pop("enable", True)
+        # Create text overlay for TVDB shows
+        if tvdb_request:
+            text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
+            enable_text = text_config.pop("enable", True)
+            
+            if enable_text:
+                use_text = text_config.pop("use_text", "Request Needed")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
+                
+                overlays_dict["UMTK_trending_request_tvdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tvdb_show": tvdb_ids_str
+                }
         
-        if enable_text and all_trending_request_tvdb_ids:
-            use_text = text_config.pop("use_text", "Request Needed")
-            text_config.pop("date_format", None)
-            text_config.pop("capitalize_dates", None)
+        # Create text overlay for TMDB shows
+        if tmdb_request:
+            text_config = deepcopy(config_sections.get("text_trending_request_needed", {}))
+            enable_text = text_config.pop("enable", True)
             
-            sub_overlay_config = deepcopy(text_config)
-            
-            if "name" not in sub_overlay_config:
-                sub_overlay_config["name"] = f"text({use_text})"
-            
-            tvdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tvdb_ids) if i)
-            
-            overlays_dict["UMTK_trending_request"] = {
-                "overlay": sub_overlay_config,
-                "tvdb_show": tvdb_ids_str
-            }
+            if enable_text:
+                use_text = text_config.pop("use_text", "Request Needed")
+                text_config.pop("date_format", None)
+                text_config.pop("capitalize_dates", None)
+                
+                sub_overlay_config = deepcopy(text_config)
+                
+                if "name" not in sub_overlay_config:
+                    sub_overlay_config["name"] = f"text({use_text})"
+                
+                tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
+                
+                overlays_dict["UMTK_trending_request_tmdb"] = {
+                    "overlay": sub_overlay_config,
+                    "tmdb_show": tmdb_ids_str
+                }
     
     final_output = {"overlays": overlays_dict}
     
@@ -2423,7 +2614,10 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         
         overlays_dict["backdrop"] = {
             "overlay": backdrop_config,
-            "tvdb_show": all_tvdb_ids_str
+            "tvdb_show": all_tvdb_ids_str,
+            "filters": {
+                "label.not": "RequestNeeded"
+            }
         }
     
     text_config = deepcopy(config_sections.get("text", {}))
@@ -2443,7 +2637,10 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         
         overlays_dict["UMTK_new_shows"] = {
             "overlay": sub_overlay_config,
-            "tvdb_show": tvdb_ids_str
+            "tvdb_show": tvdb_ids_str,
+            "filters": {
+                "label.not": "RequestNeeded"
+            }
         }
     
     final_output = {"overlays": overlays_dict}
@@ -2881,10 +3078,8 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
-def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config):
+def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for movies"""
-
-
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -2939,11 +3134,30 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
         }
     }
 
+    # Add RequestNeededMovies collection if enabled and we have request-needed items
+    label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
+    if label_request_needed and trending_request_needed:
+        # Extract TMDB IDs from request-needed movies
+        tmdb_ids = []
+        for movie in trending_request_needed:
+            if movie.get("tmdbId"):
+                tmdb_ids.append(str(movie['tmdbId']))
+        
+        if tmdb_ids:
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            data["collections"]["RequestNeededMovies"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tmdb_movie": tmdb_ids_str
+            }
+
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config):
+def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for TV shows"""
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
@@ -2998,6 +3212,40 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
             collection_name: ordered_collection
         }
     }
+
+    # Add RequestNeededTV collection if enabled and we have request-needed items
+    label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
+    if label_request_needed and trending_request_needed:
+        # Extract IDs from request-needed shows (prefer TVDB, fallback to TMDB)
+        tvdb_ids = []
+        tmdb_ids = []
+        
+        for show in trending_request_needed:
+            if show.get("tvdbId"):
+                tvdb_ids.append(str(show['tvdbId']))
+            elif show.get("tmdbId"):
+                tmdb_ids.append(str(show['tmdbId']))
+        
+        # Create collection with TVDB IDs if available
+        if tvdb_ids:
+            tvdb_ids_str = ", ".join(tvdb_ids)
+            data["collections"]["RequestNeededTV"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tvdb_show": tvdb_ids_str
+            }
+        # Fallback to TMDB IDs if no TVDB IDs available
+        elif tmdb_ids:
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            data["collections"]["RequestNeededTV"] = {
+                "item_label": "RequestNeeded",
+                "non_item_remove_label": "RequestNeeded",
+                "build_collection": False,
+                "sync_mode": "append",
+                "tmdb_show": tmdb_ids_str
+            }
 
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
@@ -3081,27 +3329,47 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     overlays_dict = {}
     
-    # Get all TVDB IDs for the backdrop overlay
-    all_tvdb_ids = []
+    # Separate shows by ID type for backdrop
+    tvdb_ids = []
+    tmdb_ids = []
+    
     for item in top_items:
-        tvdb_id = item.get('tvdb_id')
-        if tvdb_id:
-            all_tvdb_ids.append(str(tvdb_id))
+        if item.get('tvdb_id'):
+            tvdb_ids.append(str(item['tvdb_id']))
+        elif item.get('tmdb_id'):
+            tmdb_ids.append(str(item['tmdb_id']))
     
-    # Create backdrop overlay
-    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
-    enable_backdrop = backdrop_config.pop("enable", True)
+    # Create backdrop overlay for TVDB shows
+    if tvdb_ids:
+        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
+        
+        if enable_backdrop:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            
+            tvdb_ids_str = ", ".join(tvdb_ids)
+            
+            overlays_dict["backdrop_trending_top_10_tvdb"] = {
+                "overlay": backdrop_config,
+                "tvdb_show": tvdb_ids_str
+            }
     
-    if enable_backdrop and all_tvdb_ids:
-        if "name" not in backdrop_config:
-            backdrop_config["name"] = "backdrop"
+    # Create backdrop overlay for TMDB shows
+    if tmdb_ids:
+        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+        enable_backdrop = backdrop_config.pop("enable", True)
         
-        tvdb_ids_str = ", ".join(all_tvdb_ids)
-        
-        overlays_dict["backdrop_trending_top_10"] = {
-            "overlay": backdrop_config,
-            "tvdb_show": tvdb_ids_str
-        }
+        if enable_backdrop:
+            if "name" not in backdrop_config:
+                backdrop_config["name"] = "backdrop"
+            
+            tmdb_ids_str = ", ".join(tmdb_ids)
+            
+            overlays_dict["backdrop_trending_top_10_tmdb"] = {
+                "overlay": backdrop_config,
+                "tmdb_show": tmdb_ids_str
+            }
     
     # Create individual text overlays for each ranked item
     text_config = deepcopy(config_sections.get("text", {}))
@@ -3116,24 +3384,185 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
         for item in top_items:
             rank = item.get('rank')
             tvdb_id = item.get('tvdb_id')
+            tmdb_id = item.get('tmdb_id')
             
-            if not rank or not tvdb_id:
+            if not rank:
                 continue
             
             # Create a copy of text config for this rank
             rank_text_config = deepcopy(text_config)
             rank_text_config["name"] = f"text({rank})"
             
-            block_key = f"trending_top10_{rank}"
-            overlays_dict[block_key] = {
-                "overlay": rank_text_config,
-                "tvdb_show": str(tvdb_id)
-            }
+            # Use TVDB if available, otherwise TMDB
+            if tvdb_id:
+                block_key = f"trending_top10_{rank}_tvdb"
+                overlays_dict[block_key] = {
+                    "overlay": rank_text_config,
+                    "tvdb_show": str(tvdb_id)
+                }
+            elif tmdb_id:
+                block_key = f"trending_top10_{rank}_tmdb"
+                overlays_dict[block_key] = {
+                    "overlay": rank_text_config,
+                    "tmdb_show": str(tmdb_id)
+                }
     
     final_output = {"overlays": overlays_dict}
     
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False)
+
+def sanitize_sort_title(title):
+    """Sanitize title for sort_title by removing special characters"""
+    # Remove special characters but keep spaces
+    sanitized = re.sub(r'[:\'"()\[\]{}<>|/\\?*]', '', title)
+    # Clean up multiple spaces
+    sanitized = ' '.join(sanitized.split())
+    return sanitized.strip()
+
+def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False, sonarr_url=None, api_key=None, all_series=None, sonarr_timeout=90):
+    """Create metadata YAML file for TV shows"""
+    # Read existing metadata file to track previously modified shows
+    previously_modified_tvdb_ids = set()
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'metadata' in existing_data:
+                # Only include shows that have sort_title starting with !yyyymmdd
+                for tvdb_id, metadata in existing_data['metadata'].items():
+                    sort_title = metadata.get('sort_title', '')
+                    # Check if sort_title starts with ! followed by 8 digits
+                    if sort_title and sort_title.startswith('!') and len(sort_title) > 9:
+                        date_part = sort_title[1:9]  # Extract the 8 characters after !
+                        if date_part.isdigit():
+                            previously_modified_tvdb_ids.add(tvdb_id)
+    except FileNotFoundError:
+        pass  # First run, no existing file
+    except Exception as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
+    
+    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    
+    metadata_dict = {}
+    current_tvdb_ids = set()
+    
+    for show in all_shows_with_content:
+        tvdb_id = show.get('tvdbId')
+        if not tvdb_id:
+            continue
+        
+        current_tvdb_ids.add(tvdb_id)
+        
+        # Determine if this show used a trailer or placeholder
+        used_trailer = show.get('used_trailer', False)
+        episode_title = "Trailer" if used_trailer else "Coming Soon"
+        
+        show_metadata = {
+            "episodes": {
+                "S00E00": {
+                    "title": episode_title
+                }
+            }
+        }
+        
+        # Add sort_title if append_dates is enabled
+        if append_dates:
+            air_date = show.get('airDate')
+            show_title = show.get('title', 'Unknown')
+            
+            if air_date:
+                # Convert YYYY-MM-DD to YYYYMMDD
+                date_str = air_date.replace('-', '')
+                sanitized_title = sanitize_sort_title(show_title)
+                sort_title = f"!{date_str} {sanitized_title}"
+                show_metadata["sort_title"] = sort_title
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] TV metadata for {show_title}: sort_title = {sort_title}, episode_title = {episode_title}{RESET}")
+        
+        metadata_dict[tvdb_id] = show_metadata
+    
+    # Find shows that were previously modified but are no longer in current matches
+    # These need to have their sort_title reverted to original title
+    shows_to_revert = previously_modified_tvdb_ids - current_tvdb_ids
+    
+    if shows_to_revert and all_series:
+        # Create a mapping of tvdb_id to series title from all_series
+        tvdb_to_title = {series.get('tvdbId'): series.get('title', '') 
+                       for series in all_series if series.get('tvdbId')}
+        
+        for tvdb_id in shows_to_revert:
+            # Get the original title from Sonarr data
+            original_title = tvdb_to_title.get(tvdb_id)
+            if original_title:
+                # Sanitize the title to match what we did for the prefixed version
+                clean_title = sanitize_sort_title(original_title)
+                
+                # If we don't have existing metadata for this show, create it
+                if tvdb_id not in metadata_dict:
+                    metadata_dict[tvdb_id] = {}
+                
+                # Add the reverted sort_title
+                metadata_dict[tvdb_id]["sort_title"] = clean_title
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] Reverting sort_title for tvdb_id {tvdb_id}: {clean_title}{RESET}")
+    
+    if not metadata_dict:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No TV shows with content found")
+        return
+    
+    if shows_to_revert:
+        print(f"{GREEN}Reverting sort_title for {len(shows_to_revert)} TV shows no longer in upcoming category{RESET}")
+    
+    final_output = {"metadata": metadata_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
+
+def create_movies_metadata_yaml(output_file, all_movies_with_content, config, debug=False):
+    """Create metadata YAML file for movies"""
+    if not all_movies_with_content:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#No movies with content found")
+        return
+    
+    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    
+    if not append_dates:
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write("#append_dates_to_sort_titles is disabled")
+        return
+    
+    metadata_dict = {}
+    
+    for movie in all_movies_with_content:
+        tmdb_id = movie.get('tmdbId')
+        if not tmdb_id:
+            continue
+        
+        release_date = movie.get('releaseDate')
+        movie_title = movie.get('title', 'Unknown')
+        
+        if release_date:
+            # Convert YYYY-MM-DD to YYYYMMDD
+            date_str = release_date.replace('-', '')
+            sanitized_title = sanitize_sort_title(movie_title)
+            sort_title = f"!{date_str} {sanitized_title}"
+            
+            metadata_dict[tmdb_id] = {
+                "sort_title": sort_title
+            }
+            
+            if debug:
+                print(f"{BLUE}[DEBUG] Movie metadata for {movie_title}: sort_title = {sort_title}{RESET}")
+    
+    final_output = {"metadata": metadata_dict}
+    
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
 
 def main():
     start_time = datetime.now()
@@ -3274,6 +3703,7 @@ def main():
             future_shows = []
             aired_shows = []
             new_shows = []
+            all_shows_with_content = []  # Track shows that got content
             
             if tv_method > 0:
                 # Find upcoming shows
@@ -3334,26 +3764,21 @@ def main():
                             
                             clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
                             
+                            # Check for both trailer and coming soon files
                             trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                            existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                            coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                            existing_trailers = []
+                            if season_00_path.exists():
+                                existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
                             
                             if existing_trailers:
                                 existing_file = existing_trailers[0]
+                                # Determine if it's a trailer or placeholder
+                                show['used_trailer'] = '.Trailer.' in existing_file.name
                                 print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
                                 skipped_existing += 1
                                 successful += 1
-                                continue
-                            
-                            clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                            
-                            trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                            existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
-                            
-                            if existing_trailers:
-                                existing_file = existing_trailers[0]
-                                print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                skipped_existing += 1
-                                successful += 1
+                                all_shows_with_content.append(show)
                                 continue
                         
                         # Process based on method
@@ -3387,6 +3812,7 @@ def main():
                         
                         if success:
                             successful += 1
+                            all_shows_with_content.append(show)
                         else:
                             failed += 1
                     
@@ -3483,46 +3909,21 @@ def main():
                                 # Check for existing content
                                 if season_00_path:
                                     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                    # Check for both trailer and coming soon files
                                     trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
+                                    coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                                    existing_trailers = []
+                                    if season_00_path.exists():
+                                        existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
                                     
                                     if existing_trailers:
                                         existing_file = existing_trailers[0]
+                                        # Determine if it's a trailer or placeholder
+                                        show['used_trailer'] = '.Trailer.' in existing_file.name
                                         print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
                                         skipped_existing += 1
                                         successful += 1
-                                        continue
-                                
-                                # Determine the path to check
-                                if show_path:
-                                    if umtk_root_tv:
-                                        show_name = Path(show_path).name
-                                        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
-                                    else:
-                                        season_00_path = Path(show_path) / "Season 00"
-                                elif umtk_root_tv:
-                                    # For shows without a path, construct from umtk_root_tv
-                                    show_title = show.get('title', 'Unknown')
-                                    show_year = show.get('year', '')
-                                    if show_year:
-                                        show_folder = sanitize_filename(f"{show_title} ({show_year})")
-                                    else:
-                                        show_folder = sanitize_filename(show_title)
-                                    season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
-                                else:
-                                    season_00_path = None
-                                
-                                # Check for existing content
-                                if season_00_path:
-                                    clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                                    trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) if season_00_path.exists() else []
-                                    
-                                    if existing_trailers:
-                                        existing_file = existing_trailers[0]
-                                        print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                        skipped_existing += 1
-                                        successful += 1
+                                        all_shows_with_content.append(show)
                                         continue
                                 
                                 # Process based on method
@@ -3556,6 +3957,7 @@ def main():
                                 
                                 if success:
                                     successful += 1
+                                    all_shows_with_content.append(show)
                                 else:
                                     failed += 1
                             
@@ -3582,6 +3984,7 @@ def main():
             if tv_method > 0 or trending_tv_method > 0:
                 overlay_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
+                metadata_file = kometa_folder / "UMTK_TV_METADATA.yml"
                 
                 create_overlay_yaml_tv(
                     str(overlay_file), future_shows, aired_shows, 
@@ -3603,6 +4006,9 @@ def main():
                 
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
                 
+                # Create metadata file
+                create_tv_metadata_yaml(str(metadata_file), all_shows_with_content, config, debug, sonarr_url, sonarr_api_key, all_series, sonarr_timeout)
+                
                 print(f"\n{GREEN}TV YAML files created successfully{RESET}")
             
             # Create Trending TV collection YAML
@@ -3611,7 +4017,7 @@ def main():
                 mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
                 if mdblist_tv_url:
                     trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config)
+                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config, trending_tv_request_needed)
                     print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
 
                     # Create Top 10 TV overlay YAML
@@ -3664,6 +4070,7 @@ def main():
             # Process regular upcoming movies if movie_method is enabled
             future_movies = []
             released_movies = []
+            all_movies_with_content = []  # Track movies that got content
             
             if movie_method > 0:
                 # Find upcoming movies
@@ -3720,6 +4127,7 @@ def main():
                                     existing_file = existing_files[0]
                                     print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
                                     successful += 1
+                                    all_movies_with_content.append(movie)
                                     continue
                         
                         # Process based on method
@@ -3753,6 +4161,7 @@ def main():
                         
                         if success:
                             successful += 1
+                            all_movies_with_content.append(movie)
                         else:
                             failed += 1
                     
@@ -3850,6 +4259,7 @@ def main():
                                             print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
                                             skipped_existing += 1
                                             successful += 1
+                                            all_movies_with_content.append(movie)
                                             content_exists = True
                                 
                                 if content_exists:
@@ -3886,6 +4296,7 @@ def main():
                                 
                                 if success:
                                     successful += 1
+                                    all_movies_with_content.append(movie)
                                 else:
                                     failed += 1
                             
@@ -3911,6 +4322,7 @@ def main():
             if movie_method > 0 or trending_movies_method > 0:
                 overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_MOVIES_UPCOMING_COLLECTION.yml"
+                metadata_file = kometa_folder / "UMTK_MOVIES_METADATA.yml"
                 
                 create_overlay_yaml_movies(
                     str(overlay_file), future_movies, released_movies,
@@ -3926,6 +4338,9 @@ def main():
                 
                 create_collection_yaml_movies(str(collection_file), future_movies, released_movies, config)
                 
+                # Create metadata file
+                create_movies_metadata_yaml(str(metadata_file), all_movies_with_content, config, debug)
+                
                 print(f"\n{GREEN}Movie YAML files created successfully{RESET}")
             
             # Create Trending Movies collection YAML
@@ -3934,7 +4349,7 @@ def main():
                 mdblist_movies_limit = config.get('mdblist_movies_limit', 10)
                 if mdblist_movies_url:
                     trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config)
+                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config, trending_movies_request_needed)
                     print(f"{GREEN}Trending Movies collection YAML created successfully{RESET}")
 
                     # Create Top 10 Movies overlay YAML

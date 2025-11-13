@@ -82,7 +82,7 @@ text_upcoming_movies_future:
   horizontal_align: center
   horizontal_offset: 30
   vertical_align: top
-  vertical_offset: 280
+  vertical_offset: 380
   font_size: 80
   font_color: "#e0e0e0"
 
@@ -99,7 +99,7 @@ text_upcoming_movies_released:
   horizontal_align: center
   horizontal_offset: 30
   vertical_align: top
-  vertical_offset: 280
+  vertical_offset: 380
   font_size: 80
   font_color: "#e0e0e0"
 
@@ -129,7 +129,7 @@ text_upcoming_shows:
   horizontal_align: center
   horizontal_offset: 30
   vertical_align: top
-  vertical_offset: 280
+  vertical_offset: 380
   font_size: 80
   font_color: "#e0e0e0"
   group: TSSK_text
@@ -150,7 +150,7 @@ text_upcoming_shows_aired:
   horizontal_align: center
   horizontal_offset: 30
   vertical_align: top
-  vertical_offset: 280
+  vertical_offset: 380
   font_size: 80
   font_color: "#e0e0e0"
   group: TSSK_text

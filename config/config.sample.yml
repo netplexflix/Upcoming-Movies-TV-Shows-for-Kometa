@@ -7,6 +7,7 @@ method_fallback: true
 utc_offset: +1
 debug: false
 cleanup: true
+append_dates_to_sort_titles: true
 
 skip_channels:
   - "Starlight Cinema"
@@ -36,7 +37,7 @@ future_days_upcoming_movies: 30
 include_inCinemas: false
 future_only: false
 exclude_radarr_tags: exclude, private
-umtk_root_movies: # Required for trending
+umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ################################################################################
 ##########                   COMING SOON TV SHOWS:                    ##########
@@ -45,13 +46,14 @@ future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
 exclude_sonarr_tags: exclude, private
-umtk_root_tv: # Required for trending
+umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv`
 
 ################################################################################
 ##########                        TRENDING:                           ##########
 ################################################################################
 trending_movies: 0
 trending_tv: 0
+label_request_needed: false
 mdblist_api_key: YOUR_MDBLIST_API_KEY
 mdblist_movies: https://mdblist.com/lists/linaspurinis/trending-movies-list
 mdblist_movies_limit: 10
@@ -66,6 +68,7 @@ collection_upcoming_movies:
   item_label: Coming Soon
   non_item_remove_label: Coming Soon
   build_collection: false
+  sync_mode: append
 
 ################################################################################
 ##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########
@@ -111,6 +114,7 @@ collection_upcoming_shows:
   item_label: Coming Soon
   non_item_remove_label: Coming Soon
   build_collection: false
+  sync_mode: append
 
 ################################################################################
 ##########               UPCOMING SHOWS OVERLAY FUTURE:               ##########
@@ -157,7 +161,7 @@ text_upcoming_shows_aired:
   weight: 100
 
 ################################################################################
-##########                        NEW SHOWS:                          ##########
+##########                    NEW SHOWS OVERLAY:                      ##########
 ################################################################################
 backdrop_new_show:
   enable: true
@@ -206,7 +210,7 @@ text_trending_movies_request_needed:
   horizontal_align: center
   horizontal_offset: 0
   vertical_align: top
-  vertical_offset: 20
+  vertical_offset: 10
   font_size: 70
   font_color: "#FFFFFF"
 
@@ -236,7 +240,7 @@ text_trending_shows_request_needed:
   horizontal_align: center
   horizontal_offset: 0
   vertical_align: bottom
-  vertical_offset: 17
+  vertical_offset: 10
   font_size: 70
   font_color: "#FFFFFF"
   group: TSSK_text
