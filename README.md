@@ -289,6 +289,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 ### Trending:
 - **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
 - **mdblist_movies:** which trending movies list to use. you can create your own.
 - **mdblist_movies_limit:** How many items to pull from the trending movies list
