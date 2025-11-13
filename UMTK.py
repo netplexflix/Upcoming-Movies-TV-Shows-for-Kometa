@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.13"
+VERSION = "2025.11.1302"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -3078,6 +3078,31 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
+def get_next_sort_by(output_file):
+    """Get the next sort_by value in rotation"""
+    sort_options = ["rank.desc", "usort.desc", "rank.asc", "usort.asc"]
+    current_sort = None
+    
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'collections' in existing_data:
+                for collection_name, collection_data in existing_data['collections'].items():
+                    if 'mdblist_list' in collection_data:
+                        current_sort = collection_data['mdblist_list'].get('sort_by')
+                        break
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    
+    if current_sort in sort_options:
+        current_index = sort_options.index(current_sort)
+        next_index = (current_index + 1) % len(sort_options)
+        return sort_options[next_index]
+    else:
+        return sort_options[0]
+
 def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for movies"""
     def represent_ordereddict(dumper, data):
@@ -3103,10 +3128,14 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
 
     collection_data = deepcopy(collection_config)
     
+    # Get next sort_by value
+    next_sort_by = get_next_sort_by(output_file)
+    
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+        "sort_by": next_sort_by
     }
     
     if "sync_mode" not in collection_data:
@@ -3182,10 +3211,14 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
 
     collection_data = deepcopy(collection_config)
     
+    # Get next sort_by value
+    next_sort_by = get_next_sort_by(output_file)
+    
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+        "sort_by": next_sort_by
     }
     
     if "sync_mode" not in collection_data:
