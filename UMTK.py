@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.1302"
+VERSION = "2025.11.17"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -580,7 +580,7 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
     return new_shows
 
 # Movie specific functions
-def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None):
+def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None, past_days_upcoming_movies=0):
     """Find movies that are monitored and meet release date criteria"""
     future_movies = []
     released_movies = []
@@ -588,10 +588,17 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
     cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_movies)
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     
+    # Calculate past cutoff date if past_days_upcoming_movies is set
+    past_cutoff_date = None
+    if past_days_upcoming_movies > 0 and not future_only:
+        past_cutoff_date = now_local - timedelta(days=past_days_upcoming_movies)
+    
     if debug:
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
         print(f"{BLUE}[DEBUG] Future only mode: {future_only}{RESET}")
         print(f"{BLUE}[DEBUG] Include inCinemas: {include_inCinemas}{RESET}")
+        if past_cutoff_date:
+            print(f"{BLUE}[DEBUG] Past cutoff date: {past_cutoff_date} (past_days_upcoming_movies: {past_days_upcoming_movies}){RESET}")
         print(f"{BLUE}[DEBUG] Found {len(all_movies)} total movies in Radarr{RESET}")
     
     for movie in all_movies:
@@ -646,6 +653,12 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
         
         if debug:
             print(f"{BLUE}[DEBUG] {movie['title']} release date: {release_date} ({release_type}){RESET}")
+        
+        # Check if release date is too far in the past
+        if past_cutoff_date and release_date < past_cutoff_date:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping {movie['title']} - release date {release_date} is before past cutoff {past_cutoff_date}{RESET}")
+            continue
         
         movie_dict = {
             'title': movie['title'],
@@ -4090,10 +4103,13 @@ def main():
                 print(f"{BLUE}[DEBUG] Exclude Radarr tags: {exclude_radarr_tag_names} -> IDs: {exclude_radarr_tag_ids}{RESET}")
             
             future_days_upcoming_movies = config.get('future_days_upcoming_movies', 30)
+            past_days_upcoming_movies = config.get('past_days_upcoming_movies', 0)
             future_only = str(config.get("future_only", "false")).lower() == "true"
             include_inCinemas = str(config.get("include_inCinemas", "false")).lower() == "true"
             
             print(f"future_days_upcoming_movies: {future_days_upcoming_movies}")
+            if past_days_upcoming_movies > 0 and not future_only:
+                print(f"past_days_upcoming_movies: {past_days_upcoming_movies}")
             print(f"future_only: {future_only}")
             print(f"include_inCinemas: {include_inCinemas}")
             if exclude_radarr_tag_names:
@@ -4109,7 +4125,7 @@ def main():
                 # Find upcoming movies
                 print(f"{BLUE}Finding upcoming movies...{RESET}")
                 future_movies, released_movies = find_upcoming_movies(
-                    all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids
+                    all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies
                 )
                 
                 if future_movies:

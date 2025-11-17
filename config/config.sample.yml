@@ -34,6 +34,7 @@ sonarr_timeout: 90
 ##########                   COMING SOON MOVIES:                      ##########
 ################################################################################
 future_days_upcoming_movies: 30
+past_days_upcoming_movies: 0 #0=no limit
 include_inCinemas: false
 future_only: false
 exclude_radarr_tags: exclude, private

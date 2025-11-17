@@ -268,8 +268,9 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
+- **past_days_upcoming_movies:** How many days in the past to look for releases (default: `0` means no limit)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
-- **future_only:** Set to `false` (default) to include already-released but not-downloaded movies
+- **future_only:** `false` (default) will include already-released but not-downloaded movies. `true` only looks at release dates in the future.
 - **exclude_radarr_tags**: Skip movies with these tags
 - **umtk_root_movies**: Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
