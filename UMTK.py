@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.21"
+VERSION = "2025.11.22"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -3319,12 +3319,30 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
     
     track_ranking_changes = all([urlup, urldown, urlequal])
     
-    # Read previous rankings if tracking is enabled
+    # Get today's date
+    today = datetime.now().date()
+    
+    # Read previous rankings and date if tracking is enabled
     previous_rankings = {}
+    previous_categories = {}  # Track which category (up/down/equal) each movie was in
+    file_date = None
+    
     if track_ranking_changes and Path(output_file).exists():
         try:
             with open(output_file, 'r', encoding='utf-8') as f:
-                existing_data = yaml.safe_load(f)
+                content = f.read()
+                
+                # Extract the date from the first line if it exists
+                first_line = content.split('\n')[0] if content else ''
+                if first_line.startswith('#Last updated:'):
+                    date_str = first_line.replace('#Last updated:', '').strip()
+                    try:
+                        file_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                
+                # Parse YAML content
+                existing_data = yaml.safe_load(content)
                 if existing_data and 'overlays' in existing_data:
                     # Extract rankings from individual rank overlays
                     for key, value in existing_data['overlays'].items():
@@ -3336,9 +3354,30 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                                 tmdb_id = value.get('tmdb_movie')
                                 if tmdb_id:
                                     previous_rankings[str(tmdb_id)] = rank
+                    
+                    # Extract previous categories from backdrop blocks
+                    for key, value in existing_data['overlays'].items():
+                        if 'backdrop_trending_top_10_up' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'up'
+                        elif 'backdrop_trending_top_10_equal' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'equal'
+                        elif 'backdrop_trending_top_10_down' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'down'
         except Exception as e:
             print(f"{ORANGE}Could not read previous rankings from {output_file}: {e}{RESET}")
             previous_rankings = {}
+            previous_categories = {}
+    
+    same_day_run = file_date == today
     
     if enable_backdrop:
         if track_ranking_changes:
@@ -3356,6 +3395,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                 
                 tmdb_id_str = str(tmdb_id)
                 previous_rank = previous_rankings.get(tmdb_id_str)
+                previous_category = previous_categories.get(tmdb_id_str)
                 
                 if previous_rank is None:
                     # New to the list
@@ -3367,8 +3407,18 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                     # Moved down
                     tmdb_down.append(tmdb_id_str)
                 else:
-                    # Same rank
-                    tmdb_equal.append(tmdb_id_str)
+                    # Same rank as previous run
+                    if same_day_run and previous_category:
+                        # Keep the category from earlier today
+                        if previous_category == 'up':
+                            tmdb_up.append(tmdb_id_str)
+                        elif previous_category == 'down':
+                            tmdb_down.append(tmdb_id_str)
+                        else:
+                            tmdb_equal.append(tmdb_id_str)
+                    else:
+                        # Different day or no previous category, mark as equal
+                        tmdb_equal.append(tmdb_id_str)
             
             # Create backdrop overlays based on ranking change
             if tmdb_up:
@@ -3472,12 +3522,30 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     track_ranking_changes = all([urlup, urldown, urlequal])
     
-    # Read previous rankings if tracking is enabled
+    # Get today's date
+    today = datetime.now().date()
+    
+    # Read previous rankings and date if tracking is enabled
     previous_rankings = {}
+    previous_categories = {}  # Track which category (up/down/equal) each show was in
+    file_date = None
+    
     if track_ranking_changes and Path(output_file).exists():
         try:
             with open(output_file, 'r', encoding='utf-8') as f:
-                existing_data = yaml.safe_load(f)
+                content = f.read()
+                
+                # Extract the date from the first line if it exists
+                first_line = content.split('\n')[0] if content else ''
+                if first_line.startswith('#Last updated:'):
+                    date_str = first_line.replace('#Last updated:', '').strip()
+                    try:
+                        file_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                
+                # Parse YAML content
+                existing_data = yaml.safe_load(content)
                 if existing_data and 'overlays' in existing_data:
                     # Extract rankings from individual rank overlays
                     for key, value in existing_data['overlays'].items():
@@ -3497,9 +3565,45 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
                                 tmdb_id = value.get('tmdb_show')
                                 if tmdb_id:
                                     previous_rankings[f"tmdb_{tmdb_id}"] = rank
+                    
+                    # Extract previous categories from backdrop blocks
+                    for key, value in existing_data['overlays'].items():
+                        if 'backdrop_trending_top_10_tvdb_up' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'up'
+                        elif 'backdrop_trending_top_10_tvdb_equal' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'equal'
+                        elif 'backdrop_trending_top_10_tvdb_down' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'down'
+                        elif 'backdrop_trending_top_10_tmdb_up' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'up'
+                        elif 'backdrop_trending_top_10_tmdb_equal' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'equal'
+                        elif 'backdrop_trending_top_10_tmdb_down' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'down'
         except Exception as e:
             print(f"{ORANGE}Could not read previous rankings from {output_file}: {e}{RESET}")
             previous_rankings = {}
+            previous_categories = {}
+    
+    same_day_run = file_date == today
     
     if enable_backdrop:
         if track_ranking_changes:
@@ -3523,6 +3627,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
                 if tvdb_id:
                     tvdb_id_str = str(tvdb_id)
                     previous_rank = previous_rankings.get(tvdb_id_str)
+                    previous_category = previous_categories.get(tvdb_id_str)
                     
                     if previous_rank is None:
                         # New to the list
@@ -3534,14 +3639,25 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
                         # Moved down
                         tvdb_down.append(tvdb_id_str)
                     else:
-                        # Same rank
-                        tvdb_equal.append(tvdb_id_str)
+                        # Same rank as previous run
+                        if same_day_run and previous_category:
+                            # Keep the category from earlier today
+                            if previous_category == 'up':
+                                tvdb_up.append(tvdb_id_str)
+                            elif previous_category == 'down':
+                                tvdb_down.append(tvdb_id_str)
+                            else:
+                                tvdb_equal.append(tvdb_id_str)
+                        else:
+                            # Different day or no previous category, mark as equal
+                            tvdb_equal.append(tvdb_id_str)
                 
                 # Determine ranking change for TMDB shows
                 elif tmdb_id:
                     tmdb_id_str = str(tmdb_id)
                     tmdb_key = f"tmdb_{tmdb_id_str}"
                     previous_rank = previous_rankings.get(tmdb_key)
+                    previous_category = previous_categories.get(tmdb_key)
                     
                     if previous_rank is None:
                         # New to the list
@@ -3553,8 +3669,18 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
                         # Moved down
                         tmdb_down.append(tmdb_id_str)
                     else:
-                        # Same rank
-                        tmdb_equal.append(tmdb_id_str)
+                        # Same rank as previous run
+                        if same_day_run and previous_category:
+                            # Keep the category from earlier today
+                            if previous_category == 'up':
+                                tmdb_up.append(tmdb_id_str)
+                            elif previous_category == 'down':
+                                tmdb_down.append(tmdb_id_str)
+                            else:
+                                tmdb_equal.append(tmdb_id_str)
+                        else:
+                            # Different day or no previous category, mark as equal
+                            tmdb_equal.append(tmdb_id_str)
             
             # Create backdrop overlays for TVDB shows based on ranking change
             if tvdb_up:
@@ -3686,7 +3812,10 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     final_output = {"overlays": overlays_dict}
     
+    # Write the file with date header if tracking is enabled
     with open(output_file, "w", encoding="utf-8") as f:
+        if track_ranking_changes:
+            f.write(f"#Last updated: {today}\n")
         yaml.dump(final_output, f, sort_keys=False)
 
 def sanitize_sort_title(title):
