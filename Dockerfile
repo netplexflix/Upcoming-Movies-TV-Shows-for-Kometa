@@ -27,14 +27,17 @@ RUN apt-get update && \
     gosu && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Deno
-RUN curl -fsSL https://deno.land/install.sh | sh && \
-    mv /root/.deno/bin/deno /usr/local/bin/deno && \
+# Install Deno - using direct binary download for reliability
+RUN DENO_VERSION="2.5.6" && \
+    ARCH="$(dpkg --print-architecture)" && \
+    if [ "$ARCH" = "amd64" ]; then DENO_ARCH="x86_64"; \
+    elif [ "$ARCH" = "arm64" ]; then DENO_ARCH="aarch64"; \
+    else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -fsSL "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-${DENO_ARCH}-unknown-linux-gnu.zip" -o /tmp/deno.zip && \
+    unzip -q /tmp/deno.zip -d /usr/local/bin && \
     chmod +x /usr/local/bin/deno && \
-    rm -rf /root/.deno
-
-# Verify Deno installation
-RUN deno --version
+    rm /tmp/deno.zip && \
+    deno --version
 
 # Set working directory
 WORKDIR /app
