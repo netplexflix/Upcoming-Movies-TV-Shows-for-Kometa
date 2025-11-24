@@ -71,7 +71,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [❌ "No config.yml found"](#-no-configyml-found)
   - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
-
+  - [❌ My TOP10 collection is incomplete or out of order](#-my-top10-collection-is-incomplete-or-out-of-order)
 
 
 ---
@@ -268,8 +268,9 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
+- **past_days_upcoming_movies:** How many days in the past to look for releases (default: `0` means no limit)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
-- **future_only:** Set to `false` (default) to include already-released but not-downloaded movies
+- **future_only:** `false` (default) will include already-released but not-downloaded movies. `true` only looks at release dates in the future.
 - **exclude_radarr_tags**: Skip movies with these tags
 - **umtk_root_movies**: Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
@@ -515,6 +516,10 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 - That means you have those items monitored in Radarr/Sonarr but not downloaded.
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
+
+### ❌ My TOP10 collection is incomplete or out of order
+- MDBList API responses can get cached by cloudflare, resulting in an older cached version of the list being returned. We work around that by alternating sort orders in the calls, but if you're doing multiple runs in one day you can still encounter this issue.
+- It's recommended to have Kometa only process these collection files once or twice each day. You can [schedule collections in Kometa](https://kometa.wiki/en/latest/config/schedule/?h=par#schedule-files).
 
 ---
 

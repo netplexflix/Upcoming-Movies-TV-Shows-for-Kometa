@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.13"
+VERSION = "2025.11.24"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -580,7 +580,7 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
     return new_shows
 
 # Movie specific functions
-def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None):
+def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None, past_days_upcoming_movies=0):
     """Find movies that are monitored and meet release date criteria"""
     future_movies = []
     released_movies = []
@@ -588,10 +588,17 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
     cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_movies)
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     
+    # Calculate past cutoff date if past_days_upcoming_movies is set
+    past_cutoff_date = None
+    if past_days_upcoming_movies > 0 and not future_only:
+        past_cutoff_date = now_local - timedelta(days=past_days_upcoming_movies)
+    
     if debug:
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
         print(f"{BLUE}[DEBUG] Future only mode: {future_only}{RESET}")
         print(f"{BLUE}[DEBUG] Include inCinemas: {include_inCinemas}{RESET}")
+        if past_cutoff_date:
+            print(f"{BLUE}[DEBUG] Past cutoff date: {past_cutoff_date} (past_days_upcoming_movies: {past_days_upcoming_movies}){RESET}")
         print(f"{BLUE}[DEBUG] Found {len(all_movies)} total movies in Radarr{RESET}")
     
     for movie in all_movies:
@@ -646,6 +653,12 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
         
         if debug:
             print(f"{BLUE}[DEBUG] {movie['title']} release date: {release_date} ({release_type}){RESET}")
+        
+        # Check if release date is too far in the past
+        if past_cutoff_date and release_date < past_cutoff_date:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping {movie['title']} - release date {release_date} is before past cutoff {past_cutoff_date}{RESET}")
+            continue
         
         movie_dict = {
             'title': movie['title'],
@@ -3078,6 +3091,31 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
+def get_next_sort_by(output_file):
+    """Get the next sort_by value in rotation"""
+    sort_options = ["rank.desc", "usort.desc", "rank.asc", "usort.asc"]
+    current_sort = None
+    
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'collections' in existing_data:
+                for collection_name, collection_data in existing_data['collections'].items():
+                    if 'mdblist_list' in collection_data:
+                        current_sort = collection_data['mdblist_list'].get('sort_by')
+                        break
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    
+    if current_sort in sort_options:
+        current_index = sort_options.index(current_sort)
+        next_index = (current_index + 1) % len(sort_options)
+        return sort_options[next_index]
+    else:
+        return sort_options[0]
+
 def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
     """Create trending collection YAML file for movies"""
     def represent_ordereddict(dumper, data):
@@ -3103,10 +3141,14 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
 
     collection_data = deepcopy(collection_config)
     
+    # Get next sort_by value
+    next_sort_by = get_next_sort_by(output_file)
+    
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+        "sort_by": next_sort_by
     }
     
     if "sync_mode" not in collection_data:
@@ -3182,10 +3224,14 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
 
     collection_data = deepcopy(collection_config)
     
+    # Get next sort_by value
+    next_sort_by = get_next_sort_by(output_file)
+    
     # Add mdblist_list configuration
     collection_data["mdblist_list"] = {
         "url": mdblist_url,
-        "limit": mdblist_limit
+        "limit": mdblist_limit,
+        "sort_by": next_sort_by
     }
     
     if "sync_mode" not in collection_data:
@@ -3262,27 +3308,164 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
     
     overlays_dict = {}
     
-    # Get all TMDB IDs for the backdrop overlay
-    all_tmdb_ids = []
-    for item in top_items:
-        tmdb_id = item.get('id') or item.get('tmdb_id')
-        if tmdb_id:
-            all_tmdb_ids.append(str(tmdb_id))
-    
-    # Create backdrop overlay
+    # Get backdrop config
     backdrop_config = deepcopy(config_sections.get("backdrop", {}))
     enable_backdrop = backdrop_config.pop("enable", True)
     
-    if enable_backdrop and all_tmdb_ids:
-        if "name" not in backdrop_config:
-            backdrop_config["name"] = "backdrop"
+    # Check if ranking change tracking is enabled
+    urlup = backdrop_config.pop("urlup", None)
+    urldown = backdrop_config.pop("urldown", None)
+    urlequal = backdrop_config.pop("urlequal", None)
+    
+    track_ranking_changes = all([urlup, urldown, urlequal])
+    
+    # Get today's date
+    today = datetime.now().date()
+    
+    # Read previous rankings and date if tracking is enabled
+    previous_rankings = {}
+    previous_categories = {}  # Track which category (up/down/equal) each movie was in
+    file_date = None
+    
+    if track_ranking_changes and Path(output_file).exists():
+        try:
+            with open(output_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+                # Extract the date from the first line if it exists
+                first_line = content.split('\n')[0] if content else ''
+                if first_line.startswith('#Last updated:'):
+                    date_str = first_line.replace('#Last updated:', '').strip()
+                    try:
+                        file_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                
+                # Parse YAML content
+                existing_data = yaml.safe_load(content)
+                if existing_data and 'overlays' in existing_data:
+                    # Extract rankings from individual rank overlays
+                    for key, value in existing_data['overlays'].items():
+                        if key.startswith('trending_top10_'):
+                            # Extract rank from key (e.g., "trending_top10_1" -> 1)
+                            parts = key.split('_')
+                            if len(parts) >= 3 and parts[2].isdigit():
+                                rank = int(parts[2])
+                                tmdb_id = value.get('tmdb_movie')
+                                if tmdb_id:
+                                    previous_rankings[str(tmdb_id)] = rank
+                    
+                    # Extract previous categories from backdrop blocks
+                    for key, value in existing_data['overlays'].items():
+                        if 'backdrop_trending_top_10_up' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'up'
+                        elif 'backdrop_trending_top_10_equal' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'equal'
+                        elif 'backdrop_trending_top_10_down' in key:
+                            tmdb_ids = value.get('tmdb_movie', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[tmdb_id.strip()] = 'down'
+        except Exception as e:
+            print(f"{ORANGE}Could not read previous rankings from {output_file}: {e}{RESET}")
+            previous_rankings = {}
+            previous_categories = {}
+    
+    same_day_run = file_date == today
+    
+    if enable_backdrop:
+        if track_ranking_changes:
+            # Categorize movies by ranking change
+            tmdb_up = []
+            tmdb_equal = []
+            tmdb_down = []
+            
+            for item in top_items:
+                current_rank = item.get('rank')
+                tmdb_id = item.get('id') or item.get('tmdb_id')
+                
+                if not current_rank or not tmdb_id:
+                    continue
+                
+                tmdb_id_str = str(tmdb_id)
+                previous_rank = previous_rankings.get(tmdb_id_str)
+                previous_category = previous_categories.get(tmdb_id_str)
+                
+                if previous_rank is None:
+                    # New to the list
+                    tmdb_up.append(tmdb_id_str)
+                elif current_rank < previous_rank:
+                    # Moved up (lower rank number is better)
+                    tmdb_up.append(tmdb_id_str)
+                elif current_rank > previous_rank:
+                    # Moved down
+                    tmdb_down.append(tmdb_id_str)
+                else:
+                    # Same rank as previous run
+                    if same_day_run and previous_category:
+                        # Keep the category from earlier today
+                        if previous_category == 'up':
+                            tmdb_up.append(tmdb_id_str)
+                        elif previous_category == 'down':
+                            tmdb_down.append(tmdb_id_str)
+                        else:
+                            tmdb_equal.append(tmdb_id_str)
+                    else:
+                        # Different day or no previous category, mark as equal
+                        tmdb_equal.append(tmdb_id_str)
+            
+            # Create backdrop overlays based on ranking change
+            if tmdb_up:
+                up_config = deepcopy(backdrop_config)
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["url"] = urlup
+                overlays_dict["backdrop_trending_top_10_up"] = {
+                    "overlay": up_config,
+                    "tmdb_movie": ", ".join(tmdb_up)
+                }
+            
+            if tmdb_equal:
+                equal_config = deepcopy(backdrop_config)
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["url"] = urlequal
+                overlays_dict["backdrop_trending_top_10_equal"] = {
+                    "overlay": equal_config,
+                    "tmdb_movie": ", ".join(tmdb_equal)
+                }
+            
+            if tmdb_down:
+                down_config = deepcopy(backdrop_config)
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["url"] = urldown
+                overlays_dict["backdrop_trending_top_10_down"] = {
+                    "overlay": down_config,
+                    "tmdb_movie": ", ".join(tmdb_down)
+                }
         
-        tmdb_ids_str = ", ".join(all_tmdb_ids)
-        
-        overlays_dict["backdrop_trending_top_10"] = {
-            "overlay": backdrop_config,
-            "tmdb_movie": tmdb_ids_str
-        }
+        else:
+            # Original behavior: single backdrop for all movies
+            all_tmdb_ids = []
+            for item in top_items:
+                tmdb_id = item.get('id') or item.get('tmdb_id')
+                if tmdb_id:
+                    all_tmdb_ids.append(str(tmdb_id))
+            
+            if all_tmdb_ids:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(all_tmdb_ids)
+                
+                overlays_dict["backdrop_trending_top_10"] = {
+                    "overlay": backdrop_config,
+                    "tmdb_movie": tmdb_ids_str
+                }
     
     # Create individual text overlays for each ranked item
     text_config = deepcopy(config_sections.get("text", {}))
@@ -3313,9 +3496,11 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
     
     final_output = {"overlays": overlays_dict}
     
+    # Write the file with date header if tracking is enabled
     with open(output_file, "w", encoding="utf-8") as f:
+        if track_ranking_changes:
+            f.write(f"#Last updated: {today}\n")
         yaml.dump(final_output, f, sort_keys=False)
-
 
 def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     """Create Top 10 overlay YAML file for TV shows based on MDBList ranking"""
@@ -3329,47 +3514,268 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     overlays_dict = {}
     
-    # Separate shows by ID type for backdrop
-    tvdb_ids = []
-    tmdb_ids = []
+    # Get backdrop config
+    backdrop_config = deepcopy(config_sections.get("backdrop", {}))
+    enable_backdrop = backdrop_config.pop("enable", True)
     
-    for item in top_items:
-        if item.get('tvdb_id'):
-            tvdb_ids.append(str(item['tvdb_id']))
-        elif item.get('tmdb_id'):
-            tmdb_ids.append(str(item['tmdb_id']))
+    # Check if ranking change tracking is enabled
+    urlup = backdrop_config.pop("urlup", None)
+    urldown = backdrop_config.pop("urldown", None)
+    urlequal = backdrop_config.pop("urlequal", None)
     
-    # Create backdrop overlay for TVDB shows
-    if tvdb_ids:
-        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
+    track_ranking_changes = all([urlup, urldown, urlequal])
+    
+    # Get today's date
+    today = datetime.now().date()
+    
+    # Read previous rankings and date if tracking is enabled
+    previous_rankings = {}
+    previous_categories = {}  # Track which category (up/down/equal) each show was in
+    file_date = None
+    
+    if track_ranking_changes and Path(output_file).exists():
+        try:
+            with open(output_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+                # Extract the date from the first line if it exists
+                first_line = content.split('\n')[0] if content else ''
+                if first_line.startswith('#Last updated:'):
+                    date_str = first_line.replace('#Last updated:', '').strip()
+                    try:
+                        file_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                
+                # Parse YAML content
+                existing_data = yaml.safe_load(content)
+                if existing_data and 'overlays' in existing_data:
+                    # Extract rankings from individual rank overlays
+                    for key, value in existing_data['overlays'].items():
+                        if key.startswith('trending_top10_') and '_tvdb' in key:
+                            # Extract rank from key (e.g., "trending_top10_1_tvdb" -> 1)
+                            parts = key.split('_')
+                            if len(parts) >= 3 and parts[2].isdigit():
+                                rank = int(parts[2])
+                                tvdb_id = value.get('tvdb_show')
+                                if tvdb_id:
+                                    previous_rankings[str(tvdb_id)] = rank
+                        elif key.startswith('trending_top10_') and '_tmdb' in key:
+                            # Extract rank from key for TMDB IDs
+                            parts = key.split('_')
+                            if len(parts) >= 3 and parts[2].isdigit():
+                                rank = int(parts[2])
+                                tmdb_id = value.get('tmdb_show')
+                                if tmdb_id:
+                                    previous_rankings[f"tmdb_{tmdb_id}"] = rank
+                    
+                    # Extract previous categories from backdrop blocks
+                    for key, value in existing_data['overlays'].items():
+                        if 'backdrop_trending_top_10_tvdb_up' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'up'
+                        elif 'backdrop_trending_top_10_tvdb_equal' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'equal'
+                        elif 'backdrop_trending_top_10_tvdb_down' in key:
+                            tvdb_ids = value.get('tvdb_show', '').split(', ')
+                            for tvdb_id in tvdb_ids:
+                                if tvdb_id.strip():
+                                    previous_categories[tvdb_id.strip()] = 'down'
+                        elif 'backdrop_trending_top_10_tmdb_up' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'up'
+                        elif 'backdrop_trending_top_10_tmdb_equal' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'equal'
+                        elif 'backdrop_trending_top_10_tmdb_down' in key:
+                            tmdb_ids = value.get('tmdb_show', '').split(', ')
+                            for tmdb_id in tmdb_ids:
+                                if tmdb_id.strip():
+                                    previous_categories[f"tmdb_{tmdb_id.strip()}"] = 'down'
+        except Exception as e:
+            print(f"{ORANGE}Could not read previous rankings from {output_file}: {e}{RESET}")
+            previous_rankings = {}
+            previous_categories = {}
+    
+    same_day_run = file_date == today
+    
+    if enable_backdrop:
+        if track_ranking_changes:
+            # Categorize shows by ranking change
+            tvdb_up = []
+            tvdb_equal = []
+            tvdb_down = []
+            tmdb_up = []
+            tmdb_equal = []
+            tmdb_down = []
+            
+            for item in top_items:
+                current_rank = item.get('rank')
+                tvdb_id = item.get('tvdb_id')
+                tmdb_id = item.get('tmdb_id')
+                
+                if not current_rank:
+                    continue
+                
+                # Determine ranking change for TVDB shows
+                if tvdb_id:
+                    tvdb_id_str = str(tvdb_id)
+                    previous_rank = previous_rankings.get(tvdb_id_str)
+                    previous_category = previous_categories.get(tvdb_id_str)
+                    
+                    if previous_rank is None:
+                        # New to the list
+                        tvdb_up.append(tvdb_id_str)
+                    elif current_rank < previous_rank:
+                        # Moved up (lower rank number is better)
+                        tvdb_up.append(tvdb_id_str)
+                    elif current_rank > previous_rank:
+                        # Moved down
+                        tvdb_down.append(tvdb_id_str)
+                    else:
+                        # Same rank as previous run
+                        if same_day_run and previous_category:
+                            # Keep the category from earlier today
+                            if previous_category == 'up':
+                                tvdb_up.append(tvdb_id_str)
+                            elif previous_category == 'down':
+                                tvdb_down.append(tvdb_id_str)
+                            else:
+                                tvdb_equal.append(tvdb_id_str)
+                        else:
+                            # Different day or no previous category, mark as equal
+                            tvdb_equal.append(tvdb_id_str)
+                
+                # Determine ranking change for TMDB shows
+                elif tmdb_id:
+                    tmdb_id_str = str(tmdb_id)
+                    tmdb_key = f"tmdb_{tmdb_id_str}"
+                    previous_rank = previous_rankings.get(tmdb_key)
+                    previous_category = previous_categories.get(tmdb_key)
+                    
+                    if previous_rank is None:
+                        # New to the list
+                        tmdb_up.append(tmdb_id_str)
+                    elif current_rank < previous_rank:
+                        # Moved up (lower rank number is better)
+                        tmdb_up.append(tmdb_id_str)
+                    elif current_rank > previous_rank:
+                        # Moved down
+                        tmdb_down.append(tmdb_id_str)
+                    else:
+                        # Same rank as previous run
+                        if same_day_run and previous_category:
+                            # Keep the category from earlier today
+                            if previous_category == 'up':
+                                tmdb_up.append(tmdb_id_str)
+                            elif previous_category == 'down':
+                                tmdb_down.append(tmdb_id_str)
+                            else:
+                                tmdb_equal.append(tmdb_id_str)
+                        else:
+                            # Different day or no previous category, mark as equal
+                            tmdb_equal.append(tmdb_id_str)
+            
+            # Create backdrop overlays for TVDB shows based on ranking change
+            if tvdb_up:
+                up_config = deepcopy(backdrop_config)
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["url"] = urlup
+                overlays_dict["backdrop_trending_top_10_tvdb_up"] = {
+                    "overlay": up_config,
+                    "tvdb_show": ", ".join(tvdb_up)
+                }
+            
+            if tvdb_equal:
+                equal_config = deepcopy(backdrop_config)
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["url"] = urlequal
+                overlays_dict["backdrop_trending_top_10_tvdb_equal"] = {
+                    "overlay": equal_config,
+                    "tvdb_show": ", ".join(tvdb_equal)
+                }
+            
+            if tvdb_down:
+                down_config = deepcopy(backdrop_config)
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["url"] = urldown
+                overlays_dict["backdrop_trending_top_10_tvdb_down"] = {
+                    "overlay": down_config,
+                    "tvdb_show": ", ".join(tvdb_down)
+                }
+            
+            # Create backdrop overlays for TMDB shows based on ranking change
+            if tmdb_up:
+                up_config = deepcopy(backdrop_config)
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["url"] = urlup
+                overlays_dict["backdrop_trending_top_10_tmdb_up"] = {
+                    "overlay": up_config,
+                    "tmdb_show": ", ".join(tmdb_up)
+                }
+            
+            if tmdb_equal:
+                equal_config = deepcopy(backdrop_config)
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["url"] = urlequal
+                overlays_dict["backdrop_trending_top_10_tmdb_equal"] = {
+                    "overlay": equal_config,
+                    "tmdb_show": ", ".join(tmdb_equal)
+                }
+            
+            if tmdb_down:
+                down_config = deepcopy(backdrop_config)
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["url"] = urldown
+                overlays_dict["backdrop_trending_top_10_tmdb_down"] = {
+                    "overlay": down_config,
+                    "tmdb_show": ", ".join(tmdb_down)
+                }
         
-        if enable_backdrop:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+        else:
+            # Original behavior: single backdrop for all shows
+            tvdb_ids = []
+            tmdb_ids = []
             
-            tvdb_ids_str = ", ".join(tvdb_ids)
+            for item in top_items:
+                if item.get('tvdb_id'):
+                    tvdb_ids.append(str(item['tvdb_id']))
+                elif item.get('tmdb_id'):
+                    tmdb_ids.append(str(item['tmdb_id']))
             
-            overlays_dict["backdrop_trending_top_10_tvdb"] = {
-                "overlay": backdrop_config,
-                "tvdb_show": tvdb_ids_str
-            }
-    
-    # Create backdrop overlay for TMDB shows
-    if tmdb_ids:
-        backdrop_config = deepcopy(config_sections.get("backdrop", {}))
-        enable_backdrop = backdrop_config.pop("enable", True)
-        
-        if enable_backdrop:
-            if "name" not in backdrop_config:
-                backdrop_config["name"] = "backdrop"
+            # Create backdrop overlay for TVDB shows
+            if tvdb_ids:
+                if "name" not in backdrop_config:
+                    backdrop_config["name"] = "backdrop"
+                
+                tvdb_ids_str = ", ".join(tvdb_ids)
+                
+                overlays_dict["backdrop_trending_top_10_tvdb"] = {
+                    "overlay": backdrop_config,
+                    "tvdb_show": tvdb_ids_str
+                }
             
-            tmdb_ids_str = ", ".join(tmdb_ids)
-            
-            overlays_dict["backdrop_trending_top_10_tmdb"] = {
-                "overlay": backdrop_config,
-                "tmdb_show": tmdb_ids_str
-            }
+            # Create backdrop overlay for TMDB shows
+            if tmdb_ids:
+                tmdb_config = deepcopy(backdrop_config)
+                if "name" not in tmdb_config:
+                    tmdb_config["name"] = "backdrop"
+                
+                tmdb_ids_str = ", ".join(tmdb_ids)
+                
+                overlays_dict["backdrop_trending_top_10_tmdb"] = {
+                    "overlay": tmdb_config,
+                    "tmdb_show": tmdb_ids_str
+                }
     
     # Create individual text overlays for each ranked item
     text_config = deepcopy(config_sections.get("text", {}))
@@ -3409,7 +3815,10 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
     
     final_output = {"overlays": overlays_dict}
     
+    # Write the file with date header if tracking is enabled
     with open(output_file, "w", encoding="utf-8") as f:
+        if track_ranking_changes:
+            f.write(f"#Last updated: {today}\n")
         yaml.dump(final_output, f, sort_keys=False)
 
 def sanitize_sort_title(title):
@@ -4026,8 +4435,8 @@ def main():
                         create_top10_overlay_yaml_tv(
                             str(top10_tv_overlay_file), 
                             mdblist_tv_items,
-                            {"backdrop": config.get("backdrop_trending_top_10", {}),
-                             "text": config.get("text_trending_top_10", {})}
+                            {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
+                             "text": config.get("text_trending_top_10_tv", {})}
                         )
                         print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
         
@@ -4057,10 +4466,13 @@ def main():
                 print(f"{BLUE}[DEBUG] Exclude Radarr tags: {exclude_radarr_tag_names} -> IDs: {exclude_radarr_tag_ids}{RESET}")
             
             future_days_upcoming_movies = config.get('future_days_upcoming_movies', 30)
+            past_days_upcoming_movies = config.get('past_days_upcoming_movies', 0)
             future_only = str(config.get("future_only", "false")).lower() == "true"
             include_inCinemas = str(config.get("include_inCinemas", "false")).lower() == "true"
             
             print(f"future_days_upcoming_movies: {future_days_upcoming_movies}")
+            if past_days_upcoming_movies > 0 and not future_only:
+                print(f"past_days_upcoming_movies: {past_days_upcoming_movies}")
             print(f"future_only: {future_only}")
             print(f"include_inCinemas: {include_inCinemas}")
             if exclude_radarr_tag_names:
@@ -4076,7 +4488,7 @@ def main():
                 # Find upcoming movies
                 print(f"{BLUE}Finding upcoming movies...{RESET}")
                 future_movies, released_movies = find_upcoming_movies(
-                    all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids
+                    all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies
                 )
                 
                 if future_movies:
@@ -4358,8 +4770,8 @@ def main():
                         create_top10_overlay_yaml_movies(
                             str(top10_movies_overlay_file), 
                             mdblist_movies_items,
-                            {"backdrop": config.get("backdrop_trending_top_10", {}),
-                             "text": config.get("text_trending_top_10", {})}
+                            {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
+                             "text": config.get("text_trending_top_10_movies", {})}
                         )
                         print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
         
