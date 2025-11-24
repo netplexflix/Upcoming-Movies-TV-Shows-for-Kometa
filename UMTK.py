@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.22"
+VERSION = "2025.11.24"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -3496,7 +3496,10 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
     
     final_output = {"overlays": overlays_dict}
     
+    # Write the file with date header if tracking is enabled
     with open(output_file, "w", encoding="utf-8") as f:
+        if track_ranking_changes:
+            f.write(f"#Last updated: {today}\n")
         yaml.dump(final_output, f, sort_keys=False)
 
 def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
@@ -4432,8 +4435,8 @@ def main():
                         create_top10_overlay_yaml_tv(
                             str(top10_tv_overlay_file), 
                             mdblist_tv_items,
-                            {"backdrop": config.get("backdrop_trending_top_10", {}),
-                             "text": config.get("text_trending_top_10", {})}
+                            {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
+                             "text": config.get("text_trending_top_10_tv", {})}
                         )
                         print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
         
@@ -4767,8 +4770,8 @@ def main():
                         create_top10_overlay_yaml_movies(
                             str(top10_movies_overlay_file), 
                             mdblist_movies_items,
-                            {"backdrop": config.get("backdrop_trending_top_10", {}),
-                             "text": config.get("text_trending_top_10", {})}
+                            {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
+                             "text": config.get("text_trending_top_10_movies", {})}
                         )
                         print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
         
