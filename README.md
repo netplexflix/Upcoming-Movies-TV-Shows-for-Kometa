@@ -291,6 +291,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
+- **add_rank_to_sort_title:** Will add the rank in front of the sort title
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
 - **mdblist_movies:** which trending movies list to use. you can create your own.
 - **mdblist_movies_limit:** How many items to pull from the trending movies list
@@ -517,9 +518,9 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
 
-### ❌ My TOP10 collection is incomplete or out of order
-- MDBList API responses can get cached by cloudflare, resulting in an older cached version of the list being returned. We work around that by alternating sort orders in the calls, but if you're doing multiple runs in one day you can still encounter this issue.
-- It's recommended to have Kometa only process these collection files once or twice each day. You can [schedule collections in Kometa](https://kometa.wiki/en/latest/config/schedule/?h=par#schedule-files).
+### ❌ My sort titles aren't being reset
+- Make sure Kometa runs after every UMTK run
+- When a sort_title needs to be reset, UMTK writes it to the metadata file. On the next run UMTK assumes Kometa has effectuated this change. So if you run UMTK more than once without running Kometa, this action is lost.
 
 ---
 

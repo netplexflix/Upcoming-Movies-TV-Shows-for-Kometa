@@ -55,10 +55,11 @@ umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv
 trending_movies: 0
 trending_tv: 0
 label_request_needed: false
+add_rank_to_sort_title: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
-mdblist_movies: https://mdblist.com/lists/linaspurinis/trending-movies-list
+mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
 mdblist_movies_limit: 10
-mdblist_tv: https://mdblist.com/lists/adamosborne01/trending-shows1
+mdblist_tv: https://mdblist.com/lists/netplexflix/umtk-trending-top20
 mdblist_tv_limit: 10
   
 ################################################################################
@@ -191,11 +192,11 @@ text_new_show:
 ##########                TRENDING MOVIES COLLECTION:                 ##########
 ################################################################################
 collection_trending_movies:
-  collection_name: "Trending Movies"
+  collection_name: "Trending Movies TOP 10"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  collection_order: custom
-  sync_mode: sync
+  build_collection: false
+  sync_mode: append
 
 
 ################################################################################
@@ -219,11 +220,11 @@ text_trending_movies_request_needed:
 ##########                TRENDING SHOWS COLLECTION:                  ##########
 ################################################################################
 collection_trending_shows:
-  collection_name: "Trending Shows"
+  collection_name: "Trending Shows TOP 10"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  collection_order: custom
-  sync_mode: sync
+  build_collection: false
+  sync_mode: append
 
 
 ################################################################################

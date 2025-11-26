@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.24"
+VERSION = "2025.11.26"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -734,14 +734,15 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
             radarr_by_imdb[movie['imdbId']] = movie
     
     for item in mdblist_items:
-        # MDBList items have tmdb_id, imdb_id, title, year
+        # MDBList items have tmdb_id, imdb_id, title, year, rank
         tmdb_id = str(item.get('tmdb_id', ''))
         imdb_id = item.get('imdb_id', '')
         title = item.get('title', 'Unknown')
         year = item.get('year')
+        rank = item.get('rank')  # Preserve rank
         
         if debug:
-            print(f"{BLUE}[DEBUG] Processing trending movie: {title} ({year}) - TMDB: {tmdb_id}, IMDB: {imdb_id}{RESET}")
+            print(f"{BLUE}[DEBUG] Processing trending movie: {title} ({year}) - TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
         
         # Try to find in Radarr
         radarr_movie = None
@@ -772,8 +773,9 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
                     'path': radarr_movie.get('path', ''),
                     'folderName': radarr_movie.get('folderName', ''),
                     'year': radarr_movie.get('year', None),
-                    'releaseDate': None,  # Not needed for trending
-                    'releaseType': 'Trending'
+                    'releaseDate': None,
+                    'releaseType': 'Trending',
+                    'rank': rank  # Include rank
                 }
                 monitored_not_available.append(movie_dict)
             else:
@@ -788,7 +790,8 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
                     'folderName': radarr_movie.get('folderName', ''),
                     'year': radarr_movie.get('year', None),
                     'releaseDate': None,
-                    'releaseType': 'Trending'
+                    'releaseType': 'Trending',
+                    'rank': rank  # Include rank
                 }
                 not_found_or_unmonitored.append(movie_dict)
         else:
@@ -804,7 +807,8 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
                 'folderName': None,
                 'year': year,
                 'releaseDate': None,
-                'releaseType': 'Trending'
+                'releaseType': 'Trending',
+                'rank': rank  # Include rank
             }
             not_found_or_unmonitored.append(movie_dict)
     
@@ -835,15 +839,16 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
             sonarr_by_tmdb[str(series['tmdbId'])] = series
     
     for item in mdblist_items:
-        # MDBList items may have tvdb_id, tmdb_id, imdb_id, title, year
+        # MDBList items may have tvdb_id, tmdb_id, imdb_id, title, year, rank
         tvdb_id = str(item.get('tvdb_id', '')) if item.get('tvdb_id') else None
         tmdb_id = str(item.get('tmdb_id', '')) if item.get('tmdb_id') else None
         imdb_id = item.get('imdb_id', '')
         title = item.get('title', 'Unknown')
         year = item.get('year')
+        rank = item.get('rank')  # Preserve rank
         
         if debug:
-            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, TMDB: {tmdb_id}, IMDB: {imdb_id}{RESET}")
+            print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
         
         # Try to find in Sonarr - check TVDB first, then TMDB, then IMDB
         sonarr_series = None
@@ -871,7 +876,8 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
-                    'airDate': None
+                    'airDate': None,
+                    'rank': rank  # Include rank
                 }
                 not_found_or_unmonitored.append(show_dict)
                 continue
@@ -897,7 +903,8 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                     'path': sonarr_series.get('path', ''),
                     'imdbId': sonarr_series.get('imdbId', ''),
                     'year': sonarr_series.get('year', None),
-                    'airDate': None
+                    'airDate': None,
+                    'rank': rank  # Include rank
                 }
                 monitored_not_available.append(show_dict)
         else:
@@ -913,7 +920,8 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 'path': None,
                 'imdbId': imdb_id,
                 'year': year,
-                'airDate': None
+                'airDate': None,
+                'rank': rank  # Include rank
             }
             not_found_or_unmonitored.append(show_dict)
     
@@ -3116,8 +3124,8 @@ def get_next_sort_by(output_file):
     else:
         return sort_options[0]
 
-def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
-    """Create trending collection YAML file for movies"""
+def create_trending_collection_yaml_movies(output_file, mdblist_items, config, trending_request_needed=None):
+    """Create trending collection YAML file for movies using TMDB IDs from all MDBList items"""
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -3139,36 +3147,68 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
 
     yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
 
+    if not mdblist_items:
+        # Empty collection
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": {
+                        "all": {
+                            "label": collection_name
+                        }
+                    },
+                    "item_label.remove": collection_name,
+                    "build_collection": False
+                }
+            }
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+    
+    # Extract TMDB IDs from ALL MDBList items
+    tmdb_ids = []
+    for item in mdblist_items:
+        tmdb_id = item.get('tmdb_id') or item.get('id')
+        if tmdb_id:
+            tmdb_ids.append(str(tmdb_id))
+    
+    if not tmdb_ids:
+        # No valid IDs
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": {
+                        "all": {
+                            "label": collection_name
+                        }
+                    },
+                    "non_item_remove_label": collection_name,
+                    "build_collection": False
+                }
+            }
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+
     collection_data = deepcopy(collection_config)
     
-    # Get next sort_by value
-    next_sort_by = get_next_sort_by(output_file)
-    
-    # Add mdblist_list configuration
-    collection_data["mdblist_list"] = {
-        "url": mdblist_url,
-        "limit": mdblist_limit,
-        "sort_by": next_sort_by
-    }
+    # Use TMDB IDs from all trending items
+    tmdb_ids_str = ", ".join(tmdb_ids)
+    collection_data["tmdb_movie"] = tmdb_ids_str
     
     if "sync_mode" not in collection_data:
         collection_data["sync_mode"] = "sync"
 
     ordered_collection = OrderedDict()
     
-    # Add mdblist_list first
-    ordered_collection["mdblist_list"] = collection_data["mdblist_list"]
-    
-    # Add other configuration items
+    # Add configuration items in order
     for key, value in collection_data.items():
-        if key not in ["mdblist_list", "sync_mode"]:
-            if key == "sort_title" and isinstance(value, str):
-                ordered_collection[key] = QuotedString(value)
-            else:
-                ordered_collection[key] = value
-    
-    # Add sync_mode last
-    ordered_collection["sync_mode"] = collection_data["sync_mode"]
+        if key == "sort_title" and isinstance(value, str):
+            ordered_collection[key] = QuotedString(value)
+        else:
+            ordered_collection[key] = value
 
     data = {
         "collections": {
@@ -3180,13 +3220,13 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
     label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
     if label_request_needed and trending_request_needed:
         # Extract TMDB IDs from request-needed movies
-        tmdb_ids = []
+        request_tmdb_ids = []
         for movie in trending_request_needed:
             if movie.get("tmdbId"):
-                tmdb_ids.append(str(movie['tmdbId']))
+                request_tmdb_ids.append(str(movie['tmdbId']))
         
-        if tmdb_ids:
-            tmdb_ids_str = ", ".join(tmdb_ids)
+        if request_tmdb_ids:
+            tmdb_ids_str = ", ".join(request_tmdb_ids)
             data["collections"]["RequestNeededMovies"] = {
                 "item_label": "RequestNeeded",
                 "non_item_remove_label": "RequestNeeded",
@@ -3199,8 +3239,8 @@ def create_trending_collection_yaml_movies(output_file, mdblist_url, mdblist_lim
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, config, trending_request_needed=None):
-    """Create trending collection YAML file for TV shows"""
+def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trending_request_needed=None):
+    """Create trending collection YAML file for TV shows using TVDB/TMDB IDs from all MDBList items"""
     def represent_ordereddict(dumper, data):
         return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
     
@@ -3222,36 +3262,79 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
 
     yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
 
+    if not mdblist_items:
+        # Empty collection
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": {
+                        "all": {
+                            "label": collection_name
+                        }
+                    },
+                    "item_label.remove": collection_name,
+                    "build_collection": False
+                }
+            }
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+    
+    # Extract IDs from ALL MDBList items
+    tvdb_ids = []
+    tmdb_ids = []
+    
+    for item in mdblist_items:
+        tvdb_id = item.get('tvdb_id')
+        tmdb_id = item.get('tmdb_id') or item.get('id')
+        
+        if tvdb_id:
+            tvdb_ids.append(str(tvdb_id))
+        elif tmdb_id:
+            tmdb_ids.append(str(tmdb_id))
+    
+    if not tvdb_ids and not tmdb_ids:
+        # No valid IDs
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": {
+                        "all": {
+                            "label": collection_name
+                        }
+                    },
+                    "non_item_remove_label": collection_name,
+                    "build_collection": False
+                }
+            }
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+
     collection_data = deepcopy(collection_config)
     
-    # Get next sort_by value
-    next_sort_by = get_next_sort_by(output_file)
+    # Use IDs from all trending items
+    if tvdb_ids:
+        tvdb_ids_str = ", ".join(tvdb_ids)
+        collection_data["tvdb_show"] = tvdb_ids_str
     
-    # Add mdblist_list configuration
-    collection_data["mdblist_list"] = {
-        "url": mdblist_url,
-        "limit": mdblist_limit,
-        "sort_by": next_sort_by
-    }
+    if tmdb_ids:
+        tmdb_ids_str = ", ".join(tmdb_ids)
+        collection_data["tmdb_show"] = tmdb_ids_str
     
     if "sync_mode" not in collection_data:
         collection_data["sync_mode"] = "sync"
 
     ordered_collection = OrderedDict()
     
-    # Add mdblist_list first
-    ordered_collection["mdblist_list"] = collection_data["mdblist_list"]
-    
-    # Add other configuration items
+    # Add configuration items in order
     for key, value in collection_data.items():
-        if key not in ["mdblist_list", "sync_mode"]:
-            if key == "sort_title" and isinstance(value, str):
-                ordered_collection[key] = QuotedString(value)
-            else:
-                ordered_collection[key] = value
-    
-    # Add sync_mode last
-    ordered_collection["sync_mode"] = collection_data["sync_mode"]
+        if key == "sort_title" and isinstance(value, str):
+            ordered_collection[key] = QuotedString(value)
+        else:
+            ordered_collection[key] = value
 
     data = {
         "collections": {
@@ -3262,19 +3345,19 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
     # Add RequestNeededTV collection if enabled and we have request-needed items
     label_request_needed = str(config.get("label_request_needed", "false")).lower() == "true"
     if label_request_needed and trending_request_needed:
-        # Extract IDs from request-needed shows (prefer TVDB, fallback to TMDB)
-        tvdb_ids = []
-        tmdb_ids = []
+        # Extract IDs from request-needed shows
+        request_tvdb_ids = []
+        request_tmdb_ids = []
         
         for show in trending_request_needed:
             if show.get("tvdbId"):
-                tvdb_ids.append(str(show['tvdbId']))
+                request_tvdb_ids.append(str(show['tvdbId']))
             elif show.get("tmdbId"):
-                tmdb_ids.append(str(show['tmdbId']))
+                request_tmdb_ids.append(str(show['tmdbId']))
         
-        # Create collection with TVDB IDs if available
-        if tvdb_ids:
-            tvdb_ids_str = ", ".join(tvdb_ids)
+        # Create collection with appropriate IDs
+        if request_tvdb_ids:
+            tvdb_ids_str = ", ".join(request_tvdb_ids)
             data["collections"]["RequestNeededTV"] = {
                 "item_label": "RequestNeeded",
                 "non_item_remove_label": "RequestNeeded",
@@ -3282,9 +3365,8 @@ def create_trending_collection_yaml_tv(output_file, mdblist_url, mdblist_limit, 
                 "sync_mode": "append",
                 "tvdb_show": tvdb_ids_str
             }
-        # Fallback to TMDB IDs if no TVDB IDs available
-        elif tmdb_ids:
-            tmdb_ids_str = ", ".join(tmdb_ids)
+        elif request_tmdb_ids:
+            tmdb_ids_str = ", ".join(request_tmdb_ids)
             data["collections"]["RequestNeededTV"] = {
                 "item_label": "RequestNeeded",
                 "non_item_remove_label": "RequestNeeded",
@@ -3829,33 +3911,48 @@ def sanitize_sort_title(title):
     sanitized = ' '.join(sanitized.split())
     return sanitized.strip()
 
-def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False, sonarr_url=None, api_key=None, all_series=None, sonarr_timeout=90):
-    """Create metadata YAML file for TV shows"""
+def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False, sonarr_url=None, api_key=None, all_series=None, sonarr_timeout=90, mdblist_tv_items=None):
+    """Create consolidated metadata YAML file for TV shows"""
     # Read existing metadata file to track previously modified shows
     previously_modified_tvdb_ids = set()
+    previously_ranked_tvdb_ids = {}
     try:
         with open(output_file, 'r', encoding='utf-8') as f:
             existing_data = yaml.safe_load(f)
             if existing_data and 'metadata' in existing_data:
-                # Only include shows that have sort_title starting with !yyyymmdd
                 for tvdb_id, metadata in existing_data['metadata'].items():
                     sort_title = metadata.get('sort_title', '')
-                    # Check if sort_title starts with ! followed by 8 digits
+                    # Check if sort_title starts with ! followed by 8 digits (date format)
                     if sort_title and sort_title.startswith('!') and len(sort_title) > 9:
-                        date_part = sort_title[1:9]  # Extract the 8 characters after !
+                        date_part = sort_title[1:9]
                         if date_part.isdigit():
                             previously_modified_tvdb_ids.add(tvdb_id)
+                    # Check if sort_title starts with ! followed by 2 digits (rank format)
+                    elif sort_title and sort_title.startswith('!') and len(sort_title) > 3:
+                        rank_part = sort_title[1:3]
+                        if rank_part.isdigit():
+                            previously_ranked_tvdb_ids[tvdb_id] = sort_title
     except FileNotFoundError:
-        pass  # First run, no existing file
+        pass
     except Exception as e:
         if debug:
             print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
     
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     
     metadata_dict = {}
     current_tvdb_ids = set()
+    current_ranked_ids = set()
     
+    # First, collect all ranked shows if ranking is enabled
+    ranked_tvdb_ids = set()
+    if add_rank_to_sort_title and mdblist_tv_items:
+        for item in mdblist_tv_items:
+            if item.get('rank') and item.get('tvdb_id'):
+                ranked_tvdb_ids.add(int(item['tvdb_id']))
+    
+    # Process regular shows with content
     for show in all_shows_with_content:
         tvdb_id = show.get('tvdbId')
         if not tvdb_id:
@@ -3863,20 +3960,23 @@ def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=F
         
         current_tvdb_ids.add(tvdb_id)
         
+        # Initialize metadata for this show
+        if tvdb_id not in metadata_dict:
+            metadata_dict[tvdb_id] = {}
+        
         # Determine if this show used a trailer or placeholder
         used_trailer = show.get('used_trailer', False)
         episode_title = "Trailer" if used_trailer else "Coming Soon"
         
-        show_metadata = {
-            "episodes": {
-                "S00E00": {
-                    "title": episode_title
-                }
-            }
-        }
+        # Add episode metadata
+        if "episodes" not in metadata_dict[tvdb_id]:
+            metadata_dict[tvdb_id]["episodes"] = {}
+        metadata_dict[tvdb_id]["episodes"]["S00E00"] = {"title": episode_title}
         
-        # Add sort_title if append_dates is enabled
-        if append_dates:
+        # Only add date-based sort_title if:
+        # 1. append_dates is enabled
+        # 2. The show is NOT in the ranked list (rank takes precedence)
+        if append_dates and tvdb_id not in ranked_tvdb_ids:
             air_date = show.get('airDate')
             show_title = show.get('title', 'Unknown')
             
@@ -3885,23 +3985,77 @@ def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=F
                 date_str = air_date.replace('-', '')
                 sanitized_title = sanitize_sort_title(show_title)
                 sort_title = f"!{date_str} {sanitized_title}"
-                show_metadata["sort_title"] = sort_title
+                metadata_dict[tvdb_id]["sort_title"] = sort_title
                 
                 if debug:
                     print(f"{BLUE}[DEBUG] TV metadata for {show_title}: sort_title = {sort_title}, episode_title = {episode_title}{RESET}")
+        elif debug and tvdb_id in ranked_tvdb_ids:
+            print(f"{BLUE}[DEBUG] Skipping date sort_title for {show.get('title')} - will use rank instead{RESET}")
+    
+    # Process trending shows if add_rank_to_sort_title is enabled
+    if add_rank_to_sort_title and mdblist_tv_items:
+        # Create lookup for Sonarr series
+        sonarr_by_tvdb = {}
+        sonarr_by_tmdb = {}
+        if all_series:
+            for series in all_series:
+                if series.get('tvdbId'):
+                    sonarr_by_tvdb[str(series['tvdbId'])] = series
+                if series.get('tmdbId'):
+                    sonarr_by_tmdb[str(series['tmdbId'])] = series
         
-        metadata_dict[tvdb_id] = show_metadata
+        # Process ranked items
+        for item in mdblist_tv_items:
+            rank = item.get('rank')
+            tvdb_id = item.get('tvdb_id')
+            tmdb_id = item.get('tmdb_id') or item.get('id')
+            title = item.get('title', 'Unknown')
+            
+            if not rank:
+                continue
+            
+            # Determine which ID to use and get title
+            if tvdb_id:
+                tvdb_id_str = str(tvdb_id)
+                current_ranked_ids.add(int(tvdb_id))
+                
+                if tvdb_id_str in sonarr_by_tvdb:
+                    title = sonarr_by_tvdb[tvdb_id_str].get('title', title)
+                
+                # Format rank with leading zero for proper sorting
+                rank_str = f"{int(rank):02d}"
+                sanitized_title = sanitize_sort_title(title)
+                sort_title = f"!{rank_str} {sanitized_title}"
+                
+                # Initialize metadata dict for this show if not exists
+                if int(tvdb_id) not in metadata_dict:
+                    metadata_dict[int(tvdb_id)] = {}
+                
+                # Update sort_title (rank takes precedence over date)
+                metadata_dict[int(tvdb_id)]["sort_title"] = sort_title
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] Trending TV metadata for {title}: rank={rank}, sort_title={sort_title} (overrides date if present){RESET}")
     
     # Find shows that were previously modified but are no longer in current matches
-    # These need to have their sort_title reverted to original title
     shows_to_revert = previously_modified_tvdb_ids - current_tvdb_ids
     
-    if shows_to_revert and all_series:
+    # Find shows that were previously ranked but are no longer trending
+    if add_rank_to_sort_title:
+        ranked_to_revert = set(previously_ranked_tvdb_ids.keys()) - current_ranked_ids
+    else:
+        # If ranking is disabled, revert all previously ranked shows
+        ranked_to_revert = set(previously_ranked_tvdb_ids.keys())
+    
+    # Combine revert sets
+    all_to_revert = shows_to_revert | ranked_to_revert
+    
+    if all_to_revert and all_series:
         # Create a mapping of tvdb_id to series title from all_series
         tvdb_to_title = {series.get('tvdbId'): series.get('title', '') 
                        for series in all_series if series.get('tvdbId')}
         
-        for tvdb_id in shows_to_revert:
+        for tvdb_id in all_to_revert:
             # Get the original title from Sonarr data
             original_title = tvdb_to_title.get(tvdb_id)
             if original_title:
@@ -3923,50 +4077,153 @@ def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=F
             f.write("#No TV shows with content found")
         return
     
-    if shows_to_revert:
-        print(f"{GREEN}Reverting sort_title for {len(shows_to_revert)} TV shows no longer in upcoming category{RESET}")
+    if all_to_revert:
+        print(f"{GREEN}Reverting sort_title for {len(all_to_revert)} TV shows no longer in upcoming/trending category{RESET}")
     
     final_output = {"metadata": metadata_dict}
     
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
 
-def create_movies_metadata_yaml(output_file, all_movies_with_content, config, debug=False):
-    """Create metadata YAML file for movies"""
-    if not all_movies_with_content:
+def create_movies_metadata_yaml(output_file, all_movies_with_content, config, debug=False, mdblist_movies_items=None, all_movies=None):
+    """Create consolidated metadata YAML file for movies"""
+    # Read existing metadata file to track previously modified movies
+    previously_ranked_tmdb_ids = {}
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'metadata' in existing_data:
+                for tmdb_id, metadata in existing_data['metadata'].items():
+                    sort_title = metadata.get('sort_title', '')
+                    # Check if sort_title starts with ! followed by 2 digits (rank format)
+                    if sort_title and sort_title.startswith('!') and len(sort_title) > 3:
+                        rank_part = sort_title[1:3]
+                        if rank_part.isdigit():
+                            previously_ranked_tmdb_ids[tmdb_id] = sort_title
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
+    
+    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
+    
+    metadata_dict = {}
+    current_ranked_ids = set()
+    
+    # First, collect all ranked movies if ranking is enabled
+    ranked_tmdb_ids = set()
+    if add_rank_to_sort_title and mdblist_movies_items:
+        for item in mdblist_movies_items:
+            tmdb_id = item.get('tmdb_id') or item.get('id')
+            if item.get('rank') and tmdb_id:
+                ranked_tmdb_ids.add(int(tmdb_id))
+    
+    # Process regular movies with content (date-based sort_title)
+    if append_dates:
+        for movie in all_movies_with_content:
+            tmdb_id = movie.get('tmdbId')
+            if not tmdb_id:
+                continue
+            
+            # Only add date-based sort_title if:
+            # 1. The movie is NOT in the ranked list (rank takes precedence)
+            if tmdb_id not in ranked_tmdb_ids:
+                release_date = movie.get('releaseDate')
+                movie_title = movie.get('title', 'Unknown')
+                
+                if release_date:
+                    # Convert YYYY-MM-DD to YYYYMMDD
+                    date_str = release_date.replace('-', '')
+                    sanitized_title = sanitize_sort_title(movie_title)
+                    sort_title = f"!{date_str} {sanitized_title}"
+                    
+                    if tmdb_id not in metadata_dict:
+                        metadata_dict[tmdb_id] = {}
+                    
+                    metadata_dict[tmdb_id]["sort_title"] = sort_title
+                    
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Movie metadata for {movie_title}: sort_title = {sort_title}{RESET}")
+            elif debug:
+                print(f"{BLUE}[DEBUG] Skipping date sort_title for {movie.get('title')} - will use rank instead{RESET}")
+    
+    # Process trending movies if add_rank_to_sort_title is enabled
+    if add_rank_to_sort_title and mdblist_movies_items:
+        # Create lookup for Radarr movies
+        radarr_by_tmdb = {}
+        if all_movies:
+            for movie in all_movies:
+                if movie.get('tmdbId'):
+                    radarr_by_tmdb[str(movie['tmdbId'])] = movie
+        
+        # Process ranked items
+        for item in mdblist_movies_items:
+            rank = item.get('rank')
+            tmdb_id = item.get('tmdb_id') or item.get('id')
+            title = item.get('title', 'Unknown')
+            
+            if not rank or not tmdb_id:
+                continue
+            
+            tmdb_id_str = str(tmdb_id)
+            current_ranked_ids.add(tmdb_id_str)
+            
+            # Get the actual title from Radarr if available
+            if tmdb_id_str in radarr_by_tmdb:
+                title = radarr_by_tmdb[tmdb_id_str].get('title', title)
+            
+            # Format rank with leading zero for proper sorting
+            rank_str = f"{int(rank):02d}"
+            sanitized_title = sanitize_sort_title(title)
+            sort_title = f"!{rank_str} {sanitized_title}"
+            
+            # Initialize metadata dict for this movie if not exists
+            if int(tmdb_id_str) not in metadata_dict:
+                metadata_dict[int(tmdb_id_str)] = {}
+            
+            # Update sort_title (rank takes precedence over date)
+            metadata_dict[int(tmdb_id_str)]["sort_title"] = sort_title
+            
+            if debug:
+                print(f"{BLUE}[DEBUG] Trending movie metadata for {title}: rank={rank}, sort_title={sort_title} (overrides date if present){RESET}")
+    
+    # Find movies that were previously ranked but are no longer trending
+    if add_rank_to_sort_title:
+        movies_to_revert = set(previously_ranked_tmdb_ids.keys()) - current_ranked_ids
+    else:
+        # If ranking is disabled, revert all previously ranked movies
+        movies_to_revert = set(previously_ranked_tmdb_ids.keys())
+    
+    if movies_to_revert and all_movies:
+        # Create lookup for Radarr movies
+        radarr_by_tmdb = {}
+        for movie in all_movies:
+            if movie.get('tmdbId'):
+                radarr_by_tmdb[str(movie['tmdbId'])] = movie
+        
+        for tmdb_id in movies_to_revert:
+            # Get the original title from Radarr data
+            if tmdb_id in radarr_by_tmdb:
+                original_title = radarr_by_tmdb[tmdb_id].get('title', '')
+                if original_title:
+                    clean_title = sanitize_sort_title(original_title)
+                    
+                    if tmdb_id not in metadata_dict:
+                        metadata_dict[tmdb_id] = {}
+                    
+                    metadata_dict[tmdb_id]["sort_title"] = clean_title
+                    
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Reverting sort_title for tmdb_id {tmdb_id}: {clean_title}{RESET}")
+        
+        print(f"{GREEN}Reverting sort_title for {len(movies_to_revert)} movies no longer in trending list{RESET}")
+    
+    if not metadata_dict:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No movies with content found")
         return
-    
-    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
-    
-    if not append_dates:
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("#append_dates_to_sort_titles is disabled")
-        return
-    
-    metadata_dict = {}
-    
-    for movie in all_movies_with_content:
-        tmdb_id = movie.get('tmdbId')
-        if not tmdb_id:
-            continue
-        
-        release_date = movie.get('releaseDate')
-        movie_title = movie.get('title', 'Unknown')
-        
-        if release_date:
-            # Convert YYYY-MM-DD to YYYYMMDD
-            date_str = release_date.replace('-', '')
-            sanitized_title = sanitize_sort_title(movie_title)
-            sort_title = f"!{date_str} {sanitized_title}"
-            
-            metadata_dict[tmdb_id] = {
-                "sort_title": sort_title
-            }
-            
-            if debug:
-                print(f"{BLUE}[DEBUG] Movie metadata for {movie_title}: sort_title = {sort_title}{RESET}")
     
     final_output = {"metadata": metadata_dict}
     
@@ -4015,6 +4272,7 @@ def main():
     trending_tv_method = config.get('trending_tv', 0)
     trending_movies_method = config.get('trending_movies', 0)
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
+    add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
     print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
@@ -4415,30 +4673,38 @@ def main():
                 
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
                 
-                # Create metadata file
-                create_tv_metadata_yaml(str(metadata_file), all_shows_with_content, config, debug, sonarr_url, sonarr_api_key, all_series, sonarr_timeout)
+                # Create metadata file (consolidated)
+                create_tv_metadata_yaml(
+                    str(metadata_file), 
+                    all_shows_with_content, 
+                    config, 
+                    debug, 
+                    sonarr_url, 
+                    sonarr_api_key, 
+                    all_series, 
+                    sonarr_timeout,
+                    mdblist_tv_items if trending_tv_method > 0 else None
+                )
                 
                 print(f"\n{GREEN}TV YAML files created successfully{RESET}")
             
             # Create Trending TV collection YAML
             if trending_tv_method > 0:
-                mdblist_tv_url = config.get('mdblist_tv')
-                mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
-                if mdblist_tv_url:
+                if mdblist_tv_items:
+                    # Pass the raw MDBList items for the collection
                     trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_url, mdblist_tv_limit, config, trending_tv_request_needed)
+                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_items, config, trending_tv_request_needed)
                     print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
-
+        
                     # Create Top 10 TV overlay YAML
-                    if mdblist_tv_items:
-                        top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
-                        create_top10_overlay_yaml_tv(
-                            str(top10_tv_overlay_file), 
-                            mdblist_tv_items,
-                            {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
-                             "text": config.get("text_trending_top_10_tv", {})}
-                        )
-                        print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
+                    top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
+                    create_top10_overlay_yaml_tv(
+                        str(top10_tv_overlay_file), 
+                        mdblist_tv_items,
+                        {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
+                         "text": config.get("text_trending_top_10_tv", {})}
+                    )
+                    print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
         
         # Determine if we need to process Movies at all (either regular or trending)
         process_movies = (movie_method > 0 or trending_movies_method > 0)
@@ -4750,30 +5016,35 @@ def main():
                 
                 create_collection_yaml_movies(str(collection_file), future_movies, released_movies, config)
                 
-                # Create metadata file
-                create_movies_metadata_yaml(str(metadata_file), all_movies_with_content, config, debug)
+                # Create metadata file (consolidated)
+                create_movies_metadata_yaml(
+                    str(metadata_file), 
+                    all_movies_with_content, 
+                    config, 
+                    debug,
+                    mdblist_movies_items if trending_movies_method > 0 else None,
+                    all_movies
+                )
                 
                 print(f"\n{GREEN}Movie YAML files created successfully{RESET}")
             
             # Create Trending Movies collection YAML
             if trending_movies_method > 0:
-                mdblist_movies_url = config.get('mdblist_movies')
-                mdblist_movies_limit = config.get('mdblist_movies_limit', 10)
-                if mdblist_movies_url:
+                if mdblist_movies_items:
+                    # Pass the raw MDBList items for the collection
                     trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_url, mdblist_movies_limit, config, trending_movies_request_needed)
+                    create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_items, config, trending_movies_request_needed)
                     print(f"{GREEN}Trending Movies collection YAML created successfully{RESET}")
-
+            
                     # Create Top 10 Movies overlay YAML
-                    if mdblist_movies_items:
-                        top10_movies_overlay_file = kometa_folder / "UMTK_MOVIES_TOP10_OVERLAYS.yml"
-                        create_top10_overlay_yaml_movies(
-                            str(top10_movies_overlay_file), 
-                            mdblist_movies_items,
-                            {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
-                             "text": config.get("text_trending_top_10_movies", {})}
-                        )
-                        print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
+                    top10_movies_overlay_file = kometa_folder / "UMTK_MOVIES_TOP10_OVERLAYS.yml"
+                    create_top10_overlay_yaml_movies(
+                        str(top10_movies_overlay_file), 
+                        mdblist_movies_items,
+                        {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
+                         "text": config.get("text_trending_top_10_movies", {})}
+                    )
+                    print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
         
         # Calculate and display runtime
         end_time = datetime.now()
