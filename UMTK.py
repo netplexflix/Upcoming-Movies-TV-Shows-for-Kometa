@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.26"
+VERSION = "2025.11.30"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -863,7 +863,7 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
             if debug:
                 print(f"{BLUE}[DEBUG] Found in Sonarr: {sonarr_series['title']}{RESET}")
             
-            # Check if monitored
+            # Check if monitored at series level
             if not sonarr_series.get('monitored', False):
                 if debug:
                     print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
@@ -882,7 +882,7 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 not_found_or_unmonitored.append(show_dict)
                 continue
             
-            # Get episodes to check if any are downloaded
+            # Get episodes to check if any are downloaded or monitored
             episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
             
             # Check if any episodes are downloaded
@@ -892,9 +892,13 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 if debug:
                     print(f"{BLUE}[DEBUG] Has downloaded episodes, skipping{RESET}")
                 continue
-            else:
+            
+            # Check if any episodes are monitored
+            has_monitored_episodes = any(ep.get('monitored', False) for ep in episodes)
+            
+            if not has_monitored_episodes:
                 if debug:
-                    print(f"{BLUE}[DEBUG] Monitored but no episodes available - adding to monitored_not_available{RESET}")
+                    print(f"{BLUE}[DEBUG] Show is monitored but no episodes are monitored - adding to not_found_or_unmonitored{RESET}")
                 
                 show_dict = {
                     'title': sonarr_series['title'],
@@ -906,7 +910,24 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                     'airDate': None,
                     'rank': rank  # Include rank
                 }
-                monitored_not_available.append(show_dict)
+                not_found_or_unmonitored.append(show_dict)
+                continue
+            
+            # Show is monitored and has monitored episodes but no downloads
+            if debug:
+                print(f"{BLUE}[DEBUG] Monitored with monitored episodes but no downloads - adding to monitored_not_available{RESET}")
+            
+            show_dict = {
+                'title': sonarr_series['title'],
+                'tvdbId': sonarr_series.get('tvdbId'),
+                'tmdbId': sonarr_series.get('tmdbId'),
+                'path': sonarr_series.get('path', ''),
+                'imdbId': sonarr_series.get('imdbId', ''),
+                'year': sonarr_series.get('year', None),
+                'airDate': None,
+                'rank': rank  # Include rank
+            }
+            monitored_not_available.append(show_dict)
         else:
             if debug:
                 print(f"{BLUE}[DEBUG] Not found in Sonarr - adding to not_found_or_unmonitored{RESET}")
