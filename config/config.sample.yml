@@ -254,17 +254,17 @@ text_trending_shows_request_needed:
 backdrop_trending_top_10_movies:
   enable: true
   name: top10
-  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortup.png
-  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortequal.png
-  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortdown.png
+  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortup.png
+  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortequal.png
+  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortdown.png
   group: TRENDING
   weight: 2000
 
 text_trending_top_10_movies:
   horizontal_align: center
-  horizontal_offset: -407
+  horizontal_offset: -430
   vertical_align: top
-  vertical_offset: 180
+  vertical_offset: 160
   font: fonts/Roboto-Black.ttf
   font_size: 80
   font_color: "#dcb13d"
