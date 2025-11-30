@@ -249,24 +249,47 @@ text_trending_shows_request_needed:
   weight: 100
 
 ################################################################################
-##########                  TRENDING TOP 10 OVERLAY:                  ##########
+##########               TRENDING MOVIES TOP 10 OVERLAY:              ##########
 ################################################################################
-backdrop_trending_top_10:
-  enable: false
+backdrop_trending_top_10_movies:
+  enable: true
   name: top10
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/TOP10.png
-  group: TSSK_backdrop
-  weight: 100
+  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortup.png
+  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortequal.png
+  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortdown.png
+  group: TRENDING
+  weight: 2000
 
-text_trending_top_10:
-  horizontal_align: right
-  horizontal_offset: 25
-  vertical_align: bottom
-  vertical_offset: 25
+text_trending_top_10_movies:
+  horizontal_align: center
+  horizontal_offset: -407
+  vertical_align: top
+  vertical_offset: 180
   font: fonts/Roboto-Black.ttf
-  font_size: 300
-  font_color: "#ff0000"
+  font_size: 80
+  font_color: "#dcb13d"
   stroke_color: "#ffffff"
-  stroke_width: 6
-  group: TSSK_text
-  weight: 100
+  stroke_width: 1
+
+################################################################################
+##########              TRENDING SHOWS TOP 10 OVERLAY:                ##########
+################################################################################
+backdrop_trending_top_10_tv:
+  enable: true
+  name: top10
+  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortup.png
+  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortequal.png
+  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortdown.png
+  group: TRENDING
+  weight: 2000
+
+text_trending_top_10_tv:
+  horizontal_align: center
+  horizontal_offset: -407
+  vertical_align: top
+  vertical_offset: 180
+  font: fonts/Roboto-Black.ttf
+  font_size: 80
+  font_color: "#dcb13d"
+  stroke_color: "#ffffff"
+  stroke_width: 1
