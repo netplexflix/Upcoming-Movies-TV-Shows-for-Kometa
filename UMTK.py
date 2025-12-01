@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.11.30"
+VERSION = "2025.12.01"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -2631,6 +2631,230 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False)
 
+def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
+    """Create collection YAML file for TV shows"""
+    def represent_ordereddict(dumper, data):
+        return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
+    
+    yaml.add_representer(OrderedDict, represent_ordereddict, Dumper=yaml.SafeDumper)
+
+    config_key = "collection_upcoming_shows"
+    collection_config = {}
+    collection_name = "Upcoming Shows"
+    
+    if config_key in config:
+        collection_config = deepcopy(config[config_key])
+        collection_name = collection_config.pop("collection_name", "Upcoming Shows")
+    
+    future_days = config.get('future_days_upcoming_shows', 30)
+    if "summary" not in collection_config:
+        summary = f"Shows with their first episode premiering within {future_days} days or already aired but not yet available"
+    else:
+        summary = collection_config.pop("summary")
+    
+    class QuotedString(str):
+        pass
+
+    def quoted_str_presenter(dumper, data):
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+
+    yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
+
+    all_shows = future_shows + aired_shows
+
+    if not all_shows:
+        plex_search_config = {
+            "all": {
+                "label": collection_name
+            }
+        }
+        
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": plex_search_config,
+                    "item_label.remove": collection_name,
+                    "smart_label": collection_config.get("smart_label", "random"),
+                    "build_collection": collection_config.get("build_collection", False)
+                }
+            }
+        }
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+    
+    tvdb_ids = [s['tvdbId'] for s in all_shows if s.get('tvdbId')]
+    if not tvdb_ids:
+        plex_search_config = {
+            "all": {
+                "label": collection_name
+            }
+        }
+        
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": plex_search_config,
+                    "non_item_remove_label": collection_name,
+                    "build_collection": collection_config.get("build_collection", False)
+                }
+            }
+        }
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+
+    tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_ids))
+
+    collection_data = {}
+    collection_data["summary"] = summary
+    
+    for key, value in collection_config.items():
+        if key == "sort_title":
+            collection_data[key] = QuotedString(value)
+        else:
+            collection_data[key] = value
+    
+    if "sync_mode" not in collection_data:
+        collection_data["sync_mode"] = "sync"
+    
+    collection_data["tvdb_show"] = tvdb_ids_str
+
+    ordered_collection = OrderedDict()
+    
+    ordered_collection["summary"] = collection_data["summary"]
+    if "sort_title" in collection_data:
+        ordered_collection["sort_title"] = collection_data["sort_title"]
+    
+    for key, value in collection_data.items():
+        if key not in ["summary", "sort_title", "sync_mode", "tvdb_show"]:
+            ordered_collection[key] = value
+    
+    ordered_collection["sync_mode"] = collection_data["sync_mode"]
+    ordered_collection["tvdb_show"] = collection_data["tvdb_show"]
+
+    data = {
+        "collections": {
+            collection_name: ordered_collection
+        }
+    }
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+
+def create_new_shows_collection_yaml(output_file, shows, config):
+    """Create collection YAML file for new shows"""
+    def represent_ordereddict(dumper, data):
+        return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
+    
+    yaml.add_representer(OrderedDict, represent_ordereddict, Dumper=yaml.SafeDumper)
+
+    config_key = "collection_new_show"
+    collection_config = {}
+    collection_name = "New Shows"
+    
+    if config_key in config:
+        collection_config = deepcopy(config[config_key])
+        collection_name = collection_config.pop("collection_name", "New Shows")
+    
+    recent_days = config.get('recent_days_new_show', 7)
+    if "summary" not in collection_config:
+        summary = f"Shows that premiered within the past {recent_days} days"
+    else:
+        summary = collection_config.pop("summary")
+    
+    class QuotedString(str):
+        pass
+
+    def quoted_str_presenter(dumper, data):
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
+
+    yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
+
+    if not shows:
+        plex_search_config = {
+            "all": {
+                "label": collection_name
+            }
+        }
+        
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": plex_search_config,
+                    "item_label.remove": collection_name,
+                    "smart_label": collection_config.get("smart_label", "random"),
+                    "build_collection": collection_config.get("build_collection", False)
+                }
+            }
+        }
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+    
+    tvdb_ids = [s['tvdbId'] for s in shows if s.get('tvdbId')]
+    if not tvdb_ids:
+        plex_search_config = {
+            "all": {
+                "label": collection_name
+            }
+        }
+        
+        data = {
+            "collections": {
+                collection_name: {
+                    "plex_search": plex_search_config,
+                    "non_item_remove_label": collection_name,
+                    "build_collection": collection_config.get("build_collection", False)
+                }
+            }
+        }
+        
+        with open(output_file, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+        return
+
+    tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_ids))
+
+    collection_data = {}
+    collection_data["summary"] = summary
+    
+    for key, value in collection_config.items():
+        if key == "sort_title":
+            collection_data[key] = QuotedString(value)
+        else:
+            collection_data[key] = value
+    
+    if "sync_mode" not in collection_data:
+        collection_data["sync_mode"] = "sync"
+    
+    collection_data["tvdb_show"] = tvdb_ids_str
+
+    ordered_collection = OrderedDict()
+    
+    ordered_collection["summary"] = collection_data["summary"]
+    if "sort_title" in collection_data:
+        ordered_collection["sort_title"] = collection_data["sort_title"]
+    
+    for key, value in collection_data.items():
+        if key not in ["summary", "sort_title", "sync_mode", "tvdb_show"]:
+            ordered_collection[key] = value
+    
+    ordered_collection["sync_mode"] = collection_data["sync_mode"]
+    ordered_collection["tvdb_show"] = collection_data["tvdb_show"]
+
+    data = {
+        "collections": {
+            collection_name: ordered_collection
+        }
+    }
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
+
 def create_new_shows_overlay_yaml(output_file, shows, config_sections):
     """Create overlay YAML file for new shows"""
 
@@ -4688,9 +4912,15 @@ def main():
                 
                 if tv_method > 0:
                     new_shows_overlay_file = kometa_folder / "UMTK_TV_NEW_SHOWS_OVERLAYS.yml"
+                    new_shows_collection_file = kometa_folder / "UMTK_TV_NEW_SHOWS_COLLECTION.yml"
+                    
+                    # Create overlay file for new shows
                     create_new_shows_overlay_yaml(str(new_shows_overlay_file), new_shows,
                                                   {"backdrop": config.get("backdrop_new_show", {}),
                                                    "text": config.get("text_new_show", {})})
+                    
+                    # Create collection file for new shows
+                    create_new_shows_collection_yaml(str(new_shows_collection_file), new_shows, config)
                 
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
                 

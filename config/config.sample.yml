@@ -31,7 +31,7 @@ sonarr_api_key: 'YOUR_SONARR_API_KEY'
 sonarr_timeout: 90
 
 ################################################################################
-##########                   COMING SOON MOVIES:                      ##########
+##########                         MOVIES:                            ##########
 ################################################################################
 future_days_upcoming_movies: 30
 past_days_upcoming_movies: 0 #0=no limit
@@ -41,7 +41,7 @@ exclude_radarr_tags: exclude, private
 umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ################################################################################
-##########                   COMING SOON TV SHOWS:                    ##########
+##########                         TV SHOWS:                          ##########
 ################################################################################
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
@@ -54,7 +54,7 @@ umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv
 ################################################################################
 trending_movies: 0
 trending_tv: 0
-label_request_needed: false
+label_request_needed: true
 add_rank_to_sort_title: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
 mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
@@ -162,6 +162,16 @@ text_upcoming_shows_aired:
   group: TSSK_text
   weight: 100
 
+################################################################################
+##########                    NEW SHOW COLLECTION:                    ##########
+################################################################################
+collection_new_show:
+  collection_name: "New Shows Premiered"
+  item_label: NewShowsUMTK
+  non_item_remove_label: NewShowsUMTK
+  build_collection: false
+  sync_mode: append
+ 
 ################################################################################
 ##########                    NEW SHOWS OVERLAY:                      ##########
 ################################################################################
