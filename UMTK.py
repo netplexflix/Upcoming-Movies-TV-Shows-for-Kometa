@@ -14,7 +14,7 @@ from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
 
-VERSION = "2025.12.01"
+VERSION = "2025.12.05"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -2296,10 +2296,31 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
         print(f"{BLUE}[DEBUG] No edition folders found to check{RESET}")
 
 # YAML creation functions
-def format_date(yyyy_mm_dd, date_format, capitalize=False):
-    """Format date according to specified format"""
+def format_date(yyyy_mm_dd, date_format, capitalize=False, simplify_next_week=False, utc_offset=0):
     dt_obj = datetime.strptime(yyyy_mm_dd, "%Y-%m-%d")
     
+    # If simplify_next_week is enabled, check if date is within next 7 days
+    if simplify_next_week:
+        now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
+        today = now_local.date()
+        date_obj = dt_obj.date()
+        days_diff = (date_obj - today).days
+        
+        # Check if date is within the next 7 days (0-6 days from today)
+        if 0 <= days_diff <= 6:
+            if days_diff == 0:
+                result = "today"
+            elif days_diff == 1:
+                result = "tomorrow"
+            else:
+                # Use full weekday name
+                result = dt_obj.strftime('%A').lower()
+            
+            if capitalize:
+                result = result.upper()
+            return result
+    
+    # Original date formatting logic
     format_mapping = {
         'mmm': '%b',
         'mmmm': '%B',
@@ -2338,7 +2359,7 @@ def format_date(yyyy_mm_dd, date_format, capitalize=False):
         print(f"{RED}Error: Invalid date format '{date_format}'. Using default format.{RESET}")
         return yyyy_mm_dd
 
-def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored, trending_request_needed, config_sections):
+def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored, trending_request_needed, config_sections, config):
     """Create overlay YAML file for TV shows"""
 
     if not future_shows and not aired_shows and not trending_monitored and not trending_request_needed:
@@ -2347,6 +2368,10 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
         return
     
     overlays_dict = {}
+    
+    # Get global settings
+    simplify_next_week = config.get("simplify_next_week_dates", False)
+    utc_offset = float(config.get('utc_offset', 0))
     
     # Process future shows (haven't aired yet)
     if future_shows:
@@ -2379,11 +2404,12 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
         if enable_text and all_future_tvdb_ids:
             date_format = text_config.pop("date_format", "yyyy-mm-dd")
             use_text = text_config.pop("use_text", "Coming Soon")
+            # capitalize_dates is category-specific from text_config
             capitalize_dates = text_config.pop("capitalize_dates", True)
             
             if date_to_tvdb_ids:
                 for date_str in sorted(date_to_tvdb_ids):
-                    formatted_date = format_date(date_str, date_format, capitalize_dates)
+                    formatted_date = format_date(date_str, date_format, capitalize_dates, simplify_next_week, utc_offset)
                     sub_overlay_config = deepcopy(text_config)
                     if "name" not in sub_overlay_config:
                         sub_overlay_config["name"] = f"text({use_text} {formatted_date})"
@@ -3027,7 +3053,7 @@ def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
-def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored, trending_request_needed, config_sections):
+def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored, trending_request_needed, config_sections, config):
     """Create overlay YAML file for movies"""
 
     if not future_movies and not released_movies and not trending_monitored and not trending_request_needed:
@@ -3036,6 +3062,10 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
         return
     
     overlays_dict = {}
+    
+    # Get global settings
+    simplify_next_week = config.get("simplify_next_week_dates", False)
+    utc_offset = float(config.get('utc_offset', 0))
     
     # Process future movies (upcoming releases)
     if future_movies:
@@ -3068,10 +3098,11 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
         if enable_text and all_future_tmdb_ids:
             date_format = text_config.pop("date_format", "yyyy-mm-dd")
             use_text = text_config.pop("use_text", "Coming Soon")
+            # capitalize_dates is category-specific from text_config
             capitalize_dates = text_config.pop("capitalize_dates", True)
             
             for date_str in sorted(date_to_tmdb_ids):
-                formatted_date = format_date(date_str, date_format, capitalize_dates)
+                formatted_date = format_date(date_str, date_format, capitalize_dates, simplify_next_week, utc_offset)
                 sub_overlay_config = deepcopy(text_config)
                 
                 if "name" not in sub_overlay_config:
@@ -4907,7 +4938,8 @@ def main():
                      "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
                      "text_aired": config.get("text_upcoming_shows_aired", {}),
                      "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})}
+                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                    config
                 )
                 
                 if tv_method > 0:
@@ -5262,7 +5294,8 @@ def main():
                      "backdrop_released": config.get("backdrop_upcoming_movies_released", {}),
                      "text_released": config.get("text_upcoming_movies_released", {}),
                      "backdrop_trending_request_needed": config.get("backdrop_trending_movies_request_needed", {}),
-                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})}
+                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})},
+                    config
                 )
                 
                 create_collection_yaml_movies(str(collection_file), future_movies, released_movies, config)
