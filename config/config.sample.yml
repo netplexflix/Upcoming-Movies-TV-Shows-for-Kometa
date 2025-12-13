@@ -7,7 +7,6 @@ method_fallback: true
 utc_offset: +1
 debug: false
 cleanup: true
-append_dates_to_sort_titles: true
 simplify_next_week_dates: true
 
 skip_channels:
@@ -30,6 +29,17 @@ radarr_timeout: 90
 sonarr_url: 'http://localhost:8989'
 sonarr_api_key: 'YOUR_SONARR_API_KEY'
 sonarr_timeout: 90
+
+################################################################################
+##########                    PLEX CONFIGURATION:                     ##########
+################################################################################
+plex_url: 'http://localhost:32400'
+plex_token: 'YOUR_PLEX_TOKEN'
+movie_libraries: 'Movies'
+tv_libraries: 'TV Shows'
+append_dates_to_sort_titles: true
+add_rank_to_sort_title: true
+edit_S00E00_episode_title: true
 
 ################################################################################
 ##########                         MOVIES:                            ##########
@@ -56,7 +66,6 @@ umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv
 trending_movies: 0
 trending_tv: 0
 label_request_needed: true
-add_rank_to_sort_title: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
 mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
 mdblist_movies_limit: 10

@@ -50,6 +50,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [General](#general)
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
+  - [Plex Configuration (for metadata edits)](#plex-configuration-for-metadata-edits)
   - [Movie Settings](#movie-settings)
   - [TV Show Settings](#tv-show-settings)
   - [Trending](#trending)
@@ -250,7 +251,6 @@ Rename `config.example.yml` to `config.yml` and update your settings:
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues
 - **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
-- **append_dates_to_sort_titles:** Using the metadata files, release dates will be added to sort titles so you can sort in order of release date.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
 ### Radarr Configuration (for Movies):
@@ -264,7 +264,17 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **sonarr_url:** Your Sonarr URL (default: `http://localhost:8989`)
 - **sonarr_api_key:** Found in Sonarr under Settings → General → Security
 - **sonarr_timeout:** Increase if needed for large libraries
-  
+
+### Plex Configuration (for metadata edits):
+
+- **plex_url:** Your Plex URL
+- **plex_token:** [How to find your Plex Token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+- **movie_libraries:** names of your movie libraries, comma separated
+- **tv_libraries:** names of your TV show libraries, comma separated
+- **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
+- **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
+- **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
+
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
@@ -291,7 +301,6 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
-- **add_rank_to_sort_title:** Will add the rank in front of the sort title
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
 - **mdblist_movies:** which trending movies list to use. you can create your own.
 - **mdblist_movies_limit:** How many items to pull from the trending movies list
@@ -345,14 +354,12 @@ You can replace `build_collection: false` with your own [Kometa collection varia
 
 ## ☄️ Add to Kometa Configuration
 
-Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `metadata_files`, `collection_files` and `overlay_files`.
+Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `collection_files` and `overlay_files`.
 
 Example:
 
 ```yaml
 TV Shows:
-  metadata_files:
-    - file: /path/to/UMTK/kometa/UMTK_TV_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_TRENDING_COLLECTION.yml
@@ -362,8 +369,6 @@ TV Shows:
     - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
 
 Movies:
-  metadata_files:
-    - file: /path/to/UMTK/kometa/UMTK_MOVIES_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_TRENDING_COLLECTION.yml
@@ -517,10 +522,6 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 - That means you have those items monitored in Radarr/Sonarr but not downloaded.
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
-
-### ❌ My sort titles aren't being reset
-- Make sure Kometa runs after every UMTK run
-- When a sort_title needs to be reset, UMTK writes it to the metadata file. On the next run UMTK assumes Kometa has effectuated this change. So if you run UMTK more than once without running Kometa, this action is lost.
 
 ---
 

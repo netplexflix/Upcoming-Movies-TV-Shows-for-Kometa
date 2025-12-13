@@ -237,7 +237,7 @@ fix_media_permissions() {
     if [ -n "$UMTK_ROOT_TV" ] && [ -d "$UMTK_ROOT_TV" ]; then
         log "${BLUE}Fixing TV directory permissions: $UMTK_ROOT_TV${NC}"
         find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chmod -R 777 {} \; 2>/dev/null || true
         log "${GREEN}TV directory permissions fixed${NC}"
     fi
     
@@ -245,7 +245,7 @@ fix_media_permissions() {
     if [ -n "$UMTK_ROOT_MOVIES" ] && [ -d "$UMTK_ROOT_MOVIES" ]; then
         log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
         find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R u+rwX {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R 777 {} \; 2>/dev/null || true
         log "${GREEN}Movie directory permissions fixed${NC}"
     fi
 }

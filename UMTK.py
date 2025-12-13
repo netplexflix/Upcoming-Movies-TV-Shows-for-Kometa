@@ -13,8 +13,10 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from yaml.representer import SafeRepresenter
 from pathlib import Path, PureWindowsPath
+import urllib.parse
+import xml.etree.ElementTree as ET
 
-VERSION = "2025.12.05"
+VERSION = "2025.12.13"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -24,6 +26,9 @@ RED = '\033[31m'
 RESET = '\033[0m'
 BOLD = '\033[1m'
 
+################################################################################
+##########                         UTILITIES                          ##########
+################################################################################
 def get_user_info():
     try:
         return f"{os.getuid()}:{os.getgid()}"
@@ -97,6 +102,188 @@ def get_cookies_path():
     
     return None
 
+def convert_utc_to_local(utc_date_str, utc_offset):
+    """Convert UTC datetime to local time with offset"""
+    if not utc_date_str:
+        return None
+        
+    clean_date_str = utc_date_str.replace('Z', '')
+    utc_date = datetime.fromisoformat(clean_date_str).replace(tzinfo=timezone.utc)
+    local_date = utc_date + timedelta(hours=utc_offset)
+    return local_date
+
+def sanitize_filename(filename):
+    """Sanitize filename/folder name for Windows compatibility"""
+    replacements = {
+        ':': ' -',
+        '/': '-',
+        '\\': '-',
+        '?': '',
+        '*': '',
+        '"': "'",
+        '<': '(',
+        '>': ')',
+        '|': '-',
+    }
+    
+    sanitized = filename
+    for invalid_char, replacement in replacements.items():
+        sanitized = sanitized.replace(invalid_char, replacement)
+    
+    sanitized = sanitized.rstrip('. ')
+    return sanitized
+
+def check_yt_dlp_installed():
+    """Check if yt-dlp is installed and accessible"""
+    try:
+        result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            print(f"{GREEN}yt-dlp found: {version}{RESET}")
+            return True
+        else:
+            print(f"{RED}yt-dlp command not working properly{RESET}")
+            return False
+    except FileNotFoundError:
+        print(f"{RED}yt-dlp command not found. Please ensure yt-dlp is properly installed.{RESET}")
+        print(f"{ORANGE}Install with: pip install yt-dlp{RESET}")
+        return False
+    except subprocess.TimeoutExpired:
+        print(f"{RED}yt-dlp command timed out{RESET}")
+        return False
+    except Exception as e:
+        print(f"{RED}Error checking yt-dlp: {str(e)}{RESET}")
+        return False
+
+def get_tag_ids_from_names(api_url, api_key, tag_names, timeout=90, debug=False):
+    """Convert tag names to tag IDs"""
+    if not tag_names:
+        return []
+    
+    try:
+        url = f"{api_url}/tag"
+        headers = {"X-Api-Key": api_key}
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        
+        all_tags = response.json()
+        tag_name_to_id = {tag['label'].lower(): tag['id'] for tag in all_tags}
+        
+        tag_ids = []
+        for tag_name in tag_names:
+            tag_name_lower = tag_name.strip().lower()
+            if tag_name_lower in tag_name_to_id:
+                tag_ids.append(tag_name_to_id[tag_name_lower])
+                if debug:
+                    print(f"{BLUE}[DEBUG] Found tag '{tag_name}' with ID {tag_name_to_id[tag_name_lower]}{RESET}")
+            elif debug:
+                print(f"{ORANGE}[DEBUG] Tag '{tag_name}' not found{RESET}")
+        
+        return tag_ids
+    except requests.exceptions.RequestException as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Error fetching tags: {str(e)}{RESET}")
+        return []
+
+def format_date(yyyy_mm_dd, date_format, capitalize=False, simplify_next_week=False, utc_offset=0):
+    dt_obj = datetime.strptime(yyyy_mm_dd, "%Y-%m-%d")
+    
+    # If simplify_next_week is enabled, check if date is within next 7 days
+    if simplify_next_week:
+        now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
+        today = now_local.date()
+        date_obj = dt_obj.date()
+        days_diff = (date_obj - today).days
+        
+        # Check if date is within the next 7 days (0-6 days from today)
+        if 0 <= days_diff <= 6:
+            if days_diff == 0:
+                result = "today"
+            elif days_diff == 1:
+                result = "tomorrow"
+            else:
+                # Use full weekday name
+                result = dt_obj.strftime('%A').lower()
+            
+            if capitalize:
+                result = result.upper()
+            return result
+    
+    # Original date formatting logic
+    format_mapping = {
+        'mmm': '%b',
+        'mmmm': '%B',
+        'mm': '%m',
+        'm': '%-m',
+        'dddd': '%A',
+        'ddd': '%a',
+        'dd': '%d',
+        'd': str(dt_obj.day),
+        'yyyy': '%Y',
+        'yyy': '%Y',
+        'yy': '%y',
+        'y': '%y'
+    }
+    
+    patterns = sorted(format_mapping.keys(), key=len, reverse=True)
+    
+    temp_format = date_format
+    replacements = {}
+    for i, pattern in enumerate(patterns):
+        marker = f"@@{i}@@"
+        if pattern in temp_format:
+            replacements[marker] = format_mapping[pattern]
+            temp_format = temp_format.replace(pattern, marker)
+    
+    strftime_format = temp_format
+    for marker, replacement in replacements.items():
+        strftime_format = strftime_format.replace(marker, replacement)
+    
+    try:
+        result = dt_obj.strftime(strftime_format)
+        if capitalize:
+            result = result.upper()
+        return result
+    except ValueError as e:
+        print(f"{RED}Error: Invalid date format '{date_format}'. Using default format.{RESET}")
+        return yyyy_mm_dd
+
+def get_next_sort_by(output_file):
+    """Get the next sort_by value in rotation"""
+    sort_options = ["rank.desc", "usort.desc", "rank.asc", "usort.asc"]
+    current_sort = None
+    
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            existing_data = yaml.safe_load(f)
+            if existing_data and 'collections' in existing_data:
+                for collection_name, collection_data in existing_data['collections'].items():
+                    if 'mdblist_list' in collection_data:
+                        current_sort = collection_data['mdblist_list'].get('sort_by')
+                        break
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    
+    if current_sort in sort_options:
+        current_index = sort_options.index(current_sort)
+        next_index = (current_index + 1) % len(sort_options)
+        return sort_options[next_index]
+    else:
+        return sort_options[0]
+
+def sanitize_sort_title(title):
+    """Sanitize title for sort_title by removing special characters"""
+    # Remove special characters but keep spaces
+    sanitized = re.sub(r'[:\'"()\[\]{}<>|/\\?*]', '', title)
+    # Clean up multiple spaces
+    sanitized = ' '.join(sanitized.split())
+    return sanitized.strip()
+
+################################################################################
+##########                   EXTERNAL DATA SOURCES                    ##########
+################################################################################
 def process_sonarr_url(base_url, api_key, timeout=90):
     """Process and validate Sonarr URL"""
     base_url = base_url.rstrip('/')
@@ -202,59 +389,6 @@ def get_radarr_movies(radarr_url, api_key, timeout=90):
         print(f" {RED}✗{RESET}")
         print(f"{RED}Error connecting to Radarr: {str(e)}{RESET}")
         sys.exit(1)
-
-def convert_utc_to_local(utc_date_str, utc_offset):
-    """Convert UTC datetime to local time with offset"""
-    if not utc_date_str:
-        return None
-        
-    clean_date_str = utc_date_str.replace('Z', '')
-    utc_date = datetime.fromisoformat(clean_date_str).replace(tzinfo=timezone.utc)
-    local_date = utc_date + timedelta(hours=utc_offset)
-    return local_date
-
-def sanitize_filename(filename):
-    """Sanitize filename/folder name for Windows compatibility"""
-    replacements = {
-        ':': ' -',
-        '/': '-',
-        '\\': '-',
-        '?': '',
-        '*': '',
-        '"': "'",
-        '<': '(',
-        '>': ')',
-        '|': '-',
-    }
-    
-    sanitized = filename
-    for invalid_char, replacement in replacements.items():
-        sanitized = sanitized.replace(invalid_char, replacement)
-    
-    sanitized = sanitized.rstrip('. ')
-    return sanitized
-
-def check_yt_dlp_installed():
-    """Check if yt-dlp is installed and accessible"""
-    try:
-        result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            version = result.stdout.strip()
-            print(f"{GREEN}yt-dlp found: {version}{RESET}")
-            return True
-        else:
-            print(f"{RED}yt-dlp command not working properly{RESET}")
-            return False
-    except FileNotFoundError:
-        print(f"{RED}yt-dlp command not found. Please ensure yt-dlp is properly installed.{RESET}")
-        print(f"{ORANGE}Install with: pip install yt-dlp{RESET}")
-        return False
-    except subprocess.TimeoutExpired:
-        print(f"{RED}yt-dlp command timed out{RESET}")
-        return False
-    except Exception as e:
-        print(f"{RED}Error checking yt-dlp: {str(e)}{RESET}")
-        return False
 
 def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
     """Fetch items from MDBList API"""
@@ -385,28 +519,6 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
             import traceback
             traceback.print_exc()
         return []
-
-def check_video_file():
-    """Check if UMTK video file exists"""
-    # Check if running in Docker
-    if os.environ.get('DOCKER') == 'true':
-        video_folder = Path('/video')
-    else:
-        video_folder = Path(__file__).parent / 'video'
-    
-    if not video_folder.exists():
-        print(f"{RED}Video folder not found. Please create a 'video' folder.{RESET}")
-        return False
-    
-    source_files = list(video_folder.glob('UMTK.*'))
-    if not source_files:
-        print(f"{RED}UMTK video file not found in video folder. Please add a video file named 'UMTK' (with any extension).{RESET}")
-        return False
-    
-    source_file = source_files[0]
-    size_mb = source_file.stat().st_size / (1024 * 1024)
-    print(f"{GREEN}Found video file: {source_file.name} ({size_mb:.1f} MB){RESET}")
-    return True
 
 # TV Show specific functions
 def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False):
@@ -579,241 +691,6 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
     
     return new_shows
 
-# Movie specific functions
-def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None, past_days_upcoming_movies=0):
-    """Find movies that are monitored and meet release date criteria"""
-    future_movies = []
-    released_movies = []
-    
-    cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_movies)
-    now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
-    
-    # Calculate past cutoff date if past_days_upcoming_movies is set
-    past_cutoff_date = None
-    if past_days_upcoming_movies > 0 and not future_only:
-        past_cutoff_date = now_local - timedelta(days=past_days_upcoming_movies)
-    
-    if debug:
-        print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
-        print(f"{BLUE}[DEBUG] Future only mode: {future_only}{RESET}")
-        print(f"{BLUE}[DEBUG] Include inCinemas: {include_inCinemas}{RESET}")
-        if past_cutoff_date:
-            print(f"{BLUE}[DEBUG] Past cutoff date: {past_cutoff_date} (past_days_upcoming_movies: {past_days_upcoming_movies}){RESET}")
-        print(f"{BLUE}[DEBUG] Found {len(all_movies)} total movies in Radarr{RESET}")
-    
-    for movie in all_movies:
-        if not movie.get('monitored', False):
-            if debug:
-                print(f"{ORANGE}[DEBUG] Skipping unmonitored movie: {movie['title']}{RESET}")
-            continue
-        
-        if movie.get('hasFile', False):
-            if debug:
-                print(f"{ORANGE}[DEBUG] Skipping downloaded movie: {movie['title']}{RESET}")
-            continue
-        
-        # Check for excluded tags
-        if exclude_tags:
-            movie_tags = movie.get('tags', [])
-            if any(tag in movie_tags for tag in exclude_tags):
-                if debug:
-                    print(f"{ORANGE}[DEBUG] Skipping movie with excluded tags: {movie['title']}{RESET}")
-                continue
-        
-        release_date_str = None
-        release_type = None
-        
-        if include_inCinemas:
-            dates_to_check = [
-                (movie.get('digitalRelease'), 'Digital'),
-                (movie.get('physicalRelease'), 'Physical'),
-                (movie.get('inCinemas'), 'Cinema')
-            ]
-            
-            valid_dates = [(date_str, rel_type) for date_str, rel_type in dates_to_check if date_str]
-            
-            if valid_dates:
-                valid_dates.sort(key=lambda x: x[0])
-                release_date_str, release_type = valid_dates[0]
-        else:
-            if movie.get('digitalRelease'):
-                release_date_str = movie['digitalRelease']
-                release_type = 'Digital'
-            elif movie.get('physicalRelease'):
-                release_date_str = movie['physicalRelease']
-                release_type = 'Physical'
-        
-        if not release_date_str:
-            if debug:
-                print(f"{ORANGE}[DEBUG] No suitable release date found for {movie['title']}{RESET}")
-            continue
-        
-        release_date = convert_utc_to_local(release_date_str, utc_offset)
-        release_date_str_yyyy_mm_dd = release_date.date().isoformat()
-        
-        if debug:
-            print(f"{BLUE}[DEBUG] {movie['title']} release date: {release_date} ({release_type}){RESET}")
-        
-        # Check if release date is too far in the past
-        if past_cutoff_date and release_date < past_cutoff_date:
-            if debug:
-                print(f"{ORANGE}[DEBUG] Skipping {movie['title']} - release date {release_date} is before past cutoff {past_cutoff_date}{RESET}")
-            continue
-        
-        movie_dict = {
-            'title': movie['title'],
-            'tmdbId': movie.get('tmdbId'),
-            'imdbId': movie.get('imdbId'),
-            'path': movie.get('path', ''),
-            'folderName': movie.get('folderName', ''),
-            'year': movie.get('year', None),
-            'releaseDate': release_date_str_yyyy_mm_dd,
-            'releaseType': release_type
-        }
-        
-        if release_date >= now_local and release_date <= cutoff_date:
-            future_movies.append(movie_dict)
-            if debug:
-                print(f"{GREEN}[DEBUG] Added to future movies: {movie['title']}{RESET}")
-        elif release_date < now_local and not future_only:
-            released_movies.append(movie_dict)
-            if debug:
-                print(f"{GREEN}[DEBUG] Added to released movies: {movie['title']}{RESET}")
-    
-    return future_movies, released_movies
-
-def get_tag_ids_from_names(api_url, api_key, tag_names, timeout=90, debug=False):
-    """Convert tag names to tag IDs"""
-    if not tag_names:
-        return []
-    
-    try:
-        url = f"{api_url}/tag"
-        headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=timeout)
-        response.raise_for_status()
-        
-        all_tags = response.json()
-        tag_name_to_id = {tag['label'].lower(): tag['id'] for tag in all_tags}
-        
-        tag_ids = []
-        for tag_name in tag_names:
-            tag_name_lower = tag_name.strip().lower()
-            if tag_name_lower in tag_name_to_id:
-                tag_ids.append(tag_name_to_id[tag_name_lower])
-                if debug:
-                    print(f"{BLUE}[DEBUG] Found tag '{tag_name}' with ID {tag_name_to_id[tag_name_lower]}{RESET}")
-            elif debug:
-                print(f"{ORANGE}[DEBUG] Tag '{tag_name}' not found{RESET}")
-        
-        return tag_ids
-    except requests.exceptions.RequestException as e:
-        if debug:
-            print(f"{ORANGE}[DEBUG] Error fetching tags: {str(e)}{RESET}")
-        return []
-
-def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debug=False):
-    """
-    Process trending movies from MDBList
-    Returns: (monitored_not_available, not_found_or_unmonitored)
-    """
-    monitored_not_available = []
-    not_found_or_unmonitored = []
-    
-    if debug:
-        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending movies{RESET}")
-    
-    # Create lookup dictionaries for Radarr movies
-    radarr_by_tmdb = {}
-    radarr_by_imdb = {}
-    
-    for movie in all_movies:
-        if movie.get('tmdbId'):
-            radarr_by_tmdb[str(movie['tmdbId'])] = movie
-        if movie.get('imdbId'):
-            radarr_by_imdb[movie['imdbId']] = movie
-    
-    for item in mdblist_items:
-        # MDBList items have tmdb_id, imdb_id, title, year, rank
-        tmdb_id = str(item.get('tmdb_id', ''))
-        imdb_id = item.get('imdb_id', '')
-        title = item.get('title', 'Unknown')
-        year = item.get('year')
-        rank = item.get('rank')  # Preserve rank
-        
-        if debug:
-            print(f"{BLUE}[DEBUG] Processing trending movie: {title} ({year}) - TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
-        
-        # Try to find in Radarr
-        radarr_movie = None
-        if tmdb_id and tmdb_id in radarr_by_tmdb:
-            radarr_movie = radarr_by_tmdb[tmdb_id]
-        elif imdb_id and imdb_id in radarr_by_imdb:
-            radarr_movie = radarr_by_imdb[imdb_id]
-        
-        if radarr_movie:
-            if debug:
-                print(f"{BLUE}[DEBUG] Found in Radarr: {radarr_movie['title']}{RESET}")
-            
-            # Check if downloaded
-            if radarr_movie.get('hasFile', False):
-                if debug:
-                    print(f"{BLUE}[DEBUG] Already downloaded, skipping{RESET}")
-                continue
-            
-            # Check if monitored
-            if radarr_movie.get('monitored', False):
-                if debug:
-                    print(f"{BLUE}[DEBUG] Monitored but not available - adding to monitored_not_available{RESET}")
-                
-                movie_dict = {
-                    'title': radarr_movie['title'],
-                    'tmdbId': radarr_movie.get('tmdbId'),
-                    'imdbId': radarr_movie.get('imdbId'),
-                    'path': radarr_movie.get('path', ''),
-                    'folderName': radarr_movie.get('folderName', ''),
-                    'year': radarr_movie.get('year', None),
-                    'releaseDate': None,
-                    'releaseType': 'Trending',
-                    'rank': rank  # Include rank
-                }
-                monitored_not_available.append(movie_dict)
-            else:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
-                
-                movie_dict = {
-                    'title': radarr_movie['title'],
-                    'tmdbId': radarr_movie.get('tmdbId'),
-                    'imdbId': radarr_movie.get('imdbId'),
-                    'path': radarr_movie.get('path', ''),
-                    'folderName': radarr_movie.get('folderName', ''),
-                    'year': radarr_movie.get('year', None),
-                    'releaseDate': None,
-                    'releaseType': 'Trending',
-                    'rank': rank  # Include rank
-                }
-                not_found_or_unmonitored.append(movie_dict)
-        else:
-            if debug:
-                print(f"{BLUE}[DEBUG] Not found in Radarr - adding to not_found_or_unmonitored{RESET}")
-            
-            # Create movie dict from MDBList data
-            movie_dict = {
-                'title': title,
-                'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
-                'imdbId': imdb_id,
-                'path': None,
-                'folderName': None,
-                'year': year,
-                'releaseDate': None,
-                'releaseType': 'Trending',
-                'rank': rank  # Include rank
-            }
-            not_found_or_unmonitored.append(movie_dict)
-    
-    return monitored_not_available, not_found_or_unmonitored
-
 def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=False):
     """
     Process trending TV shows from MDBList
@@ -947,6 +824,236 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
             not_found_or_unmonitored.append(show_dict)
     
     return monitored_not_available, not_found_or_unmonitored
+
+# Movie specific functions
+def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, utc_offset=0, future_only=False, include_inCinemas=False, debug=False, exclude_tags=None, past_days_upcoming_movies=0):
+    """Find movies that are monitored and meet release date criteria"""
+    future_movies = []
+    released_movies = []
+    
+    cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_movies)
+    now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
+    
+    # Calculate past cutoff date if past_days_upcoming_movies is set
+    past_cutoff_date = None
+    if past_days_upcoming_movies > 0 and not future_only:
+        past_cutoff_date = now_local - timedelta(days=past_days_upcoming_movies)
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
+        print(f"{BLUE}[DEBUG] Future only mode: {future_only}{RESET}")
+        print(f"{BLUE}[DEBUG] Include inCinemas: {include_inCinemas}{RESET}")
+        if past_cutoff_date:
+            print(f"{BLUE}[DEBUG] Past cutoff date: {past_cutoff_date} (past_days_upcoming_movies: {past_days_upcoming_movies}){RESET}")
+        print(f"{BLUE}[DEBUG] Found {len(all_movies)} total movies in Radarr{RESET}")
+    
+    for movie in all_movies:
+        if not movie.get('monitored', False):
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping unmonitored movie: {movie['title']}{RESET}")
+            continue
+        
+        if movie.get('hasFile', False):
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping downloaded movie: {movie['title']}{RESET}")
+            continue
+        
+        # Check for excluded tags
+        if exclude_tags:
+            movie_tags = movie.get('tags', [])
+            if any(tag in movie_tags for tag in exclude_tags):
+                if debug:
+                    print(f"{ORANGE}[DEBUG] Skipping movie with excluded tags: {movie['title']}{RESET}")
+                continue
+        
+        release_date_str = None
+        release_type = None
+        
+        if include_inCinemas:
+            dates_to_check = [
+                (movie.get('digitalRelease'), 'Digital'),
+                (movie.get('physicalRelease'), 'Physical'),
+                (movie.get('inCinemas'), 'Cinema')
+            ]
+            
+            valid_dates = [(date_str, rel_type) for date_str, rel_type in dates_to_check if date_str]
+            
+            if valid_dates:
+                valid_dates.sort(key=lambda x: x[0])
+                release_date_str, release_type = valid_dates[0]
+        else:
+            if movie.get('digitalRelease'):
+                release_date_str = movie['digitalRelease']
+                release_type = 'Digital'
+            elif movie.get('physicalRelease'):
+                release_date_str = movie['physicalRelease']
+                release_type = 'Physical'
+        
+        if not release_date_str:
+            if debug:
+                print(f"{ORANGE}[DEBUG] No suitable release date found for {movie['title']}{RESET}")
+            continue
+        
+        release_date = convert_utc_to_local(release_date_str, utc_offset)
+        release_date_str_yyyy_mm_dd = release_date.date().isoformat()
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] {movie['title']} release date: {release_date} ({release_type}){RESET}")
+        
+        # Check if release date is too far in the past
+        if past_cutoff_date and release_date < past_cutoff_date:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping {movie['title']} - release date {release_date} is before past cutoff {past_cutoff_date}{RESET}")
+            continue
+        
+        movie_dict = {
+            'title': movie['title'],
+            'tmdbId': movie.get('tmdbId'),
+            'imdbId': movie.get('imdbId'),
+            'path': movie.get('path', ''),
+            'folderName': movie.get('folderName', ''),
+            'year': movie.get('year', None),
+            'releaseDate': release_date_str_yyyy_mm_dd,
+            'releaseType': release_type
+        }
+        
+        if release_date >= now_local and release_date <= cutoff_date:
+            future_movies.append(movie_dict)
+            if debug:
+                print(f"{GREEN}[DEBUG] Added to future movies: {movie['title']}{RESET}")
+        elif release_date < now_local and not future_only:
+            released_movies.append(movie_dict)
+            if debug:
+                print(f"{GREEN}[DEBUG] Added to released movies: {movie['title']}{RESET}")
+    
+    return future_movies, released_movies
+
+def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debug=False):
+    """
+    Process trending movies from MDBList
+    Returns: (monitored_not_available, not_found_or_unmonitored)
+    """
+    monitored_not_available = []
+    not_found_or_unmonitored = []
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending movies{RESET}")
+    
+    # Create lookup dictionaries for Radarr movies
+    radarr_by_tmdb = {}
+    radarr_by_imdb = {}
+    
+    for movie in all_movies:
+        if movie.get('tmdbId'):
+            radarr_by_tmdb[str(movie['tmdbId'])] = movie
+        if movie.get('imdbId'):
+            radarr_by_imdb[movie['imdbId']] = movie
+    
+    for item in mdblist_items:
+        # MDBList items have tmdb_id, imdb_id, title, year, rank
+        tmdb_id = str(item.get('tmdb_id', ''))
+        imdb_id = item.get('imdb_id', '')
+        title = item.get('title', 'Unknown')
+        year = item.get('year')
+        rank = item.get('rank')  # Preserve rank
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Processing trending movie: {title} ({year}) - TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
+        
+        # Try to find in Radarr
+        radarr_movie = None
+        if tmdb_id and tmdb_id in radarr_by_tmdb:
+            radarr_movie = radarr_by_tmdb[tmdb_id]
+        elif imdb_id and imdb_id in radarr_by_imdb:
+            radarr_movie = radarr_by_imdb[imdb_id]
+        
+        if radarr_movie:
+            if debug:
+                print(f"{BLUE}[DEBUG] Found in Radarr: {radarr_movie['title']}{RESET}")
+            
+            # Check if downloaded
+            if radarr_movie.get('hasFile', False):
+                if debug:
+                    print(f"{BLUE}[DEBUG] Already downloaded, skipping{RESET}")
+                continue
+            
+            # Check if monitored
+            if radarr_movie.get('monitored', False):
+                if debug:
+                    print(f"{BLUE}[DEBUG] Monitored but not available - adding to monitored_not_available{RESET}")
+                
+                movie_dict = {
+                    'title': radarr_movie['title'],
+                    'tmdbId': radarr_movie.get('tmdbId'),
+                    'imdbId': radarr_movie.get('imdbId'),
+                    'path': radarr_movie.get('path', ''),
+                    'folderName': radarr_movie.get('folderName', ''),
+                    'year': radarr_movie.get('year', None),
+                    'releaseDate': None,
+                    'releaseType': 'Trending',
+                    'rank': rank  # Include rank
+                }
+                monitored_not_available.append(movie_dict)
+            else:
+                if debug:
+                    print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
+                
+                movie_dict = {
+                    'title': radarr_movie['title'],
+                    'tmdbId': radarr_movie.get('tmdbId'),
+                    'imdbId': radarr_movie.get('imdbId'),
+                    'path': radarr_movie.get('path', ''),
+                    'folderName': radarr_movie.get('folderName', ''),
+                    'year': radarr_movie.get('year', None),
+                    'releaseDate': None,
+                    'releaseType': 'Trending',
+                    'rank': rank  # Include rank
+                }
+                not_found_or_unmonitored.append(movie_dict)
+        else:
+            if debug:
+                print(f"{BLUE}[DEBUG] Not found in Radarr - adding to not_found_or_unmonitored{RESET}")
+            
+            # Create movie dict from MDBList data
+            movie_dict = {
+                'title': title,
+                'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
+                'imdbId': imdb_id,
+                'path': None,
+                'folderName': None,
+                'year': year,
+                'releaseDate': None,
+                'releaseType': 'Trending',
+                'rank': rank  # Include rank
+            }
+            not_found_or_unmonitored.append(movie_dict)
+    
+    return monitored_not_available, not_found_or_unmonitored
+
+################################################################################
+##########                      MEDIA HANDLING                       ##########
+################################################################################
+def check_video_file():
+    """Check if UMTK video file exists"""
+    # Check if running in Docker
+    if os.environ.get('DOCKER') == 'true':
+        video_folder = Path('/video')
+    else:
+        video_folder = Path(__file__).parent / 'video'
+    
+    if not video_folder.exists():
+        print(f"{RED}Video folder not found. Please create a 'video' folder.{RESET}")
+        return False
+    
+    source_files = list(video_folder.glob('UMTK.*'))
+    if not source_files:
+        print(f"{RED}UMTK video file not found in video folder. Please add a video file named 'UMTK' (with any extension).{RESET}")
+        return False
+    
+    source_file = source_files[0]
+    size_mb = source_file.stat().st_size / (1024 * 1024)
+    print(f"{GREEN}Found video file: {source_file.name} ({size_mb:.1f} MB){RESET}")
+    return True
 
 # Trailer search function (shared)
 def _normalize(s: str) -> str:
@@ -1123,7 +1230,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
             parent_dir.mkdir(parents=True, exist_ok=True)
             # Set proper permissions on created directory
             try:
-                os.chmod(parent_dir, 0o755)
+                os.chmod(parent_dir, 0o777)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
                     print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
@@ -1146,7 +1253,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         
         # Set proper permissions on created directory
         try:
-            os.chmod(season_00_path, 0o755)
+            os.chmod(season_00_path, 0o777)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
         except Exception as perm_error:
@@ -1212,7 +1319,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
             
             # Set proper permissions on downloaded file
             try:
-                os.chmod(downloaded_file, 0o644)
+                os.chmod(downloaded_file, 0o666)
                 if debug:
                     print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
             except Exception as perm_error:
@@ -1292,7 +1399,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o755)
+                os.chmod(parent_dir, 0o777)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
                     print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
@@ -1314,7 +1421,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
-            os.chmod(target_path, 0o755)
+            os.chmod(target_path, 0o777)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 755 on {target_path}{RESET}")
         except Exception as perm_error:
@@ -1376,7 +1483,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
             downloaded_file = downloaded_files[0]
             
             try:
-                os.chmod(downloaded_file, 0o644)
+                os.chmod(downloaded_file, 0o666)
                 if debug:
                     print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
             except Exception as perm_error:
@@ -1462,7 +1569,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             parent_dir.mkdir(parents=True, exist_ok=True)
             # Set proper permissions on created directory
             try:
-                os.chmod(parent_dir, 0o755)
+                os.chmod(parent_dir, 0o777)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
                     print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
@@ -1485,7 +1592,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         
         # Set proper permissions on created directory
         try:
-            os.chmod(season_00_path, 0o755)
+            os.chmod(season_00_path, 0o777)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
         except Exception as perm_error:
@@ -1505,7 +1612,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         
         # Set proper permissions on created file
         try:
-            os.chmod(dest_file, 0o644)
+            os.chmod(dest_file, 0o666)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
         except Exception as perm_error:
@@ -1595,7 +1702,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o755)
+                os.chmod(parent_dir, 0o777)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
                     print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
@@ -1621,7 +1728,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
-            os.chmod(target_path, 0o755)
+            os.chmod(target_path, 0o777)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 755 on {target_path}{RESET}")
         except Exception as perm_error:
@@ -1640,7 +1747,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         shutil.copy2(source_file, dest_file)
         
         try:
-            os.chmod(dest_file, 0o644)
+            os.chmod(dest_file, 0o666)
             if debug:
                 print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
         except Exception as perm_error:
@@ -1901,7 +2008,7 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     try:
                         # Ensure directory has write permission before deletion
                         try:
-                            os.chmod(show_dir, 0o755)
+                            os.chmod(show_dir, 0o777)
                             if debug:
                                 print(f"{BLUE}[DEBUG] Set permissions 755 on {show_dir}{RESET}")
                         except Exception as perm_err:
@@ -1958,7 +2065,7 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     try:
                         # Ensure directory has write permission before deletion
                         try:
-                            os.chmod(season_00_path, 0o755)
+                            os.chmod(season_00_path, 0o777)
                             if debug:
                                 print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
                         except Exception as perm_err:
@@ -2252,9 +2359,9 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                     try:
                         # Ensure directory has write permission before deletion
                         try:
-                            os.chmod(folder, 0o755)
+                            os.chmod(folder, 0o777)
                             # Also ensure parent directory is writable
-                            os.chmod(parent_dir, 0o755)
+                            os.chmod(parent_dir, 0o777)
                             if debug:
                                 print(f"{BLUE}[DEBUG] Set permissions 755 on {folder} and {parent_dir}{RESET}")
                         except Exception as perm_err:
@@ -2295,70 +2402,9 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
     elif debug:
         print(f"{BLUE}[DEBUG] No edition folders found to check{RESET}")
 
-# YAML creation functions
-def format_date(yyyy_mm_dd, date_format, capitalize=False, simplify_next_week=False, utc_offset=0):
-    dt_obj = datetime.strptime(yyyy_mm_dd, "%Y-%m-%d")
-    
-    # If simplify_next_week is enabled, check if date is within next 7 days
-    if simplify_next_week:
-        now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
-        today = now_local.date()
-        date_obj = dt_obj.date()
-        days_diff = (date_obj - today).days
-        
-        # Check if date is within the next 7 days (0-6 days from today)
-        if 0 <= days_diff <= 6:
-            if days_diff == 0:
-                result = "today"
-            elif days_diff == 1:
-                result = "tomorrow"
-            else:
-                # Use full weekday name
-                result = dt_obj.strftime('%A').lower()
-            
-            if capitalize:
-                result = result.upper()
-            return result
-    
-    # Original date formatting logic
-    format_mapping = {
-        'mmm': '%b',
-        'mmmm': '%B',
-        'mm': '%m',
-        'm': '%-m',
-        'dddd': '%A',
-        'ddd': '%a',
-        'dd': '%d',
-        'd': str(dt_obj.day),
-        'yyyy': '%Y',
-        'yyy': '%Y',
-        'yy': '%y',
-        'y': '%y'
-    }
-    
-    patterns = sorted(format_mapping.keys(), key=len, reverse=True)
-    
-    temp_format = date_format
-    replacements = {}
-    for i, pattern in enumerate(patterns):
-        marker = f"@@{i}@@"
-        if pattern in temp_format:
-            replacements[marker] = format_mapping[pattern]
-            temp_format = temp_format.replace(pattern, marker)
-    
-    strftime_format = temp_format
-    for marker, replacement in replacements.items():
-        strftime_format = strftime_format.replace(marker, replacement)
-    
-    try:
-        result = dt_obj.strftime(strftime_format)
-        if capitalize:
-            result = result.upper()
-        return result
-    except ValueError as e:
-        print(f"{RED}Error: Invalid date format '{date_format}'. Using default format.{RESET}")
-        return yyyy_mm_dd
-
+################################################################################
+##########                       YML CREATION:                        ##########
+################################################################################
 def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored, trending_request_needed, config_sections, config):
     """Create overlay YAML file for TV shows"""
 
@@ -2940,119 +2986,6 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(final_output, f, sort_keys=False)
 
-def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
-    """Create collection YAML file for TV shows"""
-    def represent_ordereddict(dumper, data):
-        return dumper.represent_mapping('tag:yaml.org,2002:map', data.items())
-    
-    yaml.add_representer(OrderedDict, represent_ordereddict, Dumper=yaml.SafeDumper)
-
-    config_key = "collection_upcoming_shows"
-    collection_config = {}
-    collection_name = "Upcoming Shows"
-    
-    if config_key in config:
-        collection_config = deepcopy(config[config_key])
-        collection_name = collection_config.pop("collection_name", "Upcoming Shows")
-    
-    future_days = config.get('future_days_upcoming_shows', 30)
-    if "summary" not in collection_config:
-        summary = f"Shows with their first episode premiering within {future_days} days or already aired but not yet available"
-    else:
-        summary = collection_config.pop("summary")
-    
-    class QuotedString(str):
-        pass
-
-    def quoted_str_presenter(dumper, data):
-        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
-
-    yaml.add_representer(QuotedString, quoted_str_presenter, Dumper=yaml.SafeDumper)
-
-    all_shows = future_shows + aired_shows
-
-    if not all_shows:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
-        
-        data = {
-            "collections": {
-                collection_name: {
-                    "plex_search": plex_search_config,
-                    "item_label.remove": collection_name,
-                    "smart_label": collection_config.get("smart_label", "random"),
-                    "build_collection": collection_config.get("build_collection", False)
-                }
-            }
-        }
-        
-        with open(output_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
-        return
-    
-    tvdb_ids = [s['tvdbId'] for s in all_shows if s.get('tvdbId')]
-    if not tvdb_ids:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
-        
-        data = {
-            "collections": {
-                collection_name: {
-                    "plex_search": plex_search_config,
-                    "non_item_remove_label": collection_name,
-                    "build_collection": collection_config.get("build_collection", False)
-                }
-            }
-        }
-        
-        with open(output_file, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
-        return
-
-    tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_ids))
-
-    collection_data = {}
-    collection_data["summary"] = summary
-    
-    for key, value in collection_config.items():
-        if key == "sort_title":
-            collection_data[key] = QuotedString(value)
-        else:
-            collection_data[key] = value
-    
-    if "sync_mode" not in collection_data:
-        collection_data["sync_mode"] = "sync"
-    
-    collection_data["tvdb_show"] = tvdb_ids_str
-
-    ordered_collection = OrderedDict()
-    
-    ordered_collection["summary"] = collection_data["summary"]
-    if "sort_title" in collection_data:
-        ordered_collection["sort_title"] = collection_data["sort_title"]
-    
-    for key, value in collection_data.items():
-        if key not in ["summary", "sort_title", "sync_mode", "tvdb_show"]:
-            ordered_collection[key] = value
-    
-    ordered_collection["sync_mode"] = collection_data["sync_mode"]
-    ordered_collection["tvdb_show"] = collection_data["tvdb_show"]
-
-    data = {
-        "collections": {
-            collection_name: ordered_collection
-        }
-    }
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
-
 def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored, trending_request_needed, config_sections, config):
     """Create overlay YAML file for movies"""
 
@@ -3374,31 +3307,6 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
 
     with open(output_file, "w", encoding="utf-8") as f:
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
-
-def get_next_sort_by(output_file):
-    """Get the next sort_by value in rotation"""
-    sort_options = ["rank.desc", "usort.desc", "rank.asc", "usort.asc"]
-    current_sort = None
-    
-    try:
-        with open(output_file, 'r', encoding='utf-8') as f:
-            existing_data = yaml.safe_load(f)
-            if existing_data and 'collections' in existing_data:
-                for collection_name, collection_data in existing_data['collections'].items():
-                    if 'mdblist_list' in collection_data:
-                        current_sort = collection_data['mdblist_list'].get('sort_by')
-                        break
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-    
-    if current_sort in sort_options:
-        current_index = sort_options.index(current_sort)
-        next_index = (current_index + 1) % len(sort_options)
-        return sort_options[next_index]
-    else:
-        return sort_options[0]
 
 def create_trending_collection_yaml_movies(output_file, mdblist_items, config, trending_request_needed=None):
     """Create trending collection YAML file for movies using TMDB IDs from all MDBList items"""
@@ -4179,333 +4087,650 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections):
             f.write(f"#Last updated: {today}\n")
         yaml.dump(final_output, f, sort_keys=False)
 
-def sanitize_sort_title(title):
-    """Sanitize title for sort_title by removing special characters"""
-    # Remove special characters but keep spaces
-    sanitized = re.sub(r'[:\'"()\[\]{}<>|/\\?*]', '', title)
-    # Clean up multiple spaces
-    sanitized = ' '.join(sanitized.split())
-    return sanitized.strip()
-
-def create_tv_metadata_yaml(output_file, all_shows_with_content, config, debug=False, sonarr_url=None, api_key=None, all_series=None, sonarr_timeout=90, mdblist_tv_items=None):
-    """Create consolidated metadata YAML file for TV shows"""
-    # Read existing metadata file to track previously modified shows
-    previously_modified_tvdb_ids = set()
-    previously_ranked_tvdb_ids = {}
+################################################################################
+##########                PLEX METADATA INTEGRATION:                  ##########
+################################################################################
+def get_plex_libraries(plex_url, plex_token, debug=False):
+    """Get all libraries from Plex"""
     try:
-        with open(output_file, 'r', encoding='utf-8') as f:
-            existing_data = yaml.safe_load(f)
-            if existing_data and 'metadata' in existing_data:
-                for tvdb_id, metadata in existing_data['metadata'].items():
-                    sort_title = metadata.get('sort_title', '')
-                    # Check if sort_title starts with ! followed by 8 digits (date format)
-                    if sort_title and sort_title.startswith('!') and len(sort_title) > 9:
-                        date_part = sort_title[1:9]
-                        if date_part.isdigit():
-                            previously_modified_tvdb_ids.add(tvdb_id)
-                    # Check if sort_title starts with ! followed by 2 digits (rank format)
-                    elif sort_title and sort_title.startswith('!') and len(sort_title) > 3:
-                        rank_part = sort_title[1:3]
-                        if rank_part.isdigit():
-                            previously_ranked_tvdb_ids[tvdb_id] = sort_title
-    except FileNotFoundError:
-        pass
-    except Exception as e:
+        url = f"{plex_url.rstrip('/')}/library/sections"
+        headers = {
+            "X-Plex-Token": plex_token,
+            "Accept": "application/json"
+        }
+        
         if debug:
-            print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
-    
+            print(f"{BLUE}[DEBUG] Fetching Plex libraries from: {url}{RESET}")
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        libraries = {}
+        
+        for directory in data.get('MediaContainer', {}).get('Directory', []):
+            lib_name = directory.get('title')
+            lib_key = directory.get('key')
+            lib_type = directory.get('type')
+            libraries[lib_name] = {'key': lib_key, 'type': lib_type}
+            
+            if debug:
+                print(f"{BLUE}[DEBUG] Found Plex library: {lib_name} (key: {lib_key}, type: {lib_type}){RESET}")
+        
+        return libraries
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error connecting to Plex: {str(e)}{RESET}")
+        return {}
+
+def get_plex_library_items(plex_url, plex_token, library_key, debug=False):
+    """Get all items from a Plex library with their sort titles and external IDs"""
+    try:
+        # Use includeGuids=1 to get external IDs
+        url = f"{plex_url.rstrip('/')}/library/sections/{library_key}/all?includeGuids=1"
+        headers = {
+            "X-Plex-Token": plex_token,
+            "Accept": "application/json"
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Fetching Plex library items from: {url}{RESET}")
+        
+        response = requests.get(url, headers=headers, timeout=60)
+        response.raise_for_status()
+        
+        data = response.json()
+        items = []
+        
+        metadata_list = data.get('MediaContainer', {}).get('Metadata', [])
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Raw response contains {len(metadata_list)} items{RESET}")
+        
+        for item in metadata_list:
+            item_data = {
+                'ratingKey': item.get('ratingKey'),
+                'title': item.get('title'),
+                'titleSort': item.get('titleSort', ''),
+                'year': item.get('year'),
+                'type': item.get('type'),
+                'guid': item.get('guid', ''),
+            }
+            
+            # Extract IDs from the Guid array (this is where external IDs are stored)
+            guids = item.get('Guid', [])
+            
+            if debug and len(items) < 3:  # Only show first 3 items for debugging
+                print(f"{BLUE}[DEBUG] Item: {item.get('title')} - Guids: {guids}{RESET}")
+            
+            for guid_entry in guids:
+                guid_id = guid_entry.get('id', '')
+                if guid_id.startswith('tmdb://'):
+                    item_data['tmdbId'] = guid_id.replace('tmdb://', '')
+                elif guid_id.startswith('tvdb://'):
+                    item_data['tvdbId'] = guid_id.replace('tvdb://', '')
+                elif guid_id.startswith('imdb://'):
+                    item_data['imdbId'] = guid_id.replace('imdb://', '')
+            
+            # Also try to extract from the main guid field as fallback
+            main_guid = item.get('guid', '')
+            if 'tmdb://' in main_guid and 'tmdbId' not in item_data:
+                item_data['tmdbId'] = main_guid.split('tmdb://')[1].split('?')[0].split('/')[0]
+            elif 'tvdb://' in main_guid and 'tvdbId' not in item_data:
+                item_data['tvdbId'] = main_guid.split('tvdb://')[1].split('?')[0].split('/')[0]
+            elif 'imdb://' in main_guid and 'imdbId' not in item_data:
+                item_data['imdbId'] = main_guid.split('imdb://')[1].split('?')[0].split('/')[0]
+            
+            items.append(item_data)
+        
+        if debug:
+            # Show summary of IDs found
+            with_tmdb = sum(1 for i in items if i.get('tmdbId'))
+            with_tvdb = sum(1 for i in items if i.get('tvdbId'))
+            with_imdb = sum(1 for i in items if i.get('imdbId'))
+            print(f"{BLUE}[DEBUG] Items with TMDB ID: {with_tmdb}, TVDB ID: {with_tvdb}, IMDB ID: {with_imdb}{RESET}")
+            
+            # Show items with modified sort titles
+            modified = [i for i in items if i.get('titleSort', '').startswith('!')]
+            if modified:
+                print(f"{BLUE}[DEBUG] Found {len(modified)} items with modified sort titles (starting with '!'){RESET}")
+                for m in modified[:5]:  # Show first 5
+                    print(f"{BLUE}[DEBUG]   - {m.get('title')}: titleSort='{m.get('titleSort')}'{RESET}")
+        
+        return items
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error fetching Plex library items: {str(e)}{RESET}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return []
+
+def get_plex_show_episodes(plex_url, plex_token, show_rating_key, season_number=0, episode_number=0, debug=False):
+    """Get specific episode from a TV show"""
+    try:
+        # First get all seasons
+        url = f"{plex_url.rstrip('/')}/library/metadata/{show_rating_key}/children"
+        headers = {
+            "X-Plex-Token": plex_token,
+            "Accept": "application/json"
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Fetching seasons for show {show_rating_key}{RESET}")
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        seasons = data.get('MediaContainer', {}).get('Metadata', [])
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Found {len(seasons)} seasons{RESET}")
+            for s in seasons:
+                print(f"{BLUE}[DEBUG]   Season index: {s.get('index')}, title: {s.get('title')}{RESET}")
+        
+        # Find the season (Season 00 = Specials)
+        for season in seasons:
+            if season.get('index') == season_number:
+                season_key = season.get('ratingKey')
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] Found season {season_number}, ratingKey: {season_key}{RESET}")
+                
+                # Get episodes in this season
+                episodes_url = f"{plex_url.rstrip('/')}/library/metadata/{season_key}/children"
+                episodes_response = requests.get(episodes_url, headers=headers, timeout=30)
+                episodes_response.raise_for_status()
+                
+                episodes_data = episodes_response.json()
+                episodes = episodes_data.get('MediaContainer', {}).get('Metadata', [])
+                
+                if debug:
+                    print(f"{BLUE}[DEBUG] Found {len(episodes)} episodes in season {season_number}{RESET}")
+                    for ep in episodes:
+                        print(f"{BLUE}[DEBUG]   Episode index: {ep.get('index')}, title: {ep.get('title')}{RESET}")
+                
+                for episode in episodes:
+                    if episode.get('index') == episode_number:
+                        return {
+                            'ratingKey': episode.get('ratingKey'),
+                            'title': episode.get('title'),
+                            'index': episode.get('index'),
+                            'parentIndex': episode.get('parentIndex')
+                        }
+        
+        if debug:
+            print(f"{ORANGE}[DEBUG] Season {season_number} Episode {episode_number} not found{RESET}")
+        
+        return None
+    except requests.exceptions.RequestException as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Error fetching episode: {str(e)}{RESET}")
+        return None
+
+def update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, debug=False):
+    """Update the sort title of a Plex item"""
+    try:
+        url = f"{plex_url.rstrip('/')}/library/metadata/{rating_key}"
+        headers = {
+            "X-Plex-Token": plex_token
+        }
+        params = {
+            "titleSort.value": new_sort_title,
+            "titleSort.locked": 1
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Updating sort title - URL: {url}, params: {params}{RESET}")
+        
+        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Response status: {response.status_code}{RESET}")
+        
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error updating sort title: {str(e)}{RESET}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return False
+
+def update_plex_episode_title(plex_url, plex_token, rating_key, new_title, debug=False):
+    """Update the title of a Plex episode"""
+    try:
+        url = f"{plex_url.rstrip('/')}/library/metadata/{rating_key}"
+        headers = {
+            "X-Plex-Token": plex_token
+        }
+        params = {
+            "title.value": new_title,
+            "title.locked": 1
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Updating episode title - URL: {url}, params: {params}{RESET}")
+        
+        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Response status: {response.status_code}{RESET}")
+        
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error updating episode title: {str(e)}{RESET}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return False
+
+def reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug=False):
+    """Reset the sort title of a Plex item to its original title (unlocked)"""
+    try:
+        url = f"{plex_url.rstrip('/')}/library/metadata/{rating_key}"
+        headers = {
+            "X-Plex-Token": plex_token
+        }
+        # Unlock the field and set to sanitized original title
+        clean_title = sanitize_sort_title(original_title)
+        params = {
+            "titleSort.value": clean_title,
+            "titleSort.locked": 0
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Resetting sort title - URL: {url}, params: {params}{RESET}")
+        
+        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Response status: {response.status_code}{RESET}")
+        
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error resetting sort title: {str(e)}{RESET}")
+        if debug:
+            import traceback
+            traceback.print_exc()
+        return False
+
+def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content, 
+                            mdblist_tv_items, config, debug=False):
+    """Update TV show metadata directly in Plex"""
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
+    edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
     
-    metadata_dict = {}
-    current_tvdb_ids = set()
-    current_ranked_ids = set()
+    if debug:
+        print(f"{BLUE}[DEBUG] Plex TV metadata update settings:{RESET}")
+        print(f"{BLUE}[DEBUG]   append_dates_to_sort_titles: {append_dates}{RESET}")
+        print(f"{BLUE}[DEBUG]   add_rank_to_sort_title: {add_rank_to_sort_title}{RESET}")
+        print(f"{BLUE}[DEBUG]   edit_S00E00_episode_title: {edit_episode_titles}{RESET}")
+        print(f"{BLUE}[DEBUG]   all_shows_with_content count: {len(all_shows_with_content)}{RESET}")
+        print(f"{BLUE}[DEBUG]   mdblist_tv_items count: {len(mdblist_tv_items) if mdblist_tv_items else 0}{RESET}")
     
-    # First, collect all ranked shows if ranking is enabled
-    ranked_tvdb_ids = set()
+    if not append_dates and not add_rank_to_sort_title and not edit_episode_titles:
+        if debug:
+            print(f"{BLUE}[DEBUG] All Plex TV metadata options disabled, skipping{RESET}")
+        return
+    
+    # Get all Plex libraries
+    libraries = get_plex_libraries(plex_url, plex_token, debug)
+    
+    if not libraries:
+        print(f"{RED}Could not fetch Plex libraries{RESET}")
+        return
+    
+    # Parse library names
+    if isinstance(tv_libraries, str):
+        tv_library_names = [lib.strip() for lib in tv_libraries.split(',') if lib.strip()]
+    else:
+        tv_library_names = tv_libraries if tv_libraries else []
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Configured TV libraries: {tv_library_names}{RESET}")
+        print(f"{BLUE}[DEBUG] Available Plex libraries: {list(libraries.keys())}{RESET}")
+    
+    if not tv_library_names:
+        print(f"{ORANGE}No TV libraries configured for Plex metadata updates{RESET}")
+        return
+    
+    # Collect all Plex TV items from configured libraries
+    all_plex_items = []
+    
+    for lib_name in tv_library_names:
+        if lib_name in libraries and libraries[lib_name]['type'] == 'show':
+            lib_key = libraries[lib_name]['key']
+            items = get_plex_library_items(plex_url, plex_token, lib_key, debug)
+            all_plex_items.extend(items)
+            print(f"{GREEN}Found {len(items)} shows in Plex library: {lib_name}{RESET}")
+        else:
+            print(f"{ORANGE}TV library '{lib_name}' not found in Plex or is not a show library{RESET}")
+            if debug:
+                matching = [k for k in libraries.keys() if lib_name.lower() in k.lower()]
+                if matching:
+                    print(f"{BLUE}[DEBUG] Did you mean one of these? {matching}{RESET}")
+    
+    if not all_plex_items:
+        print(f"{ORANGE}No TV items found in configured Plex libraries{RESET}")
+        return
+    
+    # Build sets of valid IDs for current run
+    valid_date_tvdb_ids = set()  # Shows that should have date-based sort titles
+    valid_rank_tvdb_ids = {}  # Shows that should have rank-based sort titles {tvdb_id: rank}
+    shows_with_content = {}  # {tvdb_id: show_data}
+    
+    # Collect ranked shows first (rank takes precedence)
     if add_rank_to_sort_title and mdblist_tv_items:
         for item in mdblist_tv_items:
             if item.get('rank') and item.get('tvdb_id'):
-                ranked_tvdb_ids.add(int(item['tvdb_id']))
+                valid_rank_tvdb_ids[str(item['tvdb_id'])] = item['rank']
+        if debug:
+            print(f"{BLUE}[DEBUG] Valid rank TVDB IDs: {valid_rank_tvdb_ids}{RESET}")
     
-    # Process regular shows with content
+    # Collect shows with content (for date-based sort titles and episode titles)
     for show in all_shows_with_content:
         tvdb_id = show.get('tvdbId')
+        if tvdb_id:
+            tvdb_id_str = str(tvdb_id)
+            shows_with_content[tvdb_id_str] = show
+            
+            # Only add to date-based if not in rank-based
+            if append_dates and tvdb_id_str not in valid_rank_tvdb_ids and show.get('airDate'):
+                valid_date_tvdb_ids.add(tvdb_id_str)
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Shows with content TVDB IDs: {list(shows_with_content.keys())}{RESET}")
+        print(f"{BLUE}[DEBUG] Valid date TVDB IDs: {valid_date_tvdb_ids}{RESET}")
+    
+    # Track what we update
+    updated_sort_titles = 0
+    updated_episode_titles = 0
+    reset_sort_titles = 0
+    
+    # Process each Plex item
+    for plex_item in all_plex_items:
+        tvdb_id = plex_item.get('tvdbId')
+        rating_key = plex_item.get('ratingKey')
+        current_sort_title = plex_item.get('titleSort', '')
+        original_title = plex_item.get('title', '')
+        
+        # Check if this item has a modified sort title (starts with ! followed by digits)
+        has_modified_sort = False
+        if current_sort_title and current_sort_title.startswith('!'):
+            # Check for date format (!yyyymmdd) or rank format (!00)
+            if len(current_sort_title) > 9 and current_sort_title[1:9].isdigit():
+                has_modified_sort = True  # Date format
+            elif len(current_sort_title) > 3 and current_sort_title[1:3].isdigit():
+                has_modified_sort = True  # Rank format
+        
+        # If no TVDB ID, we can only reset modified sort titles
         if not tvdb_id:
+            if has_modified_sort:
+                if debug:
+                    print(f"{BLUE}[DEBUG] Item '{original_title}' has modified sort title but no TVDB ID - resetting{RESET}")
+                if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
+                    reset_sort_titles += 1
+                    print(f"{GREEN}Reset sort title for {original_title} (no TVDB ID){RESET}")
             continue
         
-        current_tvdb_ids.add(tvdb_id)
+        tvdb_id_str = str(tvdb_id)
         
-        # Initialize metadata for this show
-        if tvdb_id not in metadata_dict:
-            metadata_dict[tvdb_id] = {}
+        # Determine what the sort title should be
+        should_have_rank = tvdb_id_str in valid_rank_tvdb_ids
+        should_have_date = tvdb_id_str in valid_date_tvdb_ids
         
-        # Determine if this show used a trailer or placeholder
-        used_trailer = show.get('used_trailer', False)
-        episode_title = "Trailer" if used_trailer else "Coming Soon"
+        if debug and (should_have_rank or should_have_date or has_modified_sort):
+            print(f"{BLUE}[DEBUG] Processing '{original_title}' (TVDB: {tvdb_id_str}){RESET}")
+            print(f"{BLUE}[DEBUG]   current_sort_title: '{current_sort_title}'{RESET}")
+            print(f"{BLUE}[DEBUG]   has_modified_sort: {has_modified_sort}{RESET}")
+            print(f"{BLUE}[DEBUG]   should_have_rank: {should_have_rank}{RESET}")
+            print(f"{BLUE}[DEBUG]   should_have_date: {should_have_date}{RESET}")
         
-        # Add episode metadata
-        if "episodes" not in metadata_dict[tvdb_id]:
-            metadata_dict[tvdb_id]["episodes"] = {}
-        metadata_dict[tvdb_id]["episodes"]["S00E00"] = {"title": episode_title}
-        
-        # Only add date-based sort_title if:
-        # 1. append_dates is enabled
-        # 2. The show is NOT in the ranked list (rank takes precedence)
-        if append_dates and tvdb_id not in ranked_tvdb_ids:
-            air_date = show.get('airDate')
-            show_title = show.get('title', 'Unknown')
+        if should_have_rank:
+            # Apply rank-based sort title
+            rank = valid_rank_tvdb_ids[tvdb_id_str]
+            rank_str = f"{int(rank):02d}"
+            sanitized_title = sanitize_sort_title(original_title)
+            new_sort_title = f"!{rank_str} {sanitized_title}"
             
-            if air_date:
-                # Convert YYYY-MM-DD to YYYYMMDD
-                date_str = air_date.replace('-', '')
-                sanitized_title = sanitize_sort_title(show_title)
-                sort_title = f"!{date_str} {sanitized_title}"
-                metadata_dict[tvdb_id]["sort_title"] = sort_title
-                
+            if current_sort_title != new_sort_title:
                 if debug:
-                    print(f"{BLUE}[DEBUG] TV metadata for {show_title}: sort_title = {sort_title}, episode_title = {episode_title}{RESET}")
-        elif debug and tvdb_id in ranked_tvdb_ids:
-            print(f"{BLUE}[DEBUG] Skipping date sort_title for {show.get('title')} - will use rank instead{RESET}")
-    
-    # Process trending shows if add_rank_to_sort_title is enabled
-    if add_rank_to_sort_title and mdblist_tv_items:
-        # Create lookup for Sonarr series
-        sonarr_by_tvdb = {}
-        sonarr_by_tmdb = {}
-        if all_series:
-            for series in all_series:
-                if series.get('tvdbId'):
-                    sonarr_by_tvdb[str(series['tvdbId'])] = series
-                if series.get('tmdbId'):
-                    sonarr_by_tmdb[str(series['tmdbId'])] = series
+                    print(f"{BLUE}[DEBUG] Will update sort title from '{current_sort_title}' to '{new_sort_title}'{RESET}")
+                if update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, debug):
+                    updated_sort_titles += 1
+                    print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
-        # Process ranked items
-        for item in mdblist_tv_items:
-            rank = item.get('rank')
-            tvdb_id = item.get('tvdb_id')
-            tmdb_id = item.get('tmdb_id') or item.get('id')
-            title = item.get('title', 'Unknown')
-            
-            if not rank:
-                continue
-            
-            # Determine which ID to use and get title
-            if tvdb_id:
-                tvdb_id_str = str(tvdb_id)
-                current_ranked_ids.add(int(tvdb_id))
+        elif should_have_date:
+            # Apply date-based sort title
+            show_data = shows_with_content.get(tvdb_id_str)
+            if show_data and show_data.get('airDate'):
+                date_str = show_data['airDate'].replace('-', '')
+                sanitized_title = sanitize_sort_title(original_title)
+                new_sort_title = f"!{date_str} {sanitized_title}"
                 
-                if tvdb_id_str in sonarr_by_tvdb:
-                    title = sonarr_by_tvdb[tvdb_id_str].get('title', title)
-                
-                # Format rank with leading zero for proper sorting
-                rank_str = f"{int(rank):02d}"
-                sanitized_title = sanitize_sort_title(title)
-                sort_title = f"!{rank_str} {sanitized_title}"
-                
-                # Initialize metadata dict for this show if not exists
-                if int(tvdb_id) not in metadata_dict:
-                    metadata_dict[int(tvdb_id)] = {}
-                
-                # Update sort_title (rank takes precedence over date)
-                metadata_dict[int(tvdb_id)]["sort_title"] = sort_title
-                
-                if debug:
-                    print(f"{BLUE}[DEBUG] Trending TV metadata for {title}: rank={rank}, sort_title={sort_title} (overrides date if present){RESET}")
-    
-    # Find shows that were previously modified but are no longer in current matches
-    shows_to_revert = previously_modified_tvdb_ids - current_tvdb_ids
-    
-    # Find shows that were previously ranked but are no longer trending
-    if add_rank_to_sort_title:
-        ranked_to_revert = set(previously_ranked_tvdb_ids.keys()) - current_ranked_ids
-    else:
-        # If ranking is disabled, revert all previously ranked shows
-        ranked_to_revert = set(previously_ranked_tvdb_ids.keys())
-    
-    # Combine revert sets
-    all_to_revert = shows_to_revert | ranked_to_revert
-    
-    if all_to_revert and all_series:
-        # Create a mapping of tvdb_id to series title from all_series
-        tvdb_to_title = {series.get('tvdbId'): series.get('title', '') 
-                       for series in all_series if series.get('tvdbId')}
+                if current_sort_title != new_sort_title:
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Will update sort title from '{current_sort_title}' to '{new_sort_title}'{RESET}")
+                    if update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, debug):
+                        updated_sort_titles += 1
+                        print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
-        for tvdb_id in all_to_revert:
-            # Get the original title from Sonarr data
-            original_title = tvdb_to_title.get(tvdb_id)
-            if original_title:
-                # Sanitize the title to match what we did for the prefixed version
-                clean_title = sanitize_sort_title(original_title)
-                
-                # If we don't have existing metadata for this show, create it
-                if tvdb_id not in metadata_dict:
-                    metadata_dict[tvdb_id] = {}
-                
-                # Add the reverted sort_title
-                metadata_dict[tvdb_id]["sort_title"] = clean_title
-                
-                if debug:
-                    print(f"{BLUE}[DEBUG] Reverting sort_title for tvdb_id {tvdb_id}: {clean_title}{RESET}")
+        elif has_modified_sort:
+            # This item has a modified sort title but shouldn't anymore - reset it
+            if debug:
+                print(f"{BLUE}[DEBUG] Will reset sort title for '{original_title}'{RESET}")
+            if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
+                reset_sort_titles += 1
+                print(f"{GREEN}Reset sort title for {original_title}{RESET}")
+        
+        # Update episode title for S00E00 if enabled and this show has content
+        if edit_episode_titles and tvdb_id_str in shows_with_content:
+            show_data = shows_with_content[tvdb_id_str]
+            used_trailer = show_data.get('used_trailer', False)
+            episode_title = "Trailer" if used_trailer else "Coming Soon"
+            
+            if debug:
+                print(f"{BLUE}[DEBUG] Checking S00E00 for '{original_title}' (used_trailer: {used_trailer}){RESET}")
+            
+            # Get the S00E00 episode
+            episode = get_plex_show_episodes(plex_url, plex_token, rating_key, 0, 0, debug)
+            if episode:
+                current_ep_title = episode.get('title', '')
+                if current_ep_title != episode_title:
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Will update episode title from '{current_ep_title}' to '{episode_title}'{RESET}")
+                    if update_plex_episode_title(plex_url, plex_token, episode['ratingKey'], episode_title, debug):
+                        updated_episode_titles += 1
+                        print(f"{GREEN}Updated S00E00 title for {original_title}: {episode_title}{RESET}")
+                elif debug:
+                    print(f"{BLUE}[DEBUG] Episode title already correct: '{current_ep_title}'{RESET}")
+            elif debug:
+                print(f"{ORANGE}[DEBUG] S00E00 not found for '{original_title}'{RESET}")
     
-    if not metadata_dict:
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("#No TV shows with content found")
-        return
-    
-    if all_to_revert:
-        print(f"{GREEN}Reverting sort_title for {len(all_to_revert)} TV shows no longer in upcoming/trending category{RESET}")
-    
-    final_output = {"metadata": metadata_dict}
-    
-    with open(output_file, "w", encoding="utf-8") as f:
-        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
+    print(f"\n{GREEN}TV Plex metadata update summary:{RESET}")
+    print(f"Sort titles updated: {updated_sort_titles}")
+    print(f"Sort titles reset: {reset_sort_titles}")
+    if edit_episode_titles:
+        print(f"Episode titles updated: {updated_episode_titles}")
 
-def create_movies_metadata_yaml(output_file, all_movies_with_content, config, debug=False, mdblist_movies_items=None, all_movies=None):
-    """Create consolidated metadata YAML file for movies"""
-    # Read existing metadata file to track previously modified movies
-    previously_ranked_tmdb_ids = {}
-    try:
-        with open(output_file, 'r', encoding='utf-8') as f:
-            existing_data = yaml.safe_load(f)
-            if existing_data and 'metadata' in existing_data:
-                for tmdb_id, metadata in existing_data['metadata'].items():
-                    sort_title = metadata.get('sort_title', '')
-                    # Check if sort_title starts with ! followed by 2 digits (rank format)
-                    if sort_title and sort_title.startswith('!') and len(sort_title) > 3:
-                        rank_part = sort_title[1:3]
-                        if rank_part.isdigit():
-                            previously_ranked_tmdb_ids[tmdb_id] = sort_title
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        if debug:
-            print(f"{ORANGE}[DEBUG] Warning: Could not read existing metadata file: {str(e)}{RESET}")
-    
+def update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies_with_content,
+                               mdblist_movies_items, config, debug=False):
+    """Update movie metadata directly in Plex"""
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     
-    metadata_dict = {}
-    current_ranked_ids = set()
+    if debug:
+        print(f"{BLUE}[DEBUG] Plex movie metadata update settings:{RESET}")
+        print(f"{BLUE}[DEBUG]   append_dates_to_sort_titles: {append_dates}{RESET}")
+        print(f"{BLUE}[DEBUG]   add_rank_to_sort_title: {add_rank_to_sort_title}{RESET}")
+        print(f"{BLUE}[DEBUG]   all_movies_with_content count: {len(all_movies_with_content)}{RESET}")
+        print(f"{BLUE}[DEBUG]   mdblist_movies_items count: {len(mdblist_movies_items) if mdblist_movies_items else 0}{RESET}")
     
-    # First, collect all ranked movies if ranking is enabled
-    ranked_tmdb_ids = set()
+    if not append_dates and not add_rank_to_sort_title:
+        if debug:
+            print(f"{BLUE}[DEBUG] Both append_dates and add_rank disabled, skipping movie metadata updates{RESET}")
+        return
+    
+    # Get all Plex libraries
+    libraries = get_plex_libraries(plex_url, plex_token, debug)
+    
+    if not libraries:
+        print(f"{RED}Could not fetch Plex libraries{RESET}")
+        return
+    
+    # Parse library names
+    if isinstance(movie_libraries, str):
+        movie_library_names = [lib.strip() for lib in movie_libraries.split(',') if lib.strip()]
+    else:
+        movie_library_names = movie_libraries if movie_libraries else []
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Configured movie libraries: {movie_library_names}{RESET}")
+        print(f"{BLUE}[DEBUG] Available Plex libraries: {list(libraries.keys())}{RESET}")
+    
+    if not movie_library_names:
+        print(f"{ORANGE}No movie libraries configured for Plex metadata updates{RESET}")
+        return
+    
+    # Collect all Plex movie items from configured libraries
+    all_plex_items = []
+    
+    for lib_name in movie_library_names:
+        if lib_name in libraries and libraries[lib_name]['type'] == 'movie':
+            lib_key = libraries[lib_name]['key']
+            items = get_plex_library_items(plex_url, plex_token, lib_key, debug)
+            all_plex_items.extend(items)
+            print(f"{GREEN}Found {len(items)} movies in Plex library: {lib_name}{RESET}")
+        else:
+            print(f"{ORANGE}Movie library '{lib_name}' not found in Plex or is not a movie library{RESET}")
+            if debug:
+                matching = [k for k in libraries.keys() if lib_name.lower() in k.lower()]
+                if matching:
+                    print(f"{BLUE}[DEBUG] Did you mean one of these? {matching}{RESET}")
+    
+    if not all_plex_items:
+        print(f"{ORANGE}No movie items found in configured Plex libraries{RESET}")
+        return
+    
+    # Build sets of valid IDs for current run
+    valid_date_tmdb_ids = set()  # Movies that should have date-based sort titles
+    valid_rank_tmdb_ids = {}  # Movies that should have rank-based sort titles {tmdb_id: rank}
+    movies_with_content = {}  # {tmdb_id: movie_data}
+    
+    # Collect ranked movies first (rank takes precedence)
     if add_rank_to_sort_title and mdblist_movies_items:
         for item in mdblist_movies_items:
             tmdb_id = item.get('tmdb_id') or item.get('id')
             if item.get('rank') and tmdb_id:
-                ranked_tmdb_ids.add(int(tmdb_id))
+                valid_rank_tmdb_ids[str(tmdb_id)] = item['rank']
+        if debug:
+            print(f"{BLUE}[DEBUG] Valid rank TMDB IDs: {valid_rank_tmdb_ids}{RESET}")
     
-    # Process regular movies with content (date-based sort_title)
-    if append_dates:
-        for movie in all_movies_with_content:
-            tmdb_id = movie.get('tmdbId')
-            if not tmdb_id:
-                continue
-            
-            # Only add date-based sort_title if:
-            # 1. The movie is NOT in the ranked list (rank takes precedence)
-            if tmdb_id not in ranked_tmdb_ids:
-                release_date = movie.get('releaseDate')
-                movie_title = movie.get('title', 'Unknown')
-                
-                if release_date:
-                    # Convert YYYY-MM-DD to YYYYMMDD
-                    date_str = release_date.replace('-', '')
-                    sanitized_title = sanitize_sort_title(movie_title)
-                    sort_title = f"!{date_str} {sanitized_title}"
-                    
-                    if tmdb_id not in metadata_dict:
-                        metadata_dict[tmdb_id] = {}
-                    
-                    metadata_dict[tmdb_id]["sort_title"] = sort_title
-                    
-                    if debug:
-                        print(f"{BLUE}[DEBUG] Movie metadata for {movie_title}: sort_title = {sort_title}{RESET}")
-            elif debug:
-                print(f"{BLUE}[DEBUG] Skipping date sort_title for {movie.get('title')} - will use rank instead{RESET}")
-    
-    # Process trending movies if add_rank_to_sort_title is enabled
-    if add_rank_to_sort_title and mdblist_movies_items:
-        # Create lookup for Radarr movies
-        radarr_by_tmdb = {}
-        if all_movies:
-            for movie in all_movies:
-                if movie.get('tmdbId'):
-                    radarr_by_tmdb[str(movie['tmdbId'])] = movie
-        
-        # Process ranked items
-        for item in mdblist_movies_items:
-            rank = item.get('rank')
-            tmdb_id = item.get('tmdb_id') or item.get('id')
-            title = item.get('title', 'Unknown')
-            
-            if not rank or not tmdb_id:
-                continue
-            
+    # Collect movies with content (for date-based sort titles)
+    for movie in all_movies_with_content:
+        tmdb_id = movie.get('tmdbId')
+        if tmdb_id:
             tmdb_id_str = str(tmdb_id)
-            current_ranked_ids.add(tmdb_id_str)
+            movies_with_content[tmdb_id_str] = movie
             
-            # Get the actual title from Radarr if available
-            if tmdb_id_str in radarr_by_tmdb:
-                title = radarr_by_tmdb[tmdb_id_str].get('title', title)
-            
-            # Format rank with leading zero for proper sorting
+            # Only add to date-based if not in rank-based
+            if append_dates and tmdb_id_str not in valid_rank_tmdb_ids and movie.get('releaseDate'):
+                valid_date_tmdb_ids.add(tmdb_id_str)
+    
+    if debug:
+        print(f"{BLUE}[DEBUG] Movies with content TMDB IDs: {list(movies_with_content.keys())}{RESET}")
+        print(f"{BLUE}[DEBUG] Valid date TMDB IDs: {valid_date_tmdb_ids}{RESET}")
+    
+    # Track what we update
+    updated_sort_titles = 0
+    reset_sort_titles = 0
+    
+    # Process each Plex item
+    for plex_item in all_plex_items:
+        tmdb_id = plex_item.get('tmdbId')
+        rating_key = plex_item.get('ratingKey')
+        current_sort_title = plex_item.get('titleSort', '')
+        original_title = plex_item.get('title', '')
+        
+        # Check if this item has a modified sort title (starts with ! followed by digits)
+        has_modified_sort = False
+        if current_sort_title and current_sort_title.startswith('!'):
+            # Check for date format (!yyyymmdd) or rank format (!00)
+            if len(current_sort_title) > 9 and current_sort_title[1:9].isdigit():
+                has_modified_sort = True  # Date format
+            elif len(current_sort_title) > 3 and current_sort_title[1:3].isdigit():
+                has_modified_sort = True  # Rank format
+        
+        # If no TMDB ID, we can only reset modified sort titles
+        if not tmdb_id:
+            if has_modified_sort:
+                if debug:
+                    print(f"{BLUE}[DEBUG] Item '{original_title}' has modified sort title but no TMDB ID - resetting{RESET}")
+                if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
+                    reset_sort_titles += 1
+                    print(f"{GREEN}Reset sort title for {original_title} (no TMDB ID){RESET}")
+            continue
+        
+        tmdb_id_str = str(tmdb_id)
+        
+        # Determine what the sort title should be
+        should_have_rank = tmdb_id_str in valid_rank_tmdb_ids
+        should_have_date = tmdb_id_str in valid_date_tmdb_ids
+        
+        if debug and (should_have_rank or should_have_date or has_modified_sort):
+            print(f"{BLUE}[DEBUG] Processing '{original_title}' (TMDB: {tmdb_id_str}){RESET}")
+            print(f"{BLUE}[DEBUG]   current_sort_title: '{current_sort_title}'{RESET}")
+            print(f"{BLUE}[DEBUG]   has_modified_sort: {has_modified_sort}{RESET}")
+            print(f"{BLUE}[DEBUG]   should_have_rank: {should_have_rank}{RESET}")
+            print(f"{BLUE}[DEBUG]   should_have_date: {should_have_date}{RESET}")
+        
+        if should_have_rank:
+            # Apply rank-based sort title
+            rank = valid_rank_tmdb_ids[tmdb_id_str]
             rank_str = f"{int(rank):02d}"
-            sanitized_title = sanitize_sort_title(title)
-            sort_title = f"!{rank_str} {sanitized_title}"
+            sanitized_title = sanitize_sort_title(original_title)
+            new_sort_title = f"!{rank_str} {sanitized_title}"
             
-            # Initialize metadata dict for this movie if not exists
-            if int(tmdb_id_str) not in metadata_dict:
-                metadata_dict[int(tmdb_id_str)] = {}
-            
-            # Update sort_title (rank takes precedence over date)
-            metadata_dict[int(tmdb_id_str)]["sort_title"] = sort_title
-            
-            if debug:
-                print(f"{BLUE}[DEBUG] Trending movie metadata for {title}: rank={rank}, sort_title={sort_title} (overrides date if present){RESET}")
-    
-    # Find movies that were previously ranked but are no longer trending
-    if add_rank_to_sort_title:
-        movies_to_revert = set(previously_ranked_tmdb_ids.keys()) - current_ranked_ids
-    else:
-        # If ranking is disabled, revert all previously ranked movies
-        movies_to_revert = set(previously_ranked_tmdb_ids.keys())
-    
-    if movies_to_revert and all_movies:
-        # Create lookup for Radarr movies
-        radarr_by_tmdb = {}
-        for movie in all_movies:
-            if movie.get('tmdbId'):
-                radarr_by_tmdb[str(movie['tmdbId'])] = movie
+            if current_sort_title != new_sort_title:
+                if debug:
+                    print(f"{BLUE}[DEBUG] Will update sort title from '{current_sort_title}' to '{new_sort_title}'{RESET}")
+                if update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, debug):
+                    updated_sort_titles += 1
+                    print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
-        for tmdb_id in movies_to_revert:
-            # Get the original title from Radarr data
-            if tmdb_id in radarr_by_tmdb:
-                original_title = radarr_by_tmdb[tmdb_id].get('title', '')
-                if original_title:
-                    clean_title = sanitize_sort_title(original_title)
-                    
-                    if tmdb_id not in metadata_dict:
-                        metadata_dict[tmdb_id] = {}
-                    
-                    metadata_dict[tmdb_id]["sort_title"] = clean_title
-                    
+        elif should_have_date:
+            # Apply date-based sort title
+            movie_data = movies_with_content.get(tmdb_id_str)
+            if movie_data and movie_data.get('releaseDate'):
+                date_str = movie_data['releaseDate'].replace('-', '')
+                sanitized_title = sanitize_sort_title(original_title)
+                new_sort_title = f"!{date_str} {sanitized_title}"
+                
+                if current_sort_title != new_sort_title:
                     if debug:
-                        print(f"{BLUE}[DEBUG] Reverting sort_title for tmdb_id {tmdb_id}: {clean_title}{RESET}")
+                        print(f"{BLUE}[DEBUG] Will update sort title from '{current_sort_title}' to '{new_sort_title}'{RESET}")
+                    if update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, debug):
+                        updated_sort_titles += 1
+                        print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
-        print(f"{GREEN}Reverting sort_title for {len(movies_to_revert)} movies no longer in trending list{RESET}")
+        elif has_modified_sort:
+            # This item has a modified sort title but shouldn't anymore - reset it
+            if debug:
+                print(f"{BLUE}[DEBUG] Will reset sort title for '{original_title}'{RESET}")
+            if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
+                reset_sort_titles += 1
+                print(f"{GREEN}Reset sort title for {original_title}{RESET}")
     
-    if not metadata_dict:
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write("#No movies with content found")
-        return
-    
-    final_output = {"metadata": metadata_dict}
-    
-    with open(output_file, "w", encoding="utf-8") as f:
-        yaml.dump(final_output, f, sort_keys=False, default_flow_style=False)
+    print(f"\n{GREEN}Movie Plex metadata update summary:{RESET}")
+    print(f"Sort titles updated: {updated_sort_titles}")
+    print(f"Sort titles reset: {reset_sort_titles}")
 
+################################################################################
+##########                           MAIN:                            ##########
+################################################################################
 def main():
     start_time = datetime.now()
     print(f"{BLUE}{'*' * 50}\n{'*' * 1}Upcoming Movies & TV Shows for Kometa {VERSION}{'*' * 1}\n{'*' * 50}{RESET}")
@@ -4542,6 +4767,19 @@ def main():
     if umtk_root_tv:
         print(f"{GREEN}Using custom TV root: {umtk_root_tv}{RESET}")
     
+    # Get Plex configuration
+    plex_url = config.get('plex_url')
+    plex_token = config.get('plex_token')
+    movie_libraries = config.get('movie_libraries')
+    tv_libraries = config.get('tv_libraries')
+    
+    if plex_url and plex_token:
+        print(f"{GREEN}Plex integration enabled{RESET}")
+        if movie_libraries:
+            print(f"  Movie libraries: {movie_libraries}")
+        if tv_libraries:
+            print(f"  TV libraries: {tv_libraries}")
+    
     # Get processing methods
     tv_method = config.get('tv', 1)
     movie_method = config.get('movies', 2)
@@ -4549,12 +4787,17 @@ def main():
     trending_movies_method = config.get('trending_movies', 0)
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
+    append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
     
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
     print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
     print(f"Trending TV method: {trending_tv_method} ({'Disabled' if trending_tv_method == 0 else 'Trailer' if trending_tv_method == 1 else 'Placeholder'})")
     print(f"Trending Movies method: {trending_movies_method} ({'Disabled' if trending_movies_method == 0 else 'Trailer' if trending_movies_method == 1 else 'Placeholder'})")
     print(f"Method fallback: {method_fallback}")
+    print(f"Append dates to sort titles: {append_dates_to_sort_titles}")
+    print(f"Add rank to sort title: {add_rank_to_sort_title}")
+    print(f"Edit S00E00 episode titles: {edit_episode_titles}")
     print()
     
     # Check requirements based on methods
@@ -4605,6 +4848,8 @@ def main():
         trending_tv_request_needed = []
         trending_movies_monitored = []
         trending_movies_request_needed = []
+        mdblist_tv_items = None
+        mdblist_movies_items = None
         
         # Determine if we need to process TV at all (either regular or trending)
         process_tv = (tv_method > 0 or trending_tv_method > 0)
@@ -4927,7 +5172,6 @@ def main():
             if tv_method > 0 or trending_tv_method > 0:
                 overlay_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
-                metadata_file = kometa_folder / "UMTK_TV_METADATA.yml"
                 
                 create_overlay_yaml_tv(
                     str(overlay_file), future_shows, aired_shows, 
@@ -4956,19 +5200,6 @@ def main():
                 
                 create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
                 
-                # Create metadata file (consolidated)
-                create_tv_metadata_yaml(
-                    str(metadata_file), 
-                    all_shows_with_content, 
-                    config, 
-                    debug, 
-                    sonarr_url, 
-                    sonarr_api_key, 
-                    all_series, 
-                    sonarr_timeout,
-                    mdblist_tv_items if trending_tv_method > 0 else None
-                )
-                
                 print(f"\n{GREEN}TV YAML files created successfully{RESET}")
             
             # Create Trending TV collection YAML
@@ -4988,6 +5219,18 @@ def main():
                          "text": config.get("text_trending_top_10_tv", {})}
                     )
                     print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
+            
+            # Update Plex TV metadata directly
+            if plex_url and plex_token and tv_libraries:
+                print(f"\n{BLUE}Updating TV metadata in Plex...{RESET}")
+                update_plex_tv_metadata(
+                    plex_url, plex_token, tv_libraries,
+                    all_shows_with_content,
+                    mdblist_tv_items if trending_tv_method > 0 else None,
+                    config, debug
+                )
+            elif debug:
+                print(f"{ORANGE}[DEBUG] Plex TV metadata updates skipped - missing plex_url, plex_token, or tv_libraries{RESET}")
         
         # Determine if we need to process Movies at all (either regular or trending)
         process_movies = (movie_method > 0 or trending_movies_method > 0)
@@ -5283,7 +5526,6 @@ def main():
             if movie_method > 0 or trending_movies_method > 0:
                 overlay_file = kometa_folder / "UMTK_MOVIES_UPCOMING_OVERLAYS.yml"
                 collection_file = kometa_folder / "UMTK_MOVIES_UPCOMING_COLLECTION.yml"
-                metadata_file = kometa_folder / "UMTK_MOVIES_METADATA.yml"
                 
                 create_overlay_yaml_movies(
                     str(overlay_file), future_movies, released_movies,
@@ -5299,16 +5541,6 @@ def main():
                 )
                 
                 create_collection_yaml_movies(str(collection_file), future_movies, released_movies, config)
-                
-                # Create metadata file (consolidated)
-                create_movies_metadata_yaml(
-                    str(metadata_file), 
-                    all_movies_with_content, 
-                    config, 
-                    debug,
-                    mdblist_movies_items if trending_movies_method > 0 else None,
-                    all_movies
-                )
                 
                 print(f"\n{GREEN}Movie YAML files created successfully{RESET}")
             
@@ -5329,6 +5561,18 @@ def main():
                          "text": config.get("text_trending_top_10_movies", {})}
                     )
                     print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
+            
+            # Update Plex movie metadata directly
+            if plex_url and plex_token and movie_libraries:
+                print(f"\n{BLUE}Updating movie metadata in Plex...{RESET}")
+                update_plex_movie_metadata(
+                    plex_url, plex_token, movie_libraries,
+                    all_movies_with_content,
+                    mdblist_movies_items if trending_movies_method > 0 else None,
+                    config, debug
+                )
+            elif debug:
+                print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
         
         # Calculate and display runtime
         end_time = datetime.now()
@@ -5348,6 +5592,7 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
