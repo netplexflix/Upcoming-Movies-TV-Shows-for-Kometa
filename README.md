@@ -61,7 +61,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
 - [🚀 Usage](#-usage)
 - [💡 Tips & Best Practices](#-tips--best-practices)
-  - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-upcoming-content-from-recently-added-sections)
+  - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-umtk-content-from-recently-added-sections)
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
