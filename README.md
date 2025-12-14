@@ -434,7 +434,7 @@ python UMTK.py
 
 ## 💡 Tips & Best Practices
 
-### Exclude UMTK Content from "Recently Added" Sections
+### Exclude UMTK Content from Recently Added Sections
 
 Since UMTK adds content before it's actually available, you'll want to exclude it from "Recently Added" sections:
 
