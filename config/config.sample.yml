@@ -40,6 +40,7 @@ tv_libraries: 'TV Shows'
 append_dates_to_sort_titles: true
 add_rank_to_sort_title: true
 edit_S00E00_episode_title: true
+metadata_retry_limit: 4
 
 ################################################################################
 ##########                         MOVIES:                            ##########

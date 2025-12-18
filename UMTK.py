@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-VERSION = "2025.12.13"
+VERSION = "2025.12.18"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -4357,7 +4357,7 @@ def reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debu
         return False
 
 def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content, 
-                            mdblist_tv_items, config, debug=False):
+                            mdblist_tv_items, config, debug=False, retry_count=0, max_retries=4):
     """Update TV show metadata directly in Plex"""
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
@@ -4445,6 +4445,42 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
         print(f"{BLUE}[DEBUG] Shows with content TVDB IDs: {list(shows_with_content.keys())}{RESET}")
         print(f"{BLUE}[DEBUG] Valid date TVDB IDs: {valid_date_tvdb_ids}{RESET}")
     
+    # Build lookup of Plex items by TVDB ID
+    plex_items_by_tvdb = {}
+    for plex_item in all_plex_items:
+        tvdb_id = plex_item.get('tvdbId')
+        if tvdb_id:
+            plex_items_by_tvdb[str(tvdb_id)] = plex_item
+    
+    # Check which items we need to update are missing from Plex
+    missing_items = []
+    all_target_tvdb_ids = set(valid_date_tvdb_ids) | set(valid_rank_tvdb_ids.keys()) | set(shows_with_content.keys())
+    
+    for tvdb_id in all_target_tvdb_ids:
+        if tvdb_id not in plex_items_by_tvdb:
+            # Find the show title for better messaging
+            show_title = "Unknown"
+            if tvdb_id in shows_with_content:
+                show_title = shows_with_content[tvdb_id].get('title', 'Unknown')
+            missing_items.append({'tvdb_id': tvdb_id, 'title': show_title})
+    
+    # If there are missing items and we haven't exhausted retries, wait and retry
+    if missing_items and retry_count < max_retries:
+        print(f"{ORANGE}The following {len(missing_items)} item(s) are not yet present in Plex:{RESET}")
+        for item in missing_items:
+            print(f"  - {item['title']} (TVDB: {item['tvdb_id']})")
+        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries + 1})...{RESET}")
+        import time
+        time.sleep(60)
+        return update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content,
+                                       mdblist_tv_items, config, debug, retry_count + 1, max_retries)
+    
+    # If still missing after all retries, inform the user
+    if missing_items:
+        print(f"{RED}The following item(s) could not be found in Plex after {max_retries + 1} attempts:{RESET}")
+        for item in missing_items:
+            print(f"  - {item['title']} (TVDB: {item['tvdb_id']})")
+    
     # Track what we update
     updated_sort_titles = 0
     updated_episode_titles = 0
@@ -4519,6 +4555,15 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
                         print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
         elif has_modified_sort:
+            # Check if this show has any previous seasons with downloaded episodes
+            # If yes, skip reset as TSSK manages those sort titles
+            has_previous_content = check_show_has_previous_seasons(plex_url, plex_token, rating_key, debug)
+            
+            if has_previous_content:
+                if debug:
+                    print(f"{BLUE}[DEBUG] Skipping sort title reset for '{original_title}' - has previous seasons with content{RESET}")
+                continue
+            
             # This item has a modified sort title but shouldn't anymore - reset it
             if debug:
                 print(f"{BLUE}[DEBUG] Will reset sort title for '{original_title}'{RESET}")
@@ -4556,8 +4601,59 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
     if edit_episode_titles:
         print(f"Episode titles updated: {updated_episode_titles}")
 
+def check_show_has_previous_seasons(plex_url, plex_token, show_rating_key, debug=False):
+    """Check if a TV show has any previous seasons (Season 1+) with downloaded episodes"""
+    try:
+        # Get all seasons
+        url = f"{plex_url.rstrip('/')}/library/metadata/{show_rating_key}/children"
+        headers = {
+            "X-Plex-Token": plex_token,
+            "Accept": "application/json"
+        }
+        
+        if debug:
+            print(f"{BLUE}[DEBUG] Checking for previous seasons for show {show_rating_key}{RESET}")
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        seasons = data.get('MediaContainer', {}).get('Metadata', [])
+        
+        # Check each season (excluding Season 0/Specials)
+        for season in seasons:
+            season_index = season.get('index', 0)
+            
+            # Skip Season 0 (Specials)
+            if season_index == 0:
+                continue
+            
+            # Check if this season has any episodes
+            season_key = season.get('ratingKey')
+            leaf_count = season.get('leafCount', 0)
+            
+            if debug:
+                print(f"{BLUE}[DEBUG]   Season {season_index}: leafCount={leaf_count}{RESET}")
+            
+            # If any regular season has episodes, this show has previous content
+            if leaf_count > 0:
+                if debug:
+                    print(f"{BLUE}[DEBUG]   Found previous content in Season {season_index}{RESET}")
+                return True
+        
+        if debug:
+            print(f"{BLUE}[DEBUG]   No previous seasons with content found{RESET}")
+        
+        return False
+        
+    except requests.exceptions.RequestException as e:
+        if debug:
+            print(f"{ORANGE}[DEBUG] Error checking for previous seasons: {str(e)}{RESET}")
+        # If we can't determine, be conservative and assume there might be previous content
+        return True
+
 def update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies_with_content,
-                               mdblist_movies_items, config, debug=False):
+                               mdblist_movies_items, config, debug=False, retry_count=0, max_retries=4):
     """Update movie metadata directly in Plex"""
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
@@ -4643,6 +4739,42 @@ def update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies
     if debug:
         print(f"{BLUE}[DEBUG] Movies with content TMDB IDs: {list(movies_with_content.keys())}{RESET}")
         print(f"{BLUE}[DEBUG] Valid date TMDB IDs: {valid_date_tmdb_ids}{RESET}")
+    
+    # Build lookup of Plex items by TMDB ID
+    plex_items_by_tmdb = {}
+    for plex_item in all_plex_items:
+        tmdb_id = plex_item.get('tmdbId')
+        if tmdb_id:
+            plex_items_by_tmdb[str(tmdb_id)] = plex_item
+    
+    # Check which items we need to update are missing from Plex
+    missing_items = []
+    all_target_tmdb_ids = set(valid_date_tmdb_ids) | set(valid_rank_tmdb_ids.keys()) | set(movies_with_content.keys())
+    
+    for tmdb_id in all_target_tmdb_ids:
+        if tmdb_id not in plex_items_by_tmdb:
+            # Find the movie title for better messaging
+            movie_title = "Unknown"
+            if tmdb_id in movies_with_content:
+                movie_title = movies_with_content[tmdb_id].get('title', 'Unknown')
+            missing_items.append({'tmdb_id': tmdb_id, 'title': movie_title})
+    
+    # If there are missing items and we haven't exhausted retries, wait and retry
+    if missing_items and retry_count < max_retries:
+        print(f"{ORANGE}The following {len(missing_items)} item(s) are not yet present in Plex:{RESET}")
+        for item in missing_items:
+            print(f"  - {item['title']} (TMDB: {item['tmdb_id']})")
+        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries + 1})...{RESET}")
+        import time
+        time.sleep(60)
+        return update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies_with_content,
+                                          mdblist_movies_items, config, debug, retry_count + 1, max_retries)
+    
+    # If still missing after all retries, inform the user
+    if missing_items:
+        print(f"{RED}The following item(s) could not be found in Plex after {max_retries + 1} attempts:{RESET}")
+        for item in missing_items:
+            print(f"  - {item['title']} (TMDB: {item['tmdb_id']})")
     
     # Track what we update
     updated_sort_titles = 0
@@ -4744,6 +4876,7 @@ def main():
     config = load_config()
     radarr_timeout = config.get('radarr_timeout', 90)
     sonarr_timeout = config.get('sonarr_timeout', 90)
+    metadata_retry_limit = config.get('metadata_retry_limit', 4)
     
     # Get umtk root paths - handle None values properly
     umtk_root_movies = config.get('umtk_root_movies')
@@ -4779,6 +4912,7 @@ def main():
             print(f"  Movie libraries: {movie_libraries}")
         if tv_libraries:
             print(f"  TV libraries: {tv_libraries}")
+        print(f"  Metadata retry limit: {metadata_retry_limit}")
     
     # Get processing methods
     tv_method = config.get('tv', 1)
@@ -4843,13 +4977,15 @@ def main():
     kometa_folder.mkdir(exist_ok=True)
     
     try:
-        # Initialize variables for trending
+        # Initialize variables for tracking content and trending data
         trending_tv_monitored = []
         trending_tv_request_needed = []
         trending_movies_monitored = []
         trending_movies_request_needed = []
         mdblist_tv_items = None
         mdblist_movies_items = None
+        all_shows_with_content = []
+        all_movies_with_content = []
         
         # Determine if we need to process TV at all (either regular or trending)
         process_tv = (tv_method > 0 or trending_tv_method > 0)
@@ -4891,7 +5027,6 @@ def main():
             future_shows = []
             aired_shows = []
             new_shows = []
-            all_shows_with_content = []  # Track shows that got content
             
             if tv_method > 0:
                 # Find upcoming shows
@@ -5219,18 +5354,6 @@ def main():
                          "text": config.get("text_trending_top_10_tv", {})}
                     )
                     print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
-            
-            # Update Plex TV metadata directly
-            if plex_url and plex_token and tv_libraries:
-                print(f"\n{BLUE}Updating TV metadata in Plex...{RESET}")
-                update_plex_tv_metadata(
-                    plex_url, plex_token, tv_libraries,
-                    all_shows_with_content,
-                    mdblist_tv_items if trending_tv_method > 0 else None,
-                    config, debug
-                )
-            elif debug:
-                print(f"{ORANGE}[DEBUG] Plex TV metadata updates skipped - missing plex_url, plex_token, or tv_libraries{RESET}")
         
         # Determine if we need to process Movies at all (either regular or trending)
         process_movies = (movie_method > 0 or trending_movies_method > 0)
@@ -5274,7 +5397,6 @@ def main():
             # Process regular upcoming movies if movie_method is enabled
             future_movies = []
             released_movies = []
-            all_movies_with_content = []  # Track movies that got content
             
             if movie_method > 0:
                 # Find upcoming movies
@@ -5561,18 +5683,38 @@ def main():
                          "text": config.get("text_trending_top_10_movies", {})}
                     )
                     print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
-            
-            # Update Plex movie metadata directly
-            if plex_url and plex_token and movie_libraries:
-                print(f"\n{BLUE}Updating movie metadata in Plex...{RESET}")
-                update_plex_movie_metadata(
-                    plex_url, plex_token, movie_libraries,
-                    all_movies_with_content,
-                    mdblist_movies_items if trending_movies_method > 0 else None,
-                    config, debug
-                )
-            elif debug:
-                print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
+        
+        # ============================================================
+        # PLEX METADATA UPDATES - MOVED TO END
+        # ============================================================
+        
+        # Update Plex TV metadata directly (moved to end)
+        if process_tv and plex_url and plex_token and tv_libraries:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Updating TV metadata in Plex...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            update_plex_tv_metadata(
+                plex_url, plex_token, tv_libraries,
+                all_shows_with_content,
+                mdblist_tv_items if trending_tv_method > 0 else None,
+                config, debug, 0, metadata_retry_limit
+            )
+        elif debug and process_tv:
+            print(f"{ORANGE}[DEBUG] Plex TV metadata updates skipped - missing plex_url, plex_token, or tv_libraries{RESET}")
+        
+        # Update Plex movie metadata directly (moved to end)
+        if process_movies and plex_url and plex_token and movie_libraries:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Updating movie metadata in Plex...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            update_plex_movie_metadata(
+                plex_url, plex_token, movie_libraries,
+                all_movies_with_content,
+                mdblist_movies_items if trending_movies_method > 0 else None,
+                config, debug, 0, metadata_retry_limit
+            )
+        elif debug and process_movies:
+            print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
         
         # Calculate and display runtime
         end_time = datetime.now()
@@ -5592,7 +5734,6 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

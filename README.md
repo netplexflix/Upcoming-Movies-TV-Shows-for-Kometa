@@ -274,6 +274,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
 - **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
 - **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
+- **metadata_retry_limit:** How many times to retry metadata edits. This gives Plex some time to pick up the newly created items.
 
 ### Movie Settings:
 
