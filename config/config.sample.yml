@@ -7,7 +7,7 @@ method_fallback: true
 utc_offset: +1
 debug: false
 cleanup: true
-append_dates_to_sort_titles: true
+simplify_next_week_dates: true
 
 skip_channels:
   - "Starlight Cinema"
@@ -31,7 +31,19 @@ sonarr_api_key: 'YOUR_SONARR_API_KEY'
 sonarr_timeout: 90
 
 ################################################################################
-##########                   COMING SOON MOVIES:                      ##########
+##########                    PLEX CONFIGURATION:                     ##########
+################################################################################
+plex_url: 'http://localhost:32400'
+plex_token: 'YOUR_PLEX_TOKEN'
+movie_libraries: 'Movies'
+tv_libraries: 'TV Shows'
+append_dates_to_sort_titles: true
+add_rank_to_sort_title: true
+edit_S00E00_episode_title: true
+metadata_retry_limit: 4
+
+################################################################################
+##########                         MOVIES:                            ##########
 ################################################################################
 future_days_upcoming_movies: 30
 past_days_upcoming_movies: 0 #0=no limit
@@ -41,7 +53,7 @@ exclude_radarr_tags: exclude, private
 umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ################################################################################
-##########                   COMING SOON TV SHOWS:                    ##########
+##########                         TV SHOWS:                          ##########
 ################################################################################
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
@@ -54,11 +66,11 @@ umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv
 ################################################################################
 trending_movies: 0
 trending_tv: 0
-label_request_needed: false
+label_request_needed: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
-mdblist_movies: https://mdblist.com/lists/linaspurinis/trending-movies-list
+mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
 mdblist_movies_limit: 10
-mdblist_tv: https://mdblist.com/lists/adamosborne01/trending-shows1
+mdblist_tv: https://mdblist.com/lists/netplexflix/umtk-trending-top20
 mdblist_tv_limit: 10
   
 ################################################################################
@@ -77,7 +89,7 @@ collection_upcoming_movies:
 backdrop_upcoming_movies_future:
   enable: true
   name: red_frame
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame.png
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
 
 text_upcoming_movies_future:
   use_text: "EXPECTED"
@@ -96,7 +108,7 @@ text_upcoming_movies_future:
 backdrop_upcoming_movies_released:
   enable: true
   name: red_frame
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame.png
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
 
 text_upcoming_movies_released:
   use_text: "COMING SOON"
@@ -123,7 +135,7 @@ collection_upcoming_shows:
 backdrop_upcoming_shows:
   enable: true
   name: red_frame_bottom
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
   group: TSSK_backdrop
   weight: 100
 
@@ -146,7 +158,7 @@ text_upcoming_shows:
 backdrop_upcoming_shows_aired:
   enable: true
   name: red_frame_bottom
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/main/config/overlays/red_frame_bottom.png
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
   group: TSSK_backdrop
   weight: 100
 
@@ -161,6 +173,16 @@ text_upcoming_shows_aired:
   group: TSSK_text
   weight: 100
 
+################################################################################
+##########                    NEW SHOW COLLECTION:                    ##########
+################################################################################
+collection_new_show:
+  collection_name: "New Shows Premiered"
+  item_label: NewShowsUMTK
+  non_item_remove_label: NewShowsUMTK
+  build_collection: false
+  sync_mode: append
+ 
 ################################################################################
 ##########                    NEW SHOWS OVERLAY:                      ##########
 ################################################################################
@@ -191,11 +213,11 @@ text_new_show:
 ##########                TRENDING MOVIES COLLECTION:                 ##########
 ################################################################################
 collection_trending_movies:
-  collection_name: "Trending Movies"
+  collection_name: "Trending Movies TOP 10"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  collection_order: custom
-  sync_mode: sync
+  build_collection: false
+  sync_mode: append
 
 
 ################################################################################
@@ -219,11 +241,11 @@ text_trending_movies_request_needed:
 ##########                TRENDING SHOWS COLLECTION:                  ##########
 ################################################################################
 collection_trending_shows:
-  collection_name: "Trending Shows"
+  collection_name: "Trending Shows TOP 10"
   item_label: UMTKTrending
   non_item_remove_label: UMTKTrending
-  collection_order: custom
-  sync_mode: sync
+  build_collection: false
+  sync_mode: append
 
 
 ################################################################################
@@ -248,24 +270,47 @@ text_trending_shows_request_needed:
   weight: 100
 
 ################################################################################
-##########                  TRENDING TOP 10 OVERLAY:                  ##########
+##########               TRENDING MOVIES TOP 10 OVERLAY:              ##########
 ################################################################################
-backdrop_trending_top_10:
-  enable: false
+backdrop_trending_top_10_movies:
+  enable: true
   name: top10
-  url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/TOP10.png
-  group: TSSK_backdrop
-  weight: 100
+  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortup.png
+  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortequal.png
+  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10TLshortdown.png
+  group: TRENDING
+  weight: 2000
 
-text_trending_top_10:
-  horizontal_align: right
-  horizontal_offset: 25
-  vertical_align: bottom
-  vertical_offset: 25
+text_trending_top_10_movies:
+  horizontal_align: center
+  horizontal_offset: -430
+  vertical_align: top
+  vertical_offset: 160
   font: fonts/Roboto-Black.ttf
-  font_size: 300
-  font_color: "#ff0000"
+  font_size: 80
+  font_color: "#dcb13d"
   stroke_color: "#ffffff"
-  stroke_width: 6
-  group: TSSK_text
-  weight: 100
+  stroke_width: 1
+
+################################################################################
+##########              TRENDING SHOWS TOP 10 OVERLAY:                ##########
+################################################################################
+backdrop_trending_top_10_tv:
+  enable: true
+  name: top10
+  urlup: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortup.png
+  urlequal: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortequal.png
+  urldown: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/TSSK-Kabeb/Trending/trendingtop10shortdown.png
+  group: TRENDING
+  weight: 2000
+
+text_trending_top_10_tv:
+  horizontal_align: center
+  horizontal_offset: -407
+  vertical_align: top
+  vertical_offset: 180
+  font: fonts/Roboto-Black.ttf
+  font_size: 80
+  font_color: "#dcb13d"
+  stroke_color: "#ffffff"
+  stroke_width: 1

@@ -50,6 +50,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
   - [General](#general)
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
+  - [Plex Configuration (for metadata edits)](#plex-configuration-for-metadata-edits)
   - [Movie Settings](#movie-settings)
   - [TV Show Settings](#tv-show-settings)
   - [Trending](#trending)
@@ -60,7 +61,7 @@ In this example the movie "Dracula" has not been added to Radarr (and is not ava
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
 - [🚀 Usage](#-usage)
 - [💡 Tips & Best Practices](#-tips--best-practices)
-  - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-upcoming-content-from-recently-added-sections)
+  - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-umtk-content-from-recently-added-sections)
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
@@ -250,7 +251,6 @@ Rename `config.example.yml` to `config.yml` and update your settings:
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues
 - **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
-- **append_dates_to_sort_titles:** Using the metadata files, release dates will be added to sort titles so you can sort in order of release date.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
 ### Radarr Configuration (for Movies):
@@ -264,7 +264,18 @@ Rename `config.example.yml` to `config.yml` and update your settings:
 - **sonarr_url:** Your Sonarr URL (default: `http://localhost:8989`)
 - **sonarr_api_key:** Found in Sonarr under Settings → General → Security
 - **sonarr_timeout:** Increase if needed for large libraries
-  
+
+### Plex Configuration (for metadata edits):
+
+- **plex_url:** Your Plex URL
+- **plex_token:** [How to find your Plex Token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+- **movie_libraries:** names of your movie libraries, comma separated
+- **tv_libraries:** names of your TV show libraries, comma separated
+- **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
+- **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
+- **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
+- **metadata_retry_limit:** How many times to retry metadata edits. This gives Plex some time to pick up the newly created items.
+
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
@@ -344,14 +355,12 @@ You can replace `build_collection: false` with your own [Kometa collection varia
 
 ## ☄️ Add to Kometa Configuration
 
-Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `metadata_files`, `collection_files` and `overlay_files`.
+Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `collection_files` and `overlay_files`.
 
 Example:
 
 ```yaml
 TV Shows:
-  metadata_files:
-    - file: /path/to/UMTK/kometa/UMTK_TV_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_TRENDING_COLLECTION.yml
@@ -361,8 +370,6 @@ TV Shows:
     - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
 
 Movies:
-  metadata_files:
-    - file: /path/to/UMTK/kometa/UMTK_MOVIES_METADATA.yml
   collection_files:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_TRENDING_COLLECTION.yml
@@ -428,7 +435,7 @@ python UMTK.py
 
 ## 💡 Tips & Best Practices
 
-### Exclude UMTK Content from "Recently Added" Sections
+### Exclude UMTK Content from Recently Added Sections
 
 Since UMTK adds content before it's actually available, you'll want to exclude it from "Recently Added" sections:
 
@@ -516,10 +523,6 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 - That means you have those items monitored in Radarr/Sonarr but not downloaded.
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
-
-### ❌ My TOP10 collection is incomplete or out of order
-- MDBList API responses can get cached by cloudflare, resulting in an older cached version of the list being returned. We work around that by alternating sort orders in the calls, but if you're doing multiple runs in one day you can still encounter this issue.
-- It's recommended to have Kometa only process these collection files once or twice each day. You can [schedule collections in Kometa](https://kometa.wiki/en/latest/config/schedule/?h=par#schedule-files).
 
 ---
 
