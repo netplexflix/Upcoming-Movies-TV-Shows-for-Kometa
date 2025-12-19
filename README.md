@@ -16,16 +16,18 @@ Optionally applies a TOP 10 ranking overlay.
 
 ### Movies:
 
-<img width="785" height="357" alt="Image" src="https://github.com/user-attachments/assets/bd809972-fa98-4cb5-a64f-d514e75f69e2" /><br>
+<img width="585" height="301" alt="Image" src="https://github.com/user-attachments/assets/cb5e748d-c345-468a-a697-f555cefc6543" />
 
 ### TV Shows:
 
-![Image](https://github.com/user-attachments/assets/3f9beeca-2c7e-4c34-bbda-5293c6d45a8c)
+<img width="585" height="301" alt="Image" src="https://github.com/user-attachments/assets/ec064344-9ff7-4ecc-8b02-29ee97462f29" />
 
-### Trending Movies:
+### TV Shows Trending TOP 10:
 
-<img width="1636" height="372" alt="Image" src="https://github.com/user-attachments/assets/4cc2511a-40aa-4476-9fb2-7f054708e271" />
-In this example the movie "Dracula" has not been added to Radarr (and is not available).
+<img width="2000" height="375" alt="Image" src="https://github.com/user-attachments/assets/5559d281-6fc2-4e6a-9c72-1f49f45f5ef6" />
+
+In this example 3 trending shows have not been added to Sonarr (and are not available).
+This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)
 
 ---
 
