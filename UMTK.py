@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-VERSION = "2025.12.18"
+VERSION = "2025.12.19"
 
 # ANSI color codes
 GREEN = '\033[32m'
