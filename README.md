@@ -1,4 +1,7 @@
-# Upcoming Movies & TV Shows for Kometa
+<p align="center">
+<img width="567" height="204" alt="UMTK_Logo2" src="https://github.com/user-attachments/assets/78952905-6b14-421e-bd08-9195cda5ba94" /><br>
+   <a href="https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa?style=plastic"></a> <a href="https://hub.docker.com/repository/docker/netplexflix/umtk"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/netplexflix/umtk?style=plastic"></a> <a href="https://discord.gg/VBNUJd7tx3"><img alt="Discord" src="https://img.shields.io/discord/1329439972796928041?style=plastic&label=Discord"></a>
+</p>
 
 **UMTK** (Upcoming Movies & TV Shows for Kometa) creates 'Coming Soon' collections in your Plex server.<br> 
 It accomplishes this by:
@@ -74,8 +77,6 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
   - [❌ "No config.yml found"](#-no-configyml-found)
   - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
-  - [❌ My TOP10 collection is incomplete or out of order](#-my-top10-collection-is-incomplete-or-out-of-order)
-
 
 ---
 
