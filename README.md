@@ -254,6 +254,7 @@ Rename `config.example.yml` to `config.yml` and update your settings:
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues
 - **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
+- **simplify_next_week_dates:** Set to `true` to simplify dates to `today`, `tomorrow`, `friday` etc if the air date is within the coming week.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
 ### Radarr Configuration (for Movies):
