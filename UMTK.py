@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-VERSION = "2026.01.11"
+VERSION = "2026.01.1102"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -299,21 +299,29 @@ def process_sonarr_url(base_url, api_key, timeout=90):
         '/sonarr/api/v3'
     ]
     
+    last_error = None
     for path in api_paths:
         test_url = f"{base_url}{path}"
         try:
             headers = {"X-Api-Key": api_key}
             response = requests.get(f"{test_url}/health", headers=headers, timeout=timeout)
             if response.status_code == 200:
-                print(f"Successfully connected to Sonarr at: {test_url}")
+                print(f"{GREEN}Successfully connected to Sonarr at: {test_url}{RESET}")
                 return test_url
+            else:
+                print(f"{ORANGE}Testing URL {test_url} - Failed: HTTP {response.status_code}{RESET}")
         except requests.exceptions.RequestException as e:
             print(f"{ORANGE}Testing URL {test_url} - Failed: {str(e)}{RESET}")
+            last_error = e
             continue
     
-    raise ConnectionError(f"{RED}Unable to establish connection to Sonarr. Tried the following URLs:\n" + 
-                        "\n".join([f"- {base_url}{path}" for path in api_paths]) + 
-                        f"\nPlease verify your URL and API key and ensure Sonarr is running.{RESET}")
+    error_msg = f"Unable to establish connection to Sonarr. Tried the following URLs:\n" + \
+                "\n".join([f"- {base_url}{path}" for path in api_paths]) + \
+                f"\nPlease verify your URL and API key and ensure Sonarr is running."
+    if last_error:
+        error_msg += f"\nLast error: {str(last_error)}"
+    
+    raise ConnectionError(f"{RED}{error_msg}{RESET}")
 
 def process_radarr_url(base_url, api_key, timeout=90):
     """Process and validate Radarr URL"""
@@ -357,10 +365,18 @@ def get_sonarr_series(sonarr_url, api_key, timeout=90):
         series_data = response.json()
         print(f"{GREEN}Done ✓ ({len(series_data)} series){RESET}")
         return series_data
+    except requests.exceptions.Timeout as e:
+        print(f" {RED}✗{RESET}")
+        print(f"{RED}Timeout connecting to Sonarr (exceeded {timeout}s): {str(e)}{RESET}")
+        raise
+    except requests.exceptions.ConnectionError as e:
+        print(f" {RED}✗{RESET}")
+        print(f"{RED}Connection error to Sonarr: {str(e)}{RESET}")
+        raise
     except requests.exceptions.RequestException as e:
         print(f" {RED}✗{RESET}")
         print(f"{RED}Error connecting to Sonarr: {str(e)}{RESET}")
-        sys.exit(1)
+        raise
 
 def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
     """Get episodes for a specific series"""
@@ -370,6 +386,12 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
         response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
+    except requests.exceptions.Timeout as e:
+        print(f"{RED}Timeout fetching episodes from Sonarr (exceeded {timeout}s): {str(e)}{RESET}")
+        raise
+    except requests.exceptions.ConnectionError as e:
+        print(f"{RED}Connection error fetching episodes from Sonarr: {str(e)}{RESET}")
+        raise
     except requests.exceptions.RequestException as e:
         print(f"{RED}Error fetching episodes from Sonarr: {str(e)}{RESET}")
         raise
@@ -5714,7 +5736,7 @@ def main():
         # PLEX METADATA UPDATES - MOVED TO END
         # ============================================================
         
-        # Update Plex TV metadata directly (moved to end) - only if TV processing succeeded
+        # Update Plex TV metadata directly - only if TV processing succeeded
         if process_tv and not tv_processing_failed and plex_url and plex_token and tv_libraries:
             print(f"\n{BLUE}{'=' * 50}{RESET}")
             print(f"{BLUE}Updating TV metadata in Plex...{RESET}")
