@@ -90,6 +90,8 @@ backdrop_upcoming_movies_future:
   enable: true
   name: red_frame
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
+  group: UMTK_backdrop
+  weight: 300
 
 text_upcoming_movies_future:
   use_text: "EXPECTED"
@@ -101,6 +103,8 @@ text_upcoming_movies_future:
   vertical_offset: 20
   font_size: 70
   font_color: "#FFFFFF"
+  group: UMTK_text
+  weight: 300
 
 ################################################################################
 ##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########
@@ -109,6 +113,8 @@ backdrop_upcoming_movies_released:
   enable: true
   name: red_frame
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
+  group: UMTK_backdrop
+  weight: 100
 
 text_upcoming_movies_released:
   use_text: "COMING SOON"
@@ -118,6 +124,8 @@ text_upcoming_movies_released:
   vertical_offset: 20
   font_size: 70
   font_color: "#FFFFFF"
+  group: UMTK_text
+  weight: 100
 
 ################################################################################
 ##########                UPCOMING SHOWS COLLECTION:                  ##########
@@ -227,6 +235,8 @@ backdrop_trending_movies_request_needed:
   enable: true
   name: red_frame
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame.png
+  group: UMTK_backdrop
+  weight: 200
 
 text_trending_movies_request_needed:
   use_text: "REQUEST NEEDED"
@@ -236,6 +246,8 @@ text_trending_movies_request_needed:
   vertical_offset: 10
   font_size: 70
   font_color: "#FFFFFF"
+  group: UMTK_text
+  weight: 200
 
 ################################################################################
 ##########                TRENDING SHOWS COLLECTION:                  ##########

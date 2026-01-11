@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-VERSION = "2025.12.19"
+VERSION = "2026.01.11"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -372,7 +372,7 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"{RED}Error fetching episodes from Sonarr: {str(e)}{RESET}")
-        sys.exit(1)
+        raise
 
 def get_radarr_movies(radarr_url, api_key, timeout=90):
     """Get all movies from Radarr"""
@@ -552,7 +552,10 @@ def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_sh
                     print(f"{ORANGE}[DEBUG] Skipping show with excluded tags: {series['title']}{RESET}")
                 continue
         
-        episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+        try:
+            episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+        except requests.exceptions.RequestException:
+            raise
         
         if debug:
             print(f"{BLUE}[DEBUG] Found {len(episodes)} episodes for {series['title']}{RESET}")
@@ -642,7 +645,10 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
                 print(f"{ORANGE}[DEBUG] Skipping unmonitored show: {series['title']}{RESET}")
             continue
         
-        episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+        try:
+            episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+        except requests.exceptions.RequestException:
+            raise
         
         s01e01 = None
         for ep in episodes:
@@ -760,7 +766,10 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 continue
             
             # Get episodes to check if any are downloaded or monitored
-            episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
+            try:
+                episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
+            except requests.exceptions.RequestException:
+                raise
             
             # Check if any episodes are downloaded
             has_downloaded_episodes = any(ep.get('hasFile', False) for ep in episodes)
@@ -1774,7 +1783,11 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
     checked_count = 0
     
     # Get current upcoming shows to compare against
-    current_future_shows, current_aired_shows = find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags, future_only_tv)
+    try:
+        current_future_shows, current_aired_shows = find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, utc_offset, debug, exclude_tags, future_only_tv)
+    except requests.exceptions.RequestException:
+        print(f"{RED}Error during TV cleanup - Sonarr connection failed. Skipping cleanup.{RESET}")
+        return
     
     # Create sets for quick lookup
     current_upcoming_titles = {show['title'] for show in current_future_shows + current_aired_shows}
@@ -1945,7 +1958,11 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                 else:
                     # Check if still in upcoming list
                     if series['title'] not in current_upcoming_titles:
-                        episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+                        try:
+                            episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+                        except requests.exceptions.RequestException:
+                            print(f"{RED}Error fetching episodes during cleanup - Sonarr connection failed. Skipping remaining cleanup.{RESET}")
+                            return
                         
                         # Find S01E01 specifically
                         s01e01 = None
@@ -4990,370 +5007,379 @@ def main():
         # Determine if we need to process TV at all (either regular or trending)
         process_tv = (tv_method > 0 or trending_tv_method > 0)
         
+        # Track if TV processing was successful
+        tv_processing_failed = False
+        
         # Process TV Shows
         if process_tv:
             print(f"{BLUE}{'=' * 50}{RESET}")
             print(f"{BLUE}Processing TV Shows...{RESET}")
             print(f"{BLUE}{'=' * 50}{RESET}\n")
             
-            sonarr_url = process_sonarr_url(config['sonarr_url'], config['sonarr_api_key'], sonarr_timeout)
-            sonarr_api_key = config['sonarr_api_key']
-            
-            # Fetch all series once
-            all_series = get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
-            
-            # Get exclude tags for Sonarr
-            exclude_sonarr_tag_names = config.get('exclude_sonarr_tags', [])
-            if isinstance(exclude_sonarr_tag_names, str):
-                exclude_sonarr_tag_names = [tag.strip() for tag in exclude_sonarr_tag_names.split(',') if tag.strip()]
-            
-            exclude_sonarr_tag_ids = get_tag_ids_from_names(sonarr_url, sonarr_api_key, exclude_sonarr_tag_names, sonarr_timeout, debug)
-            
-            if debug and exclude_sonarr_tag_names:
-                print(f"{BLUE}[DEBUG] Exclude Sonarr tags: {exclude_sonarr_tag_names} -> IDs: {exclude_sonarr_tag_ids}{RESET}")
-            
-            future_days_upcoming_shows = config.get('future_days_upcoming_shows', 30)
-            recent_days_new_show = config.get('recent_days_new_show', 7)
-            future_only_tv = str(config.get("future_only_tv", "false")).lower() == "true"
-            
-            print(f"future_days_upcoming_shows: {future_days_upcoming_shows}")
-            print(f"recent_days_new_show: {recent_days_new_show}")
-            print(f"future_only_tv: {future_only_tv}")
-            if exclude_sonarr_tag_names:
-                print(f"exclude_sonarr_tags: {', '.join(exclude_sonarr_tag_names)}")
-            print()
-            
-            # Process regular upcoming shows if tv_method is enabled
-            future_shows = []
-            aired_shows = []
-            new_shows = []
-            
-            if tv_method > 0:
-                # Find upcoming shows
-                future_shows, aired_shows = find_upcoming_shows(
-                    all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
-                )
+            try:
+                sonarr_url = process_sonarr_url(config['sonarr_url'], config['sonarr_api_key'], sonarr_timeout)
+                sonarr_api_key = config['sonarr_api_key']
                 
-                if future_shows:
-                    print(f"{GREEN}Found {len(future_shows)} future shows with first episodes within {future_days_upcoming_shows} days:{RESET}")
-                    for show in future_shows:
-                        print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode: {show['airDate']}")
-                else:
-                    print(f"{ORANGE}No future shows found with first episodes within {future_days_upcoming_shows} days.{RESET}")
+                # Fetch all series once
+                all_series = get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
                 
-                if aired_shows:
-                    print(f"\n{GREEN}Found {len(aired_shows)} aired shows not yet available:{RESET}")
-                    for show in aired_shows:
-                        print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode aired: {show['airDate']}")
-                elif not future_only_tv:
-                    print(f"{ORANGE}No aired shows found that are not yet available.{RESET}")
-                else:
-                    print(f"{ORANGE}Aired shows excluded due to future_only_tv=True.{RESET}")
+                # Get exclude tags for Sonarr
+                exclude_sonarr_tag_names = config.get('exclude_sonarr_tags', [])
+                if isinstance(exclude_sonarr_tag_names, str):
+                    exclude_sonarr_tag_names = [tag.strip() for tag in exclude_sonarr_tag_names.split(',') if tag.strip()]
                 
-                # Find new shows
-                print(f"\n{BLUE}Finding new shows with S01E01 downloaded...{RESET}")
-                new_shows = find_new_shows(
-                    all_series, sonarr_url, sonarr_api_key, recent_days_new_show, utc_offset, debug
-                )
+                exclude_sonarr_tag_ids = get_tag_ids_from_names(sonarr_url, sonarr_api_key, exclude_sonarr_tag_names, sonarr_timeout, debug)
                 
-                if new_shows:
-                    print(f"{GREEN}Found {len(new_shows)} new shows with S01E01 aired within the past {recent_days_new_show} days:{RESET}")
-                    for show in new_shows:
-                        print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - S01E01 aired: {show['airDate']}")
-                else:
-                    print(f"{ORANGE}No new shows found with S01E01 aired within the past {recent_days_new_show} days.{RESET}")
+                if debug and exclude_sonarr_tag_names:
+                    print(f"{BLUE}[DEBUG] Exclude Sonarr tags: {exclude_sonarr_tag_names} -> IDs: {exclude_sonarr_tag_ids}{RESET}")
                 
-                # Process TV content based on method
-                all_shows = future_shows + aired_shows
-                if all_shows:
-                    print(f"\n{BLUE}Processing content for upcoming shows...{RESET}")
-                    successful = 0
-                    failed = 0
-                    skipped_existing = 0
-                    fallback_used = 0
-                    
-                    for show in all_shows:
-                        print(f"\nProcessing: {show['title']}")
-                        
-                        # Check if content already exists
-                        show_path = show.get('path')
-                        if show_path:
-                            if umtk_root_tv:
-                                # Use PureWindowsPath to handle Windows paths from Sonarr
-                                show_name = PureWindowsPath(show_path).name
-                                season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
-                            else:
-                                season_00_path = Path(show_path) / "Season 00"
-                            
-                            clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                            
-                            # Check for both trailer and coming soon files
-                            trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                            coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
-                            existing_trailers = []
-                            if season_00_path.exists():
-                                existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
-                            
-                            if existing_trailers:
-                                existing_file = existing_trailers[0]
-                                # Determine if it's a trailer or placeholder
-                                show['used_trailer'] = '.Trailer.' in existing_file.name
-                                print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                skipped_existing += 1
-                                successful += 1
-                                all_shows_with_content.append(show)
-                                continue
-                        
-                        # Process based on method
-                        success = False
-                        
-                        if tv_method == 1:  # Trailer
-                            trailer_info = search_trailer_on_youtube(
-                                show['title'], 
-                                show.get('year'), 
-                                show.get('imdbId'),
-                                debug,
-                                skip_channels
-                            )
-                            
-                            if trailer_info:
-                                print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                                success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
-                            else:
-                                print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
-                            
-                            # If trailer method failed and fallback is enabled, try placeholder
-                            if not success and method_fallback:
-                                print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                                success = create_placeholder_tv(show, debug, umtk_root_tv)
-                                if success:
-                                    fallback_used += 1
-                                    print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
-                        
-                        elif tv_method == 2:  # Placeholder
-                            success = create_placeholder_tv(show, debug, umtk_root_tv)
-                        
-                        if success:
-                            successful += 1
-                            all_shows_with_content.append(show)
-                        else:
-                            failed += 1
-                    
-                    print(f"\n{GREEN}TV content processing summary:{RESET}")
-                    print(f"Successful: {successful}")
-                    print(f"Skipped (already exist): {skipped_existing}")
-                    if fallback_used > 0:
-                        print(f"Fallback used: {fallback_used}")
-                    print(f"Failed: {failed}")
-            
-            # Process Trending TV Shows
-            if trending_tv_method > 0:
-                print(f"\n{BLUE}{'=' * 50}{RESET}")
-                print(f"{BLUE}Processing Trending TV Shows...{RESET}")
-                print(f"{BLUE}{'=' * 50}{RESET}\n")
+                future_days_upcoming_shows = config.get('future_days_upcoming_shows', 30)
+                recent_days_new_show = config.get('recent_days_new_show', 7)
+                future_only_tv = str(config.get("future_only_tv", "false")).lower() == "true"
                 
-                mdblist_api_key = config.get('mdblist_api_key')
-                mdblist_tv_url = config.get('mdblist_tv')
-                mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
-                
-                if not mdblist_api_key:
-                    print(f"{RED}Error: mdblist_api_key not configured{RESET}")
-                elif not mdblist_tv_url:
-                    print(f"{RED}Error: mdblist_tv not configured{RESET}")
-                else:
-                    print(f"MDBList TV URL: {mdblist_tv_url}")
-                    print(f"MDBList TV Limit: {mdblist_tv_limit}")
-                    print()
-                    
-                    # Fetch trending shows from MDBList
-                    print(f"{BLUE}Fetching trending TV shows from MDBList...{RESET}")
-                    mdblist_tv_items = fetch_mdblist_items(mdblist_tv_url, mdblist_api_key, mdblist_tv_limit, debug)
-                    
-                    if mdblist_tv_items:
-                        print(f"{GREEN}Fetched {len(mdblist_tv_items)} trending TV shows from MDBList{RESET}")
-                        
-                        # Process trending shows
-                        trending_tv_monitored, trending_tv_request_needed = process_trending_tv(
-                            mdblist_tv_items, all_series, sonarr_url, sonarr_api_key, debug
-                        )
-                        
-                        if trending_tv_monitored:
-                            print(f"\n{GREEN}Found {len(trending_tv_monitored)} trending shows that are monitored but not available:{RESET}")
-                            for show in trending_tv_monitored:
-                                print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
-                        else:
-                            print(f"{ORANGE}No trending shows found that are monitored but not available.{RESET}")
-                        
-                        if trending_tv_request_needed:
-                            print(f"\n{GREEN}Found {len(trending_tv_request_needed)} trending shows that need to be requested:{RESET}")
-                            for show in trending_tv_request_needed:
-                                print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
-                        else:
-                            print(f"{ORANGE}No trending shows found that need to be requested.{RESET}")
-                        
-                        # Process trending TV content
-                        all_trending_tv = trending_tv_monitored + trending_tv_request_needed
-                        if all_trending_tv:
-                            print(f"\n{BLUE}Processing content for trending TV shows...{RESET}")
-                            successful = 0
-                            failed = 0
-                            skipped_existing = 0
-                            fallback_used = 0
-                            
-                            for show in all_trending_tv:
-                                # Mark this as a trending show
-                                show['is_trending'] = True
-                                
-                                print(f"\nProcessing: {show['title']}")
-                                
-                                # Check if content already exists
-                                show_path = show.get('path')
-                                
-                                # Determine the path to check
-                                if show_path:
-                                    if umtk_root_tv:
-                                        # Use PureWindowsPath to handle Windows paths from Sonarr
-                                        show_name = PureWindowsPath(show_path).name
-                                        season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
-                                    else:
-                                        season_00_path = Path(show_path) / "Season 00"
-                                elif umtk_root_tv:
-                                    # For shows without a path, construct from umtk_root_tv
-                                    show_title = show.get('title', 'Unknown')
-                                    show_year = show.get('year', '')
-                                    if show_year:
-                                        show_folder = sanitize_filename(f"{show_title} ({show_year})")
-                                    else:
-                                        show_folder = sanitize_filename(show_title)
-                                    season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
-                                else:
-                                    season_00_path = None
-                                
-                                # Check for existing content
-                                if season_00_path:
-                                    clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                                    # Check for both trailer and coming soon files
-                                    trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                    coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
-                                    existing_trailers = []
-                                    if season_00_path.exists():
-                                        existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
-                                    
-                                    if existing_trailers:
-                                        existing_file = existing_trailers[0]
-                                        # Determine if it's a trailer or placeholder
-                                        show['used_trailer'] = '.Trailer.' in existing_file.name
-                                        print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                        skipped_existing += 1
-                                        successful += 1
-                                        all_shows_with_content.append(show)
-                                        continue
-                                
-                                # Process based on method
-                                success = False
-                                
-                                if trending_tv_method == 1:  # Trailer
-                                    trailer_info = search_trailer_on_youtube(
-                                        show['title'], 
-                                        show.get('year'), 
-                                        show.get('imdbId'),
-                                        debug,
-                                        skip_channels
-                                    )
-                                    
-                                    if trailer_info:
-                                        print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                                        success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
-                                    else:
-                                        print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
-                                    
-                                    # If trailer method failed and fallback is enabled, try placeholder
-                                    if not success and method_fallback:
-                                        print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                                        success = create_placeholder_tv(show, debug, umtk_root_tv)
-                                        if success:
-                                            fallback_used += 1
-                                            print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
-                                
-                                elif trending_tv_method == 2:  # Placeholder
-                                    success = create_placeholder_tv(show, debug, umtk_root_tv)
-                                
-                                if success:
-                                    successful += 1
-                                    all_shows_with_content.append(show)
-                                else:
-                                    failed += 1
-                            
-                            print(f"\n{GREEN}Trending TV content processing summary:{RESET}")
-                            print(f"Successful: {successful}")
-                            print(f"Skipped (already exist): {skipped_existing}")
-                            if fallback_used > 0:
-                                print(f"Fallback used: {fallback_used}")
-                            print(f"Failed: {failed}")
-                    else:
-                        print(f"{ORANGE}No trending TV shows fetched from MDBList{RESET}")
-            
-            # Cleanup TV content (after processing both regular and trending)
-            if cleanup:
-                print(f"\n{BLUE}Checking for TV content to cleanup...{RESET}")
-                cleanup_tv_content(
-                    all_series, sonarr_url, sonarr_api_key, tv_method, debug, 
-                    exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, 
-                    future_only_tv, umtk_root_tv, trending_tv_monitored, trending_tv_request_needed
-                )
+                print(f"future_days_upcoming_shows: {future_days_upcoming_shows}")
+                print(f"recent_days_new_show: {recent_days_new_show}")
+                print(f"future_only_tv: {future_only_tv}")
+                if exclude_sonarr_tag_names:
+                    print(f"exclude_sonarr_tags: {', '.join(exclude_sonarr_tag_names)}")
                 print()
-            
-            # Create TV YAML files (create if either tv_method or trending_tv_method is enabled)
-            if tv_method > 0 or trending_tv_method > 0:
-                overlay_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml"
-                collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
                 
-                create_overlay_yaml_tv(
-                    str(overlay_file), future_shows, aired_shows, 
-                    trending_tv_monitored if trending_tv_method > 0 else [],
-                    trending_tv_request_needed if trending_tv_method > 0 else [],
-                    {"backdrop": config.get("backdrop_upcoming_shows", {}),
-                     "text": config.get("text_upcoming_shows", {}),
-                     "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
-                     "text_aired": config.get("text_upcoming_shows_aired", {}),
-                     "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
-                    config
-                )
+                # Process regular upcoming shows if tv_method is enabled
+                future_shows = []
+                aired_shows = []
+                new_shows = []
                 
                 if tv_method > 0:
-                    new_shows_overlay_file = kometa_folder / "UMTK_TV_NEW_SHOWS_OVERLAYS.yml"
-                    new_shows_collection_file = kometa_folder / "UMTK_TV_NEW_SHOWS_COLLECTION.yml"
-                    
-                    # Create overlay file for new shows
-                    create_new_shows_overlay_yaml(str(new_shows_overlay_file), new_shows,
-                                                  {"backdrop": config.get("backdrop_new_show", {}),
-                                                   "text": config.get("text_new_show", {})})
-                    
-                    # Create collection file for new shows
-                    create_new_shows_collection_yaml(str(new_shows_collection_file), new_shows, config)
-                
-                create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
-                
-                print(f"\n{GREEN}TV YAML files created successfully{RESET}")
-            
-            # Create Trending TV collection YAML
-            if trending_tv_method > 0:
-                if mdblist_tv_items:
-                    # Pass the raw MDBList items for the collection
-                    trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
-                    create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_items, config, trending_tv_request_needed)
-                    print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
-        
-                    # Create Top 10 TV overlay YAML
-                    top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
-                    create_top10_overlay_yaml_tv(
-                        str(top10_tv_overlay_file), 
-                        mdblist_tv_items,
-                        {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
-                         "text": config.get("text_trending_top_10_tv", {})}
+                    # Find upcoming shows
+                    future_shows, aired_shows = find_upcoming_shows(
+                        all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows, utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
                     )
-                    print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
+                    
+                    if future_shows:
+                        print(f"{GREEN}Found {len(future_shows)} future shows with first episodes within {future_days_upcoming_shows} days:{RESET}")
+                        for show in future_shows:
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode: {show['airDate']}")
+                    else:
+                        print(f"{ORANGE}No future shows found with first episodes within {future_days_upcoming_shows} days.{RESET}")
+                    
+                    if aired_shows:
+                        print(f"\n{GREEN}Found {len(aired_shows)} aired shows not yet available:{RESET}")
+                        for show in aired_shows:
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - First episode aired: {show['airDate']}")
+                    elif not future_only_tv:
+                        print(f"{ORANGE}No aired shows found that are not yet available.{RESET}")
+                    else:
+                        print(f"{ORANGE}Aired shows excluded due to future_only_tv=True.{RESET}")
+                    
+                    # Find new shows
+                    print(f"\n{BLUE}Finding new shows with S01E01 downloaded...{RESET}")
+                    new_shows = find_new_shows(
+                        all_series, sonarr_url, sonarr_api_key, recent_days_new_show, utc_offset, debug
+                    )
+                    
+                    if new_shows:
+                        print(f"{GREEN}Found {len(new_shows)} new shows with S01E01 aired within the past {recent_days_new_show} days:{RESET}")
+                        for show in new_shows:
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - S01E01 aired: {show['airDate']}")
+                    else:
+                        print(f"{ORANGE}No new shows found with S01E01 aired within the past {recent_days_new_show} days.{RESET}")
+                    
+                    # Process TV content based on method
+                    all_shows = future_shows + aired_shows
+                    if all_shows:
+                        print(f"\n{BLUE}Processing content for upcoming shows...{RESET}")
+                        successful = 0
+                        failed = 0
+                        skipped_existing = 0
+                        fallback_used = 0
+                        
+                        for show in all_shows:
+                            print(f"\nProcessing: {show['title']}")
+                            
+                            # Check if content already exists
+                            show_path = show.get('path')
+                            if show_path:
+                                if umtk_root_tv:
+                                    # Use PureWindowsPath to handle Windows paths from Sonarr
+                                    show_name = PureWindowsPath(show_path).name
+                                    season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                                else:
+                                    season_00_path = Path(show_path) / "Season 00"
+                                
+                                clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                
+                                # Check for both trailer and coming soon files
+                                trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
+                                coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                                existing_trailers = []
+                                if season_00_path.exists():
+                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
+                                
+                                if existing_trailers:
+                                    existing_file = existing_trailers[0]
+                                    # Determine if it's a trailer or placeholder
+                                    show['used_trailer'] = '.Trailer.' in existing_file.name
+                                    print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
+                                    skipped_existing += 1
+                                    successful += 1
+                                    all_shows_with_content.append(show)
+                                    continue
+                            
+                            # Process based on method
+                            success = False
+                            
+                            if tv_method == 1:  # Trailer
+                                trailer_info = search_trailer_on_youtube(
+                                    show['title'], 
+                                    show.get('year'), 
+                                    show.get('imdbId'),
+                                    debug,
+                                    skip_channels
+                                )
+                                
+                                if trailer_info:
+                                    print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
+                                    success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
+                                else:
+                                    print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
+                                
+                                # If trailer method failed and fallback is enabled, try placeholder
+                                if not success and method_fallback:
+                                    print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                                    success = create_placeholder_tv(show, debug, umtk_root_tv)
+                                    if success:
+                                        fallback_used += 1
+                                        print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
+                            
+                            elif tv_method == 2:  # Placeholder
+                                success = create_placeholder_tv(show, debug, umtk_root_tv)
+                            
+                            if success:
+                                successful += 1
+                                all_shows_with_content.append(show)
+                            else:
+                                failed += 1
+                        
+                        print(f"\n{GREEN}TV content processing summary:{RESET}")
+                        print(f"Successful: {successful}")
+                        print(f"Skipped (already exist): {skipped_existing}")
+                        if fallback_used > 0:
+                            print(f"Fallback used: {fallback_used}")
+                        print(f"Failed: {failed}")
+                
+                # Process Trending TV Shows
+                if trending_tv_method > 0:
+                    print(f"\n{BLUE}{'=' * 50}{RESET}")
+                    print(f"{BLUE}Processing Trending TV Shows...{RESET}")
+                    print(f"{BLUE}{'=' * 50}{RESET}\n")
+                    
+                    mdblist_api_key = config.get('mdblist_api_key')
+                    mdblist_tv_url = config.get('mdblist_tv')
+                    mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
+                    
+                    if not mdblist_api_key:
+                        print(f"{RED}Error: mdblist_api_key not configured{RESET}")
+                    elif not mdblist_tv_url:
+                        print(f"{RED}Error: mdblist_tv not configured{RESET}")
+                    else:
+                        print(f"MDBList TV URL: {mdblist_tv_url}")
+                        print(f"MDBList TV Limit: {mdblist_tv_limit}")
+                        print()
+                        
+                        # Fetch trending shows from MDBList
+                        print(f"{BLUE}Fetching trending TV shows from MDBList...{RESET}")
+                        mdblist_tv_items = fetch_mdblist_items(mdblist_tv_url, mdblist_api_key, mdblist_tv_limit, debug)
+                        
+                        if mdblist_tv_items:
+                            print(f"{GREEN}Fetched {len(mdblist_tv_items)} trending TV shows from MDBList{RESET}")
+                            
+                            # Process trending shows
+                            trending_tv_monitored, trending_tv_request_needed = process_trending_tv(
+                                mdblist_tv_items, all_series, sonarr_url, sonarr_api_key, debug
+                            )
+                            
+                            if trending_tv_monitored:
+                                print(f"\n{GREEN}Found {len(trending_tv_monitored)} trending shows that are monitored but not available:{RESET}")
+                                for show in trending_tv_monitored:
+                                    print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
+                            else:
+                                print(f"{ORANGE}No trending shows found that are monitored but not available.{RESET}")
+                            
+                            if trending_tv_request_needed:
+                                print(f"\n{GREEN}Found {len(trending_tv_request_needed)} trending shows that need to be requested:{RESET}")
+                                for show in trending_tv_request_needed:
+                                    print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
+                            else:
+                                print(f"{ORANGE}No trending shows found that need to be requested.{RESET}")
+                            
+                            # Process trending TV content
+                            all_trending_tv = trending_tv_monitored + trending_tv_request_needed
+                            if all_trending_tv:
+                                print(f"\n{BLUE}Processing content for trending TV shows...{RESET}")
+                                successful = 0
+                                failed = 0
+                                skipped_existing = 0
+                                fallback_used = 0
+                                
+                                for show in all_trending_tv:
+                                    # Mark this as a trending show
+                                    show['is_trending'] = True
+                                    
+                                    print(f"\nProcessing: {show['title']}")
+                                    
+                                    # Check if content already exists
+                                    show_path = show.get('path')
+                                    
+                                    # Determine the path to check
+                                    if show_path:
+                                        if umtk_root_tv:
+                                            # Use PureWindowsPath to handle Windows paths from Sonarr
+                                            show_name = PureWindowsPath(show_path).name
+                                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                                        else:
+                                            season_00_path = Path(show_path) / "Season 00"
+                                    elif umtk_root_tv:
+                                        # For shows without a path, construct from umtk_root_tv
+                                        show_title = show.get('title', 'Unknown')
+                                        show_year = show.get('year', '')
+                                        if show_year:
+                                            show_folder = sanitize_filename(f"{show_title} ({show_year})")
+                                        else:
+                                            show_folder = sanitize_filename(show_title)
+                                        season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
+                                    else:
+                                        season_00_path = None
+                                    
+                                    # Check for existing content
+                                    if season_00_path:
+                                        clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                        # Check for both trailer and coming soon files
+                                        trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
+                                        coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                                        existing_trailers = []
+                                        if season_00_path.exists():
+                                            existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
+                                        
+                                        if existing_trailers:
+                                            existing_file = existing_trailers[0]
+                                            # Determine if it's a trailer or placeholder
+                                            show['used_trailer'] = '.Trailer.' in existing_file.name
+                                            print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
+                                            skipped_existing += 1
+                                            successful += 1
+                                            all_shows_with_content.append(show)
+                                            continue
+                                    
+                                    # Process based on method
+                                    success = False
+                                    
+                                    if trending_tv_method == 1:  # Trailer
+                                        trailer_info = search_trailer_on_youtube(
+                                            show['title'], 
+                                            show.get('year'), 
+                                            show.get('imdbId'),
+                                            debug,
+                                            skip_channels
+                                        )
+                                        
+                                        if trailer_info:
+                                            print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
+                                            success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
+                                        else:
+                                            print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
+                                        
+                                        # If trailer method failed and fallback is enabled, try placeholder
+                                        if not success and method_fallback:
+                                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                                            success = create_placeholder_tv(show, debug, umtk_root_tv)
+                                            if success:
+                                                fallback_used += 1
+                                                print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
+                                    
+                                    elif trending_tv_method == 2:  # Placeholder
+                                        success = create_placeholder_tv(show, debug, umtk_root_tv)
+                                    
+                                    if success:
+                                        successful += 1
+                                        all_shows_with_content.append(show)
+                                    else:
+                                        failed += 1
+                                
+                                print(f"\n{GREEN}Trending TV content processing summary:{RESET}")
+                                print(f"Successful: {successful}")
+                                print(f"Skipped (already exist): {skipped_existing}")
+                                if fallback_used > 0:
+                                    print(f"Fallback used: {fallback_used}")
+                                print(f"Failed: {failed}")
+                        else:
+                            print(f"{ORANGE}No trending TV shows fetched from MDBList{RESET}")
+                
+                # Cleanup TV content (after processing both regular and trending)
+                if cleanup:
+                    print(f"\n{BLUE}Checking for TV content to cleanup...{RESET}")
+                    cleanup_tv_content(
+                        all_series, sonarr_url, sonarr_api_key, tv_method, debug, 
+                        exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset, 
+                        future_only_tv, umtk_root_tv, trending_tv_monitored, trending_tv_request_needed
+                    )
+                    print()
+                
+                # Create TV YAML files (create if either tv_method or trending_tv_method is enabled)
+                if tv_method > 0 or trending_tv_method > 0:
+                    overlay_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml"
+                    collection_file = kometa_folder / "UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml"
+                    
+                    create_overlay_yaml_tv(
+                        str(overlay_file), future_shows, aired_shows, 
+                        trending_tv_monitored if trending_tv_method > 0 else [],
+                        trending_tv_request_needed if trending_tv_method > 0 else [],
+                        {"backdrop": config.get("backdrop_upcoming_shows", {}),
+                         "text": config.get("text_upcoming_shows", {}),
+                         "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
+                         "text_aired": config.get("text_upcoming_shows_aired", {}),
+                         "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
+                         "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                        config
+                    )
+                    
+                    if tv_method > 0:
+                        new_shows_overlay_file = kometa_folder / "UMTK_TV_NEW_SHOWS_OVERLAYS.yml"
+                        new_shows_collection_file = kometa_folder / "UMTK_TV_NEW_SHOWS_COLLECTION.yml"
+                        
+                        # Create overlay file for new shows
+                        create_new_shows_overlay_yaml(str(new_shows_overlay_file), new_shows,
+                                                      {"backdrop": config.get("backdrop_new_show", {}),
+                                                       "text": config.get("text_new_show", {})})
+                        
+                        # Create collection file for new shows
+                        create_new_shows_collection_yaml(str(new_shows_collection_file), new_shows, config)
+                    
+                    create_collection_yaml_tv(str(collection_file), future_shows, aired_shows, config)
+                    
+                    print(f"\n{GREEN}TV YAML files created successfully{RESET}")
+                
+                # Create Trending TV collection YAML
+                if trending_tv_method > 0:
+                    if mdblist_tv_items:
+                        # Pass the raw MDBList items for the collection
+                        trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
+                        create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_items, config, trending_tv_request_needed)
+                        print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
+            
+                        # Create Top 10 TV overlay YAML
+                        top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
+                        create_top10_overlay_yaml_tv(
+                            str(top10_tv_overlay_file), 
+                            mdblist_tv_items,
+                            {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
+                             "text": config.get("text_trending_top_10_tv", {})}
+                        )
+                        print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
+            
+            except (ConnectionError, requests.exceptions.RequestException) as e:
+                print(f"{RED}Error during TV processing: {str(e)}{RESET}")
+                print(f"{ORANGE}Skipping TV processing and continuing with movies...{RESET}")
+                tv_processing_failed = True
         
         # Determine if we need to process Movies at all (either regular or trending)
         process_movies = (movie_method > 0 or trending_movies_method > 0)
@@ -5688,8 +5714,8 @@ def main():
         # PLEX METADATA UPDATES - MOVED TO END
         # ============================================================
         
-        # Update Plex TV metadata directly (moved to end)
-        if process_tv and plex_url and plex_token and tv_libraries:
+        # Update Plex TV metadata directly (moved to end) - only if TV processing succeeded
+        if process_tv and not tv_processing_failed and plex_url and plex_token and tv_libraries:
             print(f"\n{BLUE}{'=' * 50}{RESET}")
             print(f"{BLUE}Updating TV metadata in Plex...{RESET}")
             print(f"{BLUE}{'=' * 50}{RESET}\n")
@@ -5699,6 +5725,8 @@ def main():
                 mdblist_tv_items if trending_tv_method > 0 else None,
                 config, debug, 0, metadata_retry_limit
             )
+        elif tv_processing_failed and process_tv:
+            print(f"{ORANGE}Skipping Plex TV metadata updates due to earlier Sonarr connection failure{RESET}")
         elif debug and process_tv:
             print(f"{ORANGE}[DEBUG] Plex TV metadata updates skipped - missing plex_url, plex_token, or tv_libraries{RESET}")
         
