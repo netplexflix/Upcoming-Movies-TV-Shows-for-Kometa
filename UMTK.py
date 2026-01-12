@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-VERSION = "2026.01.1102"
+VERSION = "2026.01.12"
 
 # ANSI color codes
 GREEN = '\033[32m'
@@ -768,10 +768,25 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
             if debug:
                 print(f"{BLUE}[DEBUG] Found in Sonarr: {sonarr_series['title']}{RESET}")
             
+            # Get episodes to check if any are downloaded
+            try:
+                episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
+            except requests.exceptions.RequestException:
+                raise
+            
+            # Check if any episodes are downloaded
+            has_downloaded_episodes = any(ep.get('hasFile', False) for ep in episodes)
+            
+            if has_downloaded_episodes:
+                # Show has downloaded content - skip it entirely
+                if debug:
+                    print(f"{BLUE}[DEBUG] Has downloaded episodes, skipping completely{RESET}")
+                continue
+            
             # Check if monitored at series level
             if not sonarr_series.get('monitored', False):
                 if debug:
-                    print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
+                    print(f"{BLUE}[DEBUG] Not monitored and no downloads - adding to not_found_or_unmonitored{RESET}")
                 
                 # Use the ID we have (prefer TVDB, fallback to TMDB)
                 show_dict = {
@@ -785,20 +800,6 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                     'rank': rank  # Include rank
                 }
                 not_found_or_unmonitored.append(show_dict)
-                continue
-            
-            # Get episodes to check if any are downloaded or monitored
-            try:
-                episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
-            except requests.exceptions.RequestException:
-                raise
-            
-            # Check if any episodes are downloaded
-            has_downloaded_episodes = any(ep.get('hasFile', False) for ep in episodes)
-            
-            if has_downloaded_episodes:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Has downloaded episodes, skipping{RESET}")
                 continue
             
             # Check if any episodes are monitored
@@ -1002,10 +1003,10 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
             if debug:
                 print(f"{BLUE}[DEBUG] Found in Radarr: {radarr_movie['title']}{RESET}")
             
-            # Check if downloaded
+            # Check if downloaded - if so, skip entirely
             if radarr_movie.get('hasFile', False):
                 if debug:
-                    print(f"{BLUE}[DEBUG] Already downloaded, skipping{RESET}")
+                    print(f"{BLUE}[DEBUG] Already downloaded, skipping completely{RESET}")
                 continue
             
             # Check if monitored
@@ -1027,7 +1028,7 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
                 monitored_not_available.append(movie_dict)
             else:
                 if debug:
-                    print(f"{BLUE}[DEBUG] Not monitored - adding to not_found_or_unmonitored{RESET}")
+                    print(f"{BLUE}[DEBUG] Not monitored and not downloaded - adding to not_found_or_unmonitored{RESET}")
                 
                 movie_dict = {
                     'title': radarr_movie['title'],
