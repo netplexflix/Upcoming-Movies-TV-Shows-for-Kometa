@@ -1,0 +1,50 @@
+simplify_next_week:
+  use_abbreviated: false
+  today: Dzisiaj
+  tomorrow: Jutro
+
+weekdays_abbr:
+  0: Pon
+  1: Wt
+  2: Śr
+  3: Czw
+  4: Pt
+  5: Sob
+  6: Nd
+
+weekdays_full:
+  0: Poniedziałek
+  1: Wtorek
+  2: Środa
+  3: Czwartek
+  4: Piątek
+  5: Sobota
+  6: Niedziela
+
+months_abbr:
+  1: Sty
+  2: Lut
+  3: Mar
+  4: Kwi
+  5: Maj
+  6: Cze
+  7: Lip
+  8: Sie
+  9: Wrz
+  10: Paź
+  11: Lis
+  12: Gru
+
+months_full:
+  1: Styczeń
+  2: Luty
+  3: Marzec
+  4: Kwiecień
+  5: Maj
+  6: Czerwiec
+  7: Lipiec
+  8: Sierpień
+  9: Wrzesień
+  10: Październik
+  11: Listopad
+  12: Grudzień

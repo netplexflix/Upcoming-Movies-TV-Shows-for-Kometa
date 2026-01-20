@@ -1,0 +1,50 @@
+simplify_next_week:
+  use_abbreviated: false
+  today: Bugün
+  tomorrow: Yarın
+
+weekdays_abbr:
+  0: Pzt
+  1: Sal
+  2: Çar
+  3: Per
+  4: Cum
+  5: Cmt
+  6: Paz
+
+weekdays_full:
+  0: Pazartesi
+  1: Salı
+  2: Çarşamba
+  3: Perşembe
+  4: Cuma
+  5: Cumartesi
+  6: Pazar
+
+months_abbr:
+  1: Oca
+  2: Şub
+  3: Mar
+  4: Nis
+  5: May
+  6: Haz
+  7: Tem
+  8: Ağu
+  9: Eyl
+  10: Eki
+  11: Kas
+  12: Ara
+
+months_full:
+  1: Ocak
+  2: Şubat
+  3: Mart
+  4: Nisan
+  5: Mayıs
+  6: Haziran
+  7: Temmuz
+  8: Ağustos
+  9: Eylül
+  10: Ekim
+  11: Kasım
+  12: Aralık
