@@ -338,18 +338,14 @@ def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
     all_shows = future_shows + aired_shows
 
     if not all_shows:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": plex_search_config,
-                    "item_label.remove": collection_name,
-                    "smart_label": collection_config.get("smart_label", "random"),
+                    "plex_all": True,
+                    "item_label.remove": item_label,
                     "build_collection": collection_config.get("build_collection", False)
                 }
             }
@@ -361,17 +357,14 @@ def create_collection_yaml_tv(output_file, future_shows, aired_shows, config):
     
     tvdb_ids = [s['tvdbId'] for s in all_shows if s.get('tvdbId')]
     if not tvdb_ids:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": plex_search_config,
-                    "non_item_remove_label": collection_name,
+                    "plex_all": True,
+                    "item_label.remove": item_label,
                     "build_collection": collection_config.get("build_collection", False)
                 }
             }
@@ -437,18 +430,14 @@ def create_new_shows_collection_yaml(output_file, shows, config):
         summary = collection_config.pop("summary")
 
     if not shows:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": plex_search_config,
-                    "item_label.remove": collection_name,
-                    "smart_label": collection_config.get("smart_label", "random"),
+                    "plex_all": True,
+                    "item_label.remove": item_label,
                     "build_collection": collection_config.get("build_collection", False)
                 }
             }
@@ -460,17 +449,14 @@ def create_new_shows_collection_yaml(output_file, shows, config):
     
     tvdb_ids = [s['tvdbId'] for s in shows if s.get('tvdbId')]
     if not tvdb_ids:
-        plex_search_config = {
-            "all": {
-                "label": collection_name
-            }
-        }
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": plex_search_config,
-                    "non_item_remove_label": collection_name,
+                    "plex_all": True,
+                    "item_label.remove": item_label,
                     "build_collection": collection_config.get("build_collection", False)
                 }
             }
@@ -804,22 +790,16 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     all_movies = future_movies + released_movies
     
     if not all_movies:
-        fallback_config = {
-            "plex_search": {
-                "all": {
-                    "label": collection_name
-                }
-            },
-            "item_label.remove": collection_name,
-            "smart_label": "random",
-            "build_collection": False
-        }
-        
-        fallback_config.update(collection_config)
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
-                collection_name: fallback_config
+                collection_name: {
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
+                }
             }
         }
         
@@ -829,21 +809,16 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
     
     tmdb_ids = [m['tmdbId'] for m in all_movies if m.get('tmdbId')]
     if not tmdb_ids:
-        fallback_config = {
-            "plex_search": {
-                "all": {
-                    "label": collection_name
-                }
-            },
-            "non_item_remove_label": collection_name,
-            "build_collection": False
-        }
-        
-        fallback_config.update(collection_config)
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
         
         data = {
             "collections": {
-                collection_name: fallback_config
+                collection_name: {
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
+                }
             }
         }
         
@@ -899,16 +874,15 @@ def create_trending_collection_yaml_movies(output_file, mdblist_items, config, t
         collection_name = collection_config.pop("collection_name", "Trending Movies")
 
     if not mdblist_items:
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
+        
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": {
-                        "all": {
-                            "label": collection_name
-                        }
-                    },
-                    "item_label.remove": collection_name,
-                    "build_collection": False
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
                 }
             }
         }
@@ -923,16 +897,15 @@ def create_trending_collection_yaml_movies(output_file, mdblist_items, config, t
             tmdb_ids.append(str(tmdb_id))
     
     if not tmdb_ids:
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
+        
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": {
-                        "all": {
-                            "label": collection_name
-                        }
-                    },
-                    "non_item_remove_label": collection_name,
-                    "build_collection": False
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
                 }
             }
         }
@@ -994,16 +967,15 @@ def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trend
         collection_name = collection_config.pop("collection_name", "Trending Shows")
 
     if not mdblist_items:
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
+        
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": {
-                        "all": {
-                            "label": collection_name
-                        }
-                    },
-                    "item_label.remove": collection_name,
-                    "build_collection": False
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
                 }
             }
         }
@@ -1024,16 +996,15 @@ def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trend
             tmdb_ids.append(str(tmdb_id))
     
     if not tvdb_ids and not tmdb_ids:
+        # Get item_label from config, default to collection_name
+        item_label = collection_config.get("item_label", collection_name)
+        
         data = {
             "collections": {
                 collection_name: {
-                    "plex_search": {
-                        "all": {
-                            "label": collection_name
-                        }
-                    },
-                    "non_item_remove_label": collection_name,
-                    "build_collection": False
+                    "plex_all": True,
+                    "item_label.remove": item_label,
+                    "build_collection": collection_config.get("build_collection", False)
                 }
             }
         }
