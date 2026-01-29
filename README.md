@@ -36,7 +36,7 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
 
 ## 📑 Table of Contents
 
-- [🛠️ Installation](#-installation)
+- [🛠️ Installation](#installation)
   - [Option 1: Docker](#option-1-docker)
     - [Step 1: Install Docker](#step-1-install-docker)
     - [Step 2: Create Docker Compose File](#step-2-create-docker-compose-file)
@@ -49,7 +49,7 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
     - [Step 1: Clone the repository](#step-1-clone-the-repository)
     - [Step2: Install Python dependencies](#step-2-install-python-dependencies)
     - [Step3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
-    - [Step 4: Configure Your Config Settings](#step-4-configure-your-config-Settings)
+    - [Step 4: Configure Your Config Settings](#2.4)
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
 - [⚙️ Configuration](#️-configuration)
   - [General](#general)
@@ -65,12 +65,13 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
 - [🚀 Usage](#-usage)
+- [🌐 Localization](#localization)
 - [💡 Tips & Best Practices](#-tips--best-practices)
   - [Exclude Upcoming Content from "Recently Added" Sections](#exclude-umtk-content-from-recently-added-sections)
   - [Choosing Between Methods](#choosing-between-methods)
   - [Understanding Movie Release Types](#understanding-movie-release-types)
   - [Scheduling with Cron (Docker)](#scheduling-with-cron-docker)
-  - [Prevent Request Platforms from marking coming soon items as available](#Prevent-Request-Platforms-from-marking-coming-soon-items-as-available)
+  - [Prevent Request Platforms from marking coming soon items as available](#prevent-request-platforms)
 - [🩺 Troubleshooting Common Issues:](#-troubleshooting-common-issues)
   - [❌ "Connection refused" to Sonarr/Radarr](#-connection-refused-to-sonarrradarr)
   - [❌ "Permission denied" errors](#-permission-denied-errors)
@@ -79,7 +80,7 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
 
 ---
-
+<a id="installation"></a>
 ## 🛠️ Installation
 
 ### Option 1: Docker
@@ -221,6 +222,7 @@ pip install -r requirements.txt
 [ffmpeg](https://www.ffmpeg.org/) is required by yt-dlp for postprocessing when downloading trailers.
 Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_i_get_ffmpeg.3F) for installation instructions.
 
+<a id="2.4"></a>
 #### Step 4: Configure Your Config Settings
 - See [⚙️ Configuration](#️-configuration)
   
@@ -437,6 +439,18 @@ python UMTK.py
 
 ---
 
+<a id="localization"></a>
+## 🌐 Localization
+
+You can translate weekdays and months by using a localization file. <br>
+- Download your language from this repo (`config/localization files`)
+- Rename it to `localization.yml` and place it in your config folder (next to `config.yml`).
+
+If your language is missing, simply use one of the templates and edit as needed.
+
+
+---
+
 ## 💡 Tips & Best Practices
 
 ### Exclude UMTK Content from Recently Added Sections
@@ -489,7 +503,7 @@ The default schedule is `0 2 * * *` (2 AM daily). Common alternatives:
 
 Use [crontab.guru](https://crontab.guru/) to create custom schedules.
 
-
+<a id="prevent-request-platforms"></a>
 ### Prevent Request Platforms from marking coming soon items as available
 Request platforms such as Ombi and Overseerr check Plex for availability instead of Radarr/Sonarr. Therefor they will mark 'coming soon' items as available even though Radarr and Sonarr will correctly see them as 'missing'<br>
 To avoid this you can choose to create seperate libraries for your 'coming soon' items.

@@ -15,7 +15,6 @@ log() {
 }
 
 # Handle PUID/PGID environment variables
-log "${BLUE}Setting up user permissions...${NC}"
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
@@ -61,7 +60,6 @@ if [ ! -f /app/config/config.yml ]; then
 fi
 
 # Check if video file exists for placeholder method
-log "${BLUE}Checking video files...${NC}"
 if grep -E "^(tv|movies):\s*2" /app/config/config.yml > /dev/null 2>&1; then
     if ! ls /app/video/UMTK.* 1> /dev/null 2>&1; then
         log "${YELLOW}Placeholder method detected but no UMTK video file found${NC}"
@@ -80,7 +78,6 @@ else
 fi
 
 # Copy overlay images if they don't exist
-log "${BLUE}Checking overlay files...${NC}"
 if [ -d /app/overlay ] && [ ! -f /app/config/overlay/red_frame.png ]; then
     cp -r /app/overlay/* /app/config/overlay/ 2>/dev/null || true
     log "${GREEN}Copied overlay files to config directory${NC}"
@@ -101,18 +98,15 @@ if grep -q "your_sonarr_url_here\|your_api_key_here" /app/config/config.yml 2>/d
 fi
 
 # Fix ownership of all directories before switching user
-log "${BLUE}Setting ownership of /app to ${PUID}:${PGID}...${NC}"
 chown -R $PUID:$PGID /app 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app${NC}"
 
 # Fix ownership of kometa directory specifically and ensure it's writable
 if [ -d /app/kometa ]; then
-    log "${BLUE}Fixing ownership and permissions of /app/kometa...${NC}"
     chown -R $PUID:$PGID /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app/kometa${NC}"
     chmod -R u+rw /app/kometa 2>/dev/null || log "${YELLOW}Warning: Could not change permissions of some files in /app/kometa${NC}"
 fi
 
 # Ensure logs directory is writable
-log "${BLUE}Setting up logging...${NC}"
 mkdir -p /app/logs
 chown -R $PUID:$PGID /app/logs 2>/dev/null || true
 chmod -R u+rw /app/logs 2>/dev/null || true
@@ -230,9 +224,7 @@ except (ValueError, IndexError) as e:
 }
 
 # Function to fix media directory permissions
-fix_media_permissions() {
-    log "${BLUE}Fixing permissions on media directories...${NC}"
-    
+fix_media_permissions() {   
     # Fix TV show directories if umtk_root_tv is set
     if [ -n "$UMTK_ROOT_TV" ] && [ -d "$UMTK_ROOT_TV" ]; then
         log "${BLUE}Fixing TV directory permissions: $UMTK_ROOT_TV${NC}"
@@ -402,10 +394,8 @@ log "${BLUE}Setting up cron schedule: ${CRON}${NC}"
 # Find the full path to gosu, fallback to su if gosu not available
 if command -v gosu &> /dev/null; then
     SWITCH_USER_CMD="$(which gosu) ${PUID}:${PGID}"
-    log "${BLUE}Using gosu to switch users${NC}"
 else
     SWITCH_USER_CMD="su -s /bin/bash umtk -c"
-    log "${BLUE}Using su to switch users${NC}"
 fi
 
 # Get TZ for cron

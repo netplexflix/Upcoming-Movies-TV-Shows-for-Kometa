@@ -1,0 +1,50 @@
+simplify_next_week:
+  use_abbreviated: false
+  today: Vandaag
+  tomorrow: Morgen
+
+weekdays_abbr:
+  0: Ma
+  1: Di
+  2: Wo
+  3: Do
+  4: Vr
+  5: Za
+  6: Zo
+
+weekdays_full:
+  0: Maandag
+  1: Dinsdag
+  2: Woensdag
+  3: Donderdag
+  4: Vrijdag
+  5: Zaterdag
+  6: Zondag
+
+months_abbr:
+  1: Jan
+  2: Feb
+  3: Mrt
+  4: Apr
+  5: Mei
+  6: Jun
+  7: Jul
+  8: Aug
+  9: Sep
+  10: Okt
+  11: Nov
+  12: Dec
+
+months_full:
+  1: Januari
+  2: Februari
+  3: Maart
+  4: April
+  5: Mei
+  6: Juni
+  7: Juli
+  8: Augustus
+  9: September
+  10: Oktober
+  11: November
+  12: December

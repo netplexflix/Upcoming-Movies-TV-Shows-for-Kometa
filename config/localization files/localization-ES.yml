@@ -1,0 +1,50 @@
+simplify_next_week:
+  use_abbreviated: false
+  today: Hoy
+  tomorrow: Mañana
+
+weekdays_abbr:
+  0: Lun
+  1: Mar
+  2: Mié
+  3: Jue
+  4: Vie
+  5: Sáb
+  6: Dom
+
+weekdays_full:
+  0: Lunes
+  1: Martes
+  2: Miércoles
+  3: Jueves
+  4: Viernes
+  5: Sábado
+  6: Domingo
+
+months_abbr:
+  1: Ene
+  2: Feb
+  3: Mar
+  4: Abr
+  5: May
+  6: Jun
+  7: Jul
+  8: Ago
+  9: Sep
+  10: Oct
+  11: Nov
+  12: Dic
+
+months_full:
+  1: Enero
+  2: Febrero
+  3: Marzo
+  4: Abril
+  5: Mayo
+  6: Junio
+  7: Julio
+  8: Agosto
+  9: Septiembre
+  10: Octubre
+  11: Noviembre
+  12: Diciembre
