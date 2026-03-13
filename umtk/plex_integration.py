@@ -109,7 +109,7 @@ def get_plex_library_items(plex_url, plex_token, library_key, debug=False):
             modified = [i for i in items if i.get('titleSort', '').startswith('!')]
             if modified:
                 print(f"{BLUE}[DEBUG] Found {len(modified)} items with modified sort titles (starting with '!'){RESET}")
-                for m in modified[:5]:
+                for m in modified:
                     print(f"{BLUE}[DEBUG]   - {m.get('title')}: titleSort='{m.get('titleSort')}'{RESET}")
         
         return items
@@ -273,52 +273,7 @@ def reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debu
         return False
 
 
-def check_show_has_previous_seasons(plex_url, plex_token, show_rating_key, debug=False):
-    """Check if a TV show has any previous seasons (Season 1+) with downloaded episodes"""
-    try:
-        url = f"{plex_url.rstrip('/')}/library/metadata/{show_rating_key}/children"
-        headers = {
-            "X-Plex-Token": plex_token,
-            "Accept": "application/json"
-        }
-        
-        if debug:
-            print(f"{BLUE}[DEBUG] Checking for previous seasons for show {show_rating_key}{RESET}")
-        
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
-        seasons = data.get('MediaContainer', {}).get('Metadata', [])
-        
-        for season in seasons:
-            season_index = season.get('index', 0)
-            
-            if season_index == 0:
-                continue
-            
-            leaf_count = season.get('leafCount', 0)
-            
-            if debug:
-                print(f"{BLUE}[DEBUG]   Season {season_index}: leafCount={leaf_count}{RESET}")
-            
-            if leaf_count > 0:
-                if debug:
-                    print(f"{BLUE}[DEBUG]   Found previous content in Season {season_index}{RESET}")
-                return True
-        
-        if debug:
-            print(f"{BLUE}[DEBUG]   No previous seasons with content found{RESET}")
-        
-        return False
-        
-    except requests.exceptions.RequestException as e:
-        if debug:
-            print(f"{ORANGE}[DEBUG] Error checking for previous seasons: {str(e)}{RESET}")
-        return True
-
-
-def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content, 
+def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content,
                             mdblist_tv_items, config, debug=False, retry_count=0, max_retries=4):
     """Update TV show metadata directly in Plex"""
     append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
@@ -449,11 +404,15 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
         
         if not tvdb_id:
             if has_modified_sort:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Item '{original_title}' has modified sort title but no TVDB ID - resetting{RESET}")
-                if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
-                    reset_sort_titles += 1
-                    print(f"{GREEN}Reset sort title for {original_title} (no TVDB ID){RESET}")
+                if current_sort_title.rstrip().endswith('(TSSK)'):
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Skipping sort title reset for '{original_title}' - managed by TSSK{RESET}")
+                else:
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Item '{original_title}' has modified sort title but no TVDB ID - resetting{RESET}")
+                    if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
+                        reset_sort_titles += 1
+                        print(f"{GREEN}Reset sort title for {original_title} (no TVDB ID){RESET}")
             continue
         
         tvdb_id_str = str(tvdb_id)
@@ -496,13 +455,11 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
                         print(f"{GREEN}Updated sort title for {original_title}: {new_sort_title}{RESET}")
         
         elif has_modified_sort:
-            has_previous_content = check_show_has_previous_seasons(plex_url, plex_token, rating_key, debug)
-            
-            if has_previous_content:
+            if current_sort_title.rstrip().endswith('(TSSK)'):
                 if debug:
-                    print(f"{BLUE}[DEBUG] Skipping sort title reset for '{original_title}' - has previous seasons with content{RESET}")
+                    print(f"{BLUE}[DEBUG] Skipping sort title reset for '{original_title}' - managed by TSSK{RESET}")
                 continue
-            
+
             if debug:
                 print(f"{BLUE}[DEBUG] Will reset sort title for '{original_title}'{RESET}")
             if reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debug):
