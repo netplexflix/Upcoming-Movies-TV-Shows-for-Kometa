@@ -623,29 +623,38 @@ def main():
                     for movie in all_movies_to_process:
                         print(f"\nProcessing: {movie['title']}")
                         
-                        # Check if content already exists
+                        # Check if content already exists (either Coming Soon or Trending edition)
                         movie_path = movie.get('path')
-                        if movie_path:
+                        content_exists = False
+                        
+                        if movie_path or umtk_root_movies:
                             movie_title = movie.get('title', 'Unknown')
                             movie_year = movie.get('year', '')
-                            folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
                             
-                            if umtk_root_movies:
-                                coming_soon_path = Path(umtk_root_movies) / folder_name
-                            else:
-                                base_path = Path(movie_path)
-                                parent_dir = base_path.parent
-                                coming_soon_path = parent_dir / folder_name
-                            
-                            # Check if actual video file exists with the Coming Soon edition tag
-                            if coming_soon_path.exists():
-                                existing_files = list(coming_soon_path.glob("*{edition-Coming Soon}.*"))
-                                if existing_files:
-                                    existing_file = existing_files[0]
-                                    print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
-                                    successful += 1
-                                    all_movies_with_content.append(movie)
-                                    continue
+                            for check_edition in ["Coming Soon", "Trending"]:
+                                check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
+                                
+                                if umtk_root_movies:
+                                    check_path = Path(umtk_root_movies) / check_folder
+                                elif movie_path:
+                                    base_path = Path(movie_path)
+                                    parent_dir = base_path.parent
+                                    check_path = parent_dir / check_folder
+                                else:
+                                    check_path = None
+                                
+                                if check_path and check_path.exists():
+                                    existing_files = list(check_path.glob(f"*{{edition-{check_edition}}}.*"))
+                                    if existing_files:
+                                        existing_file = existing_files[0]
+                                        print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
+                                        successful += 1
+                                        all_movies_with_content.append(movie)
+                                        content_exists = True
+                                        break
+                        
+                        if content_exists:
+                            continue
                         
                         # Process based on method
                         success = False
@@ -748,7 +757,7 @@ def main():
                                 # Determine if this is a request needed movie
                                 is_request_needed = movie in trending_movies_request_needed
                                 
-                                # Check if content already exists
+                                # Check if content already exists (either Coming Soon or Trending edition)
                                 movie_path = movie.get('path')
                                 content_exists = False
                                 
@@ -756,28 +765,28 @@ def main():
                                     movie_title = movie.get('title', 'Unknown')
                                     movie_year = movie.get('year', '')
                                     
-                                    # Check for Trending edition
-                                    edition_tag = "Trending" if is_request_needed else "Coming Soon"
-                                    folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{edition_tag}}}")
-                                    
-                                    if umtk_root_movies:
-                                        target_path = Path(umtk_root_movies) / folder_name
-                                    elif movie_path:
-                                        base_path = Path(movie_path)
-                                        parent_dir = base_path.parent
-                                        target_path = parent_dir / folder_name
-                                    else:
-                                        target_path = None
-                                    
-                                    if target_path and target_path.exists():
-                                        existing_files = list(target_path.glob(f"*{{edition-{edition_tag}}}.*"))
-                                        if existing_files:
-                                            existing_file = existing_files[0]
-                                            print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
-                                            skipped_existing += 1
-                                            successful += 1
-                                            all_movies_with_content.append(movie)
-                                            content_exists = True
+                                    for check_edition in ["Coming Soon", "Trending"]:
+                                        check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
+                                        
+                                        if umtk_root_movies:
+                                            check_path = Path(umtk_root_movies) / check_folder
+                                        elif movie_path:
+                                            base_path = Path(movie_path)
+                                            parent_dir = base_path.parent
+                                            check_path = parent_dir / check_folder
+                                        else:
+                                            check_path = None
+                                        
+                                        if check_path and check_path.exists():
+                                            existing_files = list(check_path.glob(f"*{{edition-{check_edition}}}.*"))
+                                            if existing_files:
+                                                existing_file = existing_files[0]
+                                                print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
+                                                skipped_existing += 1
+                                                successful += 1
+                                                all_movies_with_content.append(movie)
+                                                content_exists = True
+                                                break
                                 
                                 if content_exists:
                                     continue
