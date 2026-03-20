@@ -556,6 +556,13 @@ select { min-width: 120px; }
     color: var(--text-primary);
 }
 
+.block-hint {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
 .block-value {
     flex: 1;
     display: flex;
@@ -933,6 +940,168 @@ select { min-width: 120px; }
     margin-left: auto;
 }
 
+/* ── Mobile / Responsive ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Navbar: stack brand above nav links */
+    .navbar {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 8px 12px;
+        gap: 4px;
+    }
+
+    .navbar-brand {
+        font-size: 16px;
+        width: auto;
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .nav-links {
+        position: static;
+        transform: none;
+        order: 2;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 2px;
+        justify-content: flex-start;
+    }
+
+    .nav-links::-webkit-scrollbar { display: none; }
+
+    .nav-links a {
+        padding: 6px 10px;
+        font-size: 13px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* Container */
+    .container { padding: 12px; }
+
+    /* Status bar: wrap to multiple lines */
+    .status-bar {
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 12px 14px;
+    }
+
+    .status-right {
+        flex-wrap: wrap;
+        gap: 10px;
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .status-indicator {
+        flex-shrink: 1;
+        min-width: 0;
+    }
+
+    .status-text {
+        font-size: 13px;
+    }
+
+    .last-run-info {
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    /* Settings items: stack label above control */
+    .setting-item {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .setting-control {
+        width: 100%;
+        flex-shrink: 1;
+        overflow: hidden;
+    }
+
+    .setting-control input[type="text"],
+    .setting-control input[type="number"],
+    .setting-control input[type="password"],
+    .setting-control select {
+        width: 100%;
+        min-width: 0 !important;
+    }
+
+    /* Block editor: stack key above value */
+    .block-row {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .block-key {
+        min-width: unset;
+        width: 100%;
+    }
+
+    .block-value {
+        width: 100%;
+    }
+
+    .block-value input[type="text"],
+    .block-value input[type="number"],
+    .block-value select {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .block-body { padding: 0 12px 12px; }
+    .block-header { padding: 12px 14px; }
+    .block-group-header { padding: 12px 14px; }
+
+    /* String list tags: constrain within parent */
+    .string-list {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    .string-tag {
+        flex-shrink: 0;
+    }
+
+    /* Services grid: stack vertically */
+    .services-grid {
+        flex-direction: column;
+    }
+
+    /* Poster cards slightly smaller */
+    .poster-card { width: 130px; }
+    .poster-card img { width: 130px; height: 195px; }
+    .poster-placeholder { width: 130px; height: 195px; }
+
+    /* Settings sections less padding */
+    .settings-section { padding: 16px; }
+
+    /* Page title */
+    .page-title { font-size: 18px; }
+
+    /* Custom variable rows */
+    .custom-var-row {
+        flex-wrap: wrap;
+    }
+
+    /* Log */
+    .log-output {
+        font-size: 11px;
+        padding: 10px;
+    }
+
+    /* Settings actions */
+    .settings-actions {
+        justify-content: stretch;
+    }
+
+    .settings-actions .btn {
+        width: 100%;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -1077,6 +1246,11 @@ const BLOCK_KEY_TYPES = {
     horizontal_align: 'select:left,center,right',
     vertical_align: 'select:top,center,bottom',
     sync_mode: 'select:sync,append',
+};
+
+/* Descriptive hints for block keys */
+const BLOCK_KEY_HINTS = {
+    build_collection: 'Off = Kometa manages labels only (recommended). On = Kometa creates the collection directly.',
 };
 
 /* ── Navigation ────────────────────────────────────────────────────────── */
@@ -1722,8 +1896,10 @@ function renderBlockRow(blockKey, key, value, prefix) {
         control = `<input type="text" data-block="${blockKey}" data-bkey="${key}" value="${escapeAttr(value != null ? value : '')}" style="width:100%">`;
     }
 
+    const hint = BLOCK_KEY_HINTS[key] ? `<div class="block-hint">${escapeHtml(BLOCK_KEY_HINTS[key])}</div>` : '';
+
     return `<div class="block-row">
-        <span class="block-key">${escapeHtml(key)}</span>
+        <span class="block-key">${escapeHtml(key)}${hint}</span>
         <div class="block-value">${control}</div>
         <button class="btn-icon danger" onclick="removeBlockRow(this)" title="Remove">&times;</button>
     </div>`;
