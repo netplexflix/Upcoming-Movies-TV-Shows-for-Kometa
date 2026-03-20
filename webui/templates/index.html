@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UMTK</title>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg-primary: #0b0f1a;
+    --bg-secondary: #111827;
+    --bg-tertiary: #1a2332;
+    --border: #243044;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --success: #3fb950;
+    --warning: #d29922;
+    --danger: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+    --radius: 8px;
+    --radius-lg: 12px;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* ── Navbar ────────────────────────────────────────────────────────────── */
+.navbar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.navbar-brand {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 1.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.navbar-brand > span:first-child {
+    color: var(--accent);
+    font-weight: 400;
+    font-size: 12px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.version-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 4px;
+}
+
+.version-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    flex-shrink: 0;
+    display: none;
+}
+
+.version-dot.up-to-date {
+    display: inline-block;
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+}
+
+.version-dot.update-available {
+    display: inline-block;
+    background: var(--warning);
+    box-shadow: 0 0 6px var(--warning);
+}
+
+.version-dot.develop-build {
+    display: inline-block;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+}
+
+.version-status-text {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    display: none;
+}
+
+.version-dot.up-to-date ~ .version-status-text,
+.version-dot.update-available ~ .version-status-text,
+.version-dot.develop-build ~ .version-status-text {
+    display: inline;
+}
+
+.version-dot.update-available ~ .version-status-text {
+    color: var(--warning);
+}
+
+.version-dot.develop-build ~ .version-status-text {
+    color: var(--accent);
+}
+
+.version-update-link {
+    color: var(--warning);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.nav-links {
+    display: flex;
+    gap: 4px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.nav-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.15s, background 0.15s;
+}
+
+.nav-links a:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.nav-links a.active { color: var(--text-primary); background: var(--bg-tertiary); }
+
+/* ── Main content ─────────────────────────────────────────────────────── */
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+.page { display: none; }
+.page.active { display: block; }
+
+.page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: var(--text-primary);
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    margin-bottom: 20px;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.status-dot.running {
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+.status-dot.idle {
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+}
+
+.status-dot.stopped {
+    background: var(--warning);
+    box-shadow: 0 0 6px var(--warning);
+}
+
+.status-dot.error {
+    background: var(--danger);
+    box-shadow: 0 0 6px var(--danger);
+}
+
+@keyframes status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.status-text {
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.status-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.status-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.last-run-info {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.btn-control {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.btn-control:hover { background: var(--accent-hover); }
+.btn-control:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-control.btn-stop {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.btn-control.btn-stop:hover { background: var(--border); }
+
+/* ── Settings sections ────────────────────────────────────────────────── */
+.settings-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.settings-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.setting-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 24px;
+}
+
+.setting-item:last-child { border-bottom: none; }
+
+.setting-info { flex: 1; min-width: 0; }
+
+.setting-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.setting-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.setting-control {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Toggle switch */
+.toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: background 0.2s;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 2px;
+    bottom: 2px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+}
+
+.toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
+
+/* Inputs */
+input[type="text"], input[type="number"], input[type="password"], select {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    padding: 6px 10px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus, select:focus {
+    border-color: var(--accent);
+}
+
+input[type="number"] { width: 100px; }
+select { min-width: 120px; }
+
+/* Buttons */
+.btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover { background: var(--border); }
+
+.btn-sm {
+    padding: 5px 14px;
+    font-size: 13px;
+}
+
+.btn-icon {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.btn-icon:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.btn-icon.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+/* ── Connection test ──────────────────────────────────────────────────── */
+.test-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: var(--radius);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transition: all 0.15s;
+}
+
+.test-btn:hover { border-color: var(--accent); color: var(--accent); }
+.test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.test-result {
+    font-size: 12px;
+    margin-left: 8px;
+}
+
+.test-result.success { color: var(--success); }
+.test-result.fail { color: var(--danger); }
+
+/* ── Block editor ─────────────────────────────────────────────────────── */
+.block-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.block-group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.block-group-header:hover { background: var(--bg-tertiary); }
+
+.block-group-header .block-arrow {
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.block-group.open > .block-group-header .block-arrow { transform: rotate(90deg); }
+
+.block-group-body {
+    display: none;
+    padding: 0 12px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.block-group.open > .block-group-body { display: block; }
+
+.block-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 8px;
+    margin-top: 8px;
+    overflow: hidden;
+}
+
+.block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+}
+
+.block-header:hover { background: var(--bg-tertiary); }
+
+.block-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.block-arrow {
+    font-size: 12px;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.block-section.open .block-arrow { transform: rotate(90deg); }
+
+.block-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.block-enable-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.block-enable-badge.enabled { background: rgba(63,185,80,0.15); color: var(--success); }
+.block-enable-badge.disabled { background: rgba(139,148,158,0.15); color: var(--text-secondary); }
+
+.block-body {
+    display: none;
+    padding: 0 20px 20px;
+    border-top: 1px solid var(--border);
+}
+
+.block-section.open .block-body { display: block; }
+
+.block-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.block-row:last-child { border-bottom: none; }
+
+.block-key {
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 180px;
+    color: var(--text-primary);
+}
+
+.block-value {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.block-value input[type="text"],
+.block-value input[type="number"],
+.block-value select {
+    width: 100%;
+}
+
+.block-value input[type="color"] {
+    width: 36px;
+    height: 30px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    padding: 2px;
+}
+
+.custom-vars-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0 8px;
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.custom-vars-header span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.custom-var-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.custom-var-row input {
+    flex: 1;
+}
+
+/* ── String list (tags) ───────────────────────────────────────────────── */
+.string-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.string-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 3px 10px;
+    font-size: 12px;
+}
+
+.string-tag .remove-tag {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.string-tag .remove-tag:hover { color: var(--danger); }
+
+.add-tag-input {
+    width: 120px !important;
+    font-size: 12px !important;
+    padding: 3px 8px !important;
+}
+
+/* ── Log viewer ───────────────────────────────────────────────────────── */
+.log-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 0;
+    overflow: hidden;
+}
+
+.log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.log-output {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 16px;
+    max-height: calc(100vh - 280px);
+    min-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-line { padding: 1px 0; }
+.log-line.error { color: var(--danger); }
+.log-line.warning { color: var(--warning); }
+.log-line.success { color: var(--success); }
+.log-line.info { color: var(--accent); }
+.log-line.separator { color: var(--text-secondary); opacity: 0.5; }
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-secondary);
+}
+
+.empty-state p { font-size: 15px; }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 14px;
+    color: var(--text-primary);
+    z-index: 200;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+}
+
+.toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.toast.success { border-left: 3px solid var(--success); }
+.toast.error { border-left: 3px solid var(--danger); }
+
+/* ── Disabled overlay ─────────────────────────────────────────────────── */
+.section-disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+/* ── Dashboard ───────────────────────────────────────────────────────── */
+.dashboard-section { margin-bottom: 28px; }
+
+.dashboard-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ── Poster Carousel ─────────────────────────────────────────────────── */
+.poster-carousel-wrapper {
+    position: relative;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 0;
+    overflow: hidden;
+}
+
+.poster-carousel-wrapper::before,
+.poster-carousel-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 48px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.poster-carousel-wrapper::before {
+    left: 0;
+    background: linear-gradient(to right, var(--bg-secondary), transparent);
+}
+
+.poster-carousel-wrapper::after {
+    right: 0;
+    background: linear-gradient(to left, var(--bg-secondary), transparent);
+}
+
+.poster-carousel {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    padding: 0 32px;
+    cursor: grab;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    user-select: none;
+}
+
+.poster-carousel::-webkit-scrollbar { display: none; }
+.poster-carousel.dragging { cursor: grabbing; }
+
+.poster-card {
+    flex-shrink: 0;
+    width: 150px;
+    text-align: center;
+}
+
+.poster-card img {
+    width: 150px;
+    height: 225px;
+    object-fit: cover;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    display: block;
+    background: var(--bg-tertiary);
+}
+
+.poster-card:hover img {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+}
+
+.poster-placeholder {
+    width: 150px;
+    height: 225px;
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.poster-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.poster-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.poster-label.label-season-premiere { color: #4caf50; }
+.poster-label.label-show-premiere   { color: #ffca28; }
+.poster-label.label-season-finale   { color: #ab47bc; }
+
+.poster-date {
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+    margin-top: 1px;
+}
+
+.poster-carousel .carousel-empty {
+    width: 100%;
+    text-align: center;
+    padding: 32px 24px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.autoscroll-toggle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.autoscroll-toggle input { cursor: pointer; }
+
+.poster-carousel.autoscroll {
+    overflow-x: hidden;
+}
+
+.poster-carousel-track {
+    display: flex;
+    gap: 20px;
+    width: max-content;
+    flex-shrink: 0;
+    padding-right: 32px;
+}
+
+/* ── Service Status Cards ────────────────────────────────────────────── */
+.services-grid {
+    display: flex;
+    gap: 16px;
+}
+
+.service-card {
+    flex: 1;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: border-color 0.2s;
+}
+
+.service-card:hover { border-color: var(--text-secondary); }
+
+.service-logo {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+}
+
+.service-info { flex: 1; min-width: 0; }
+
+.service-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.service-status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.service-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.service-dot.online {
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+}
+
+.service-dot.offline {
+    background: var(--danger);
+    box-shadow: 0 0 6px var(--danger);
+}
+
+.service-status-label { font-size: 12px; font-weight: 500; }
+
+.service-response-time {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+</style>
+</head>
+<body>
+
+<!-- ── Navbar ──────────────────────────────────────────────────────────── -->
+<nav class="navbar">
+    <div class="navbar-brand">UMTK <span>v{{ version }}</span><span class="version-status"><span class="version-dot" id="version-dot" title="Checking for updates..."></span><span class="version-status-text" id="version-status-text"></span></span></div>
+    <div class="nav-links">
+        <a href="#" data-page="dashboard" class="active">Dashboard</a>
+        <a href="#" data-page="connections">Connections</a>
+        <a href="#" data-page="umtk">UMTK Settings</a>
+        <a href="#" data-page="tssk">TSSK Settings</a>
+        <a href="#" data-page="log">Log</a>
+    </div>
+</nav>
+
+<div class="container">
+
+<!-- ── Dashboard ──────────────────────────────────────────────────────── -->
+<div id="page-dashboard" class="page active">
+
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:18px">
+        <img src="{{ url_for('static', filename='UMTK_Logo2.png') }}" alt="UMTK" style="max-width:420px;width:100%;height:auto;border-radius:var(--radius-lg)">
+    </div>
+
+    <!-- Status bar (moved from global) -->
+    <div class="status-bar" id="status-bar">
+        <div class="status-indicator">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="status-text" id="status-text">Loading...</span>
+        </div>
+        <div class="status-right">
+            <span class="last-run-info" id="last-run-info"></span>
+            <div class="status-controls" id="status-controls" style="display:none">
+                <button class="btn-control" id="btn-run-now" onclick="schedulerRunNow()">Run Now</button>
+                <button class="btn-control btn-stop" id="btn-stop" onclick="schedulerStop()">Stop</button>
+                <button class="btn-control" id="btn-start" onclick="schedulerStart()" style="display:none">Resume</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upcoming Content -->
+    <div class="dashboard-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h2 class="dashboard-section-title" style="margin-bottom:0">Upcoming in the Next 30 Days</h2>
+            <label class="autoscroll-toggle">
+                <input type="checkbox" id="carousel-autoscroll"> Auto Scroll
+            </label>
+        </div>
+        <div class="poster-carousel-wrapper">
+            <div class="poster-carousel" id="poster-carousel">
+                <div class="carousel-empty">Loading upcoming content...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Status -->
+    <div class="dashboard-section">
+        <h2 class="dashboard-section-title">Services</h2>
+        <div class="services-grid" id="services-grid">
+            <div class="service-card" style="justify-content:center;color:var(--text-secondary);font-size:13px">Loading services...</div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── Connections ─────────────────────────────────────────────────────── -->
+<div id="page-connections" class="page">
+    <h1 class="page-title">Connections</h1>
+    <div id="conn-sections"></div>
+    <div class="settings-actions">
+        <button class="btn" onclick="saveConnections()">Save Connections</button>
+    </div>
+</div>
+
+<!-- ── UMTK Settings ──────────────────────────────────────────────────── -->
+<div id="page-umtk" class="page">
+    <h1 class="page-title">UMTK Settings</h1>
+    <div id="umtk-sections"></div>
+    <h2 style="font-size:18px;font-weight:600;margin:28px 0 16px;color:var(--text-primary)">Collection & Overlay Blocks</h2>
+    <div id="umtk-blocks"></div>
+    <div class="settings-actions">
+        <button class="btn" onclick="saveUmtk()">Save UMTK Settings</button>
+    </div>
+</div>
+
+<!-- ── TSSK Settings ──────────────────────────────────────────────────── -->
+<div id="page-tssk" class="page">
+    <h1 class="page-title">TSSK Settings</h1>
+    <div id="tssk-sections"></div>
+    <h2 style="font-size:18px;font-weight:600;margin:28px 0 16px;color:var(--text-primary)">Collection & Overlay Blocks</h2>
+    <div id="tssk-blocks"></div>
+    <div class="settings-actions">
+        <button class="btn" onclick="saveTssk()">Save TSSK Settings</button>
+    </div>
+</div>
+
+<!-- ── Log ─────────────────────────────────────────────────────────────── -->
+<div id="page-log" class="page">
+    <h1 class="page-title">Processing Log</h1>
+    <div class="log-container">
+        <div class="log-toolbar">
+            <button class="btn btn-sm" onclick="fetchLog()">Refresh</button>
+            <label style="font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+                <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+            </label>
+            <span id="log-line-count" style="font-size:12px;color:var(--text-secondary);margin-left:auto;"></span>
+        </div>
+        <div class="log-output" id="log-output"></div>
+    </div>
+</div>
+
+</div><!-- /container -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── State ─────────────────────────────────────────────────────────────── */
+let connData = [];
+let umtkData = { options: [], blocks: {} };
+let tsskData = { options: [], blocks: {} };
+let logLines = [];
+let _dashLoaded = false, _connLoaded = false, _umtkLoaded = false, _tsskLoaded = false, _logLoaded = false;
+
+/* Known block keys and their input types */
+const BLOCK_KEY_TYPES = {
+    enable: 'bool',
+    build_collection: 'bool',
+    capitalize_dates: 'bool',
+    back_color: 'color',
+    font_color: 'color',
+    stroke_color: 'color',
+    weight: 'number',
+    font_size: 'number',
+    back_height: 'number',
+    back_width: 'number',
+    horizontal_offset: 'number',
+    vertical_offset: 'number',
+    back_line_width: 'number',
+    stroke_width: 'number',
+    horizontal_align: 'select:left,center,right',
+    vertical_align: 'select:top,center,bottom',
+    sync_mode: 'select:sync,append',
+};
+
+/* ── Navigation ────────────────────────────────────────────────────────── */
+document.querySelectorAll('.nav-links a').forEach(a => {
+    a.addEventListener('click', e => {
+        e.preventDefault();
+        const page = a.dataset.page;
+        document.querySelectorAll('.nav-links a').forEach(l => l.classList.remove('active'));
+        a.classList.add('active');
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('page-' + page).classList.add('active');
+
+        if (page === 'dashboard' && !_dashLoaded) loadDashboard();
+        if (page === 'connections' && !_connLoaded) fetchConnections();
+        if (page === 'umtk' && !_umtkLoaded) fetchUmtk();
+        if (page === 'tssk' && !_tsskLoaded) fetchTssk();
+        if (page === 'log' && !_logLoaded) fetchLog();
+    });
+});
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+function showToast(message, type) {
+    const t = document.getElementById('toast');
+    t.textContent = message;
+    t.className = 'toast show ' + (type || '');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.className = 'toast', 3000);
+}
+
+/* ── Scheduler status ──────────────────────────────────────────────────── */
+function formatDuration(seconds) {
+    if (seconds == null || seconds < 0) return '';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return '< 1m';
+}
+
+async function fetchStatus() {
+    try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        updateStatusUI(data);
+    } catch (e) {}
+}
+
+function updateStatusUI(data) {
+    const dot = document.getElementById('status-dot');
+    const text = document.getElementById('status-text');
+    const controls = document.getElementById('status-controls');
+    const btnRunNow = document.getElementById('btn-run-now');
+    const btnStop = document.getElementById('btn-stop');
+    const btnStart = document.getElementById('btn-start');
+    const lastRunInfo = document.getElementById('last-run-info');
+
+    dot.className = 'status-dot ' + (data.status || '');
+
+    switch (data.status) {
+        case 'running':
+            text.textContent = 'Processing...';
+            btnRunNow.disabled = true;
+            btnStop.style.display = '';
+            btnStart.style.display = 'none';
+            break;
+        case 'idle':
+            if (data.next_run_seconds != null && data.next_run_time) {
+                const timeStr = data.next_run_time.substring(11, 16);
+                text.textContent = 'Idle \u2014 next run in ' + formatDuration(data.next_run_seconds) + ' (' + timeStr + ')';
+            } else {
+                text.textContent = 'Idle';
+            }
+            btnRunNow.disabled = false;
+            btnStop.style.display = '';
+            btnStart.style.display = 'none';
+            break;
+        case 'stopped':
+            text.textContent = 'Stopped by user';
+            btnRunNow.disabled = false;
+            btnStop.style.display = 'none';
+            btnStart.style.display = '';
+            break;
+        case 'error':
+            text.textContent = 'Error' + (data.error_message ? ': ' + data.error_message : '');
+            btnRunNow.disabled = false;
+            btnStop.style.display = '';
+            btnStart.style.display = 'none';
+            break;
+        default:
+            text.textContent = 'Status unavailable';
+            btnRunNow.disabled = true;
+            break;
+    }
+
+    controls.style.display = data.has_cron ? '' : 'none';
+
+    if (data.last_run_time) {
+        const timeStr = data.last_run_time.substring(11, 16);
+        const dateStr = data.last_run_time.substring(0, 10);
+        const today = new Date().toISOString().substring(0, 10);
+        const label = dateStr === today ? 'today at ' + timeStr : dateStr + ' ' + timeStr;
+        lastRunInfo.textContent = 'Last run: ' + label;
+    }
+}
+
+async function schedulerRunNow() {
+    try {
+        const res = await fetch('/api/scheduler/run-now', { method: 'POST' });
+        if (res.ok) { showToast('Run triggered', 'success'); fetchStatus(); }
+        else showToast('Failed to trigger run', 'error');
+    } catch (e) { showToast('Failed to trigger run', 'error'); }
+}
+
+async function schedulerStop() {
+    try {
+        const res = await fetch('/api/scheduler/stop', { method: 'POST' });
+        if (res.ok) { showToast('Scheduler stopped', 'success'); fetchStatus(); }
+        else showToast('Failed to stop', 'error');
+    } catch (e) { showToast('Failed to stop', 'error'); }
+}
+
+async function schedulerStart() {
+    try {
+        const res = await fetch('/api/scheduler/start', { method: 'POST' });
+        if (res.ok) { showToast('Scheduler resumed', 'success'); fetchStatus(); }
+        else showToast('Failed to resume', 'error');
+    } catch (e) { showToast('Failed to resume', 'error'); }
+}
+
+/* ── Version check ─────────────────────────────────────────────────────── */
+async function fetchUpdateStatus() {
+    try {
+        const res = await fetch('/api/update');
+        if (!res.ok) return;
+        const data = await res.json();
+        const dot = document.getElementById('version-dot');
+        const txt = document.getElementById('version-status-text');
+        if (data.status === 'develop_build') {
+            dot.className = 'version-dot develop-build';
+            dot.title = 'Development build (ahead of latest release v' + data.latest + ')';
+            txt.textContent = 'develop build';
+        } else if (data.status === 'up_to_date') {
+            dot.className = 'version-dot up-to-date';
+            dot.title = 'Up to date';
+            txt.textContent = 'up-to-date';
+        } else if (data.status === 'update_available') {
+            dot.className = 'version-dot update-available';
+            dot.title = 'Update available: v' + data.latest;
+            txt.innerHTML = '<a href="https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/releases/latest" target="_blank" class="version-update-link">update available (v' + data.latest + ')</a>';
+        }
+    } catch (e) {}
+}
+
+/* ── Helper: create setting control ────────────────────────────────────── */
+function createSettingHTML(opt) {
+    const key = opt.key;
+    const val = opt.value;
+    if (opt.type === 'bool') {
+        return `<label class="toggle">
+            <input type="checkbox" data-key="${key}" ${val ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+        </label>`;
+    }
+    if (opt.type === 'select') {
+        const opts = (opt.options || []).map(o =>
+            `<option value="${o.value}" ${val == o.value ? 'selected' : ''}>${o.label}</option>`
+        ).join('');
+        return `<select data-key="${key}">${opts}</select>`;
+    }
+    if (opt.type === 'int') {
+        return `<input type="number" data-key="${key}" value="${val != null ? val : ''}" step="1">`;
+    }
+    if (opt.type === 'float') {
+        return `<input type="number" data-key="${key}" value="${val != null ? val : ''}" step="0.5">`;
+    }
+    if (opt.type === 'string') {
+        const inputType = opt.sensitive ? 'password' : 'text';
+        return `<input type="${inputType}" data-key="${key}" value="${escapeAttr(val || '')}" style="min-width:220px">`;
+    }
+    if (opt.type === 'string_list') {
+        const items = Array.isArray(val) ? val : (val ? [val] : []);
+        const tags = items.map(v =>
+            `<span class="string-tag">${escapeHtml(v)}<span class="remove-tag" onclick="removeTag(this, '${key}')">&times;</span></span>`
+        ).join('');
+        return `<div class="string-list" data-key="${key}">
+            ${tags}
+            <input type="text" class="add-tag-input" placeholder="Add..." onkeydown="addTag(event, '${key}')">
+        </div>`;
+    }
+    return `<input type="text" data-key="${key}" value="${escapeAttr(val || '')}" style="min-width:200px">`;
+}
+
+function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function addTag(e, key) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const input = e.target;
+    const val = input.value.trim();
+    if (!val) return;
+    const container = input.closest('.string-list');
+    const tag = document.createElement('span');
+    tag.className = 'string-tag';
+    tag.innerHTML = escapeHtml(val) + `<span class="remove-tag" onclick="removeTag(this, '${key}')">&times;</span>`;
+    container.insertBefore(tag, input);
+    input.value = '';
+}
+
+function removeTag(el, key) {
+    el.closest('.string-tag').remove();
+}
+
+function getStringListValues(key) {
+    const container = document.querySelector(`.string-list[data-key="${key}"]`);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.string-tag')).map(t =>
+        t.textContent.replace(/\u00d7$/, '').trim()
+    );
+}
+
+/* ── Helper: gather option values from DOM ─────────────────────────────── */
+function gatherOptionValues(optionsList, scopeEl) {
+    const data = {};
+    optionsList.forEach(opt => {
+        if (opt.type === 'bool') {
+            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = el.checked;
+        } else if (opt.type === 'select') {
+            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
+            if (el) {
+                const v = el.value;
+                data[opt.key] = isNaN(v) ? v : Number(v);
+            }
+        } else if (opt.type === 'int') {
+            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = parseInt(el.value, 10) || 0;
+        } else if (opt.type === 'float') {
+            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = parseFloat(el.value) || 0;
+        } else if (opt.type === 'string_list') {
+            data[opt.key] = getStringListValues(opt.key);
+        } else {
+            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = el.value;
+        }
+    });
+    return data;
+}
+
+/* ── Connections page ──────────────────────────────────────────────────── */
+async function fetchConnections() {
+    try {
+        const res = await fetch('/api/config/connections');
+        if (!res.ok) return;
+        connData = await res.json();
+        _connLoaded = true;
+        renderConnections();
+    } catch (e) { showToast('Failed to load connections', 'error'); }
+}
+
+function renderConnections() {
+    const container = document.getElementById('conn-sections');
+    const sections = {};
+    connData.forEach(opt => {
+        if (!sections[opt.section]) sections[opt.section] = [];
+        sections[opt.section].push(opt);
+    });
+
+    let html = '';
+    for (const [section, opts] of Object.entries(sections)) {
+        const testService = section.toLowerCase();
+        const hasTest = ['plex', 'radarr', 'sonarr'].includes(testService);
+        html += `<div class="settings-section">
+            <h2>${section}${hasTest ? `<button class="test-btn" style="margin-left:12px" onclick="testConnection('${testService}')">Test Connection</button><span class="test-result" id="test-${testService}"></span>` : ''}</h2>`;
+        opts.forEach(opt => {
+            html += `<div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">${opt.label}</div>
+                    <div class="setting-desc">${opt.description}</div>
+                </div>
+                <div class="setting-control">${createSettingHTML(opt)}</div>
+            </div>`;
+        });
+        html += '</div>';
+    }
+    container.innerHTML = html;
+}
+
+async function testConnection(service) {
+    const resultEl = document.getElementById('test-' + service);
+    resultEl.className = 'test-result';
+    resultEl.textContent = 'Testing...';
+
+    const data = {};
+    connData.forEach(opt => {
+        if (opt.section.toLowerCase() === service) {
+            const el = document.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = opt.type === 'int' ? parseInt(el.value) : el.value;
+        }
+    });
+
+    try {
+        const res = await fetch('/api/test/' + service, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        const result = await res.json();
+        resultEl.className = 'test-result ' + (result.success ? 'success' : 'fail');
+        resultEl.textContent = result.message;
+    } catch (e) {
+        resultEl.className = 'test-result fail';
+        resultEl.textContent = 'Request failed';
+    }
+}
+
+async function saveConnections() {
+    const data = gatherOptionValues(connData, document.getElementById('page-connections'));
+    try {
+        const res = await fetch('/api/config/connections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        if (res.ok) showToast('Connections saved', 'success');
+        else showToast('Failed to save', 'error');
+    } catch (e) { showToast('Failed to save', 'error'); }
+}
+
+/* ── UMTK Settings page ───────────────────────────────────────────────── */
+async function fetchUmtk() {
+    try {
+        const res = await fetch('/api/config/umtk');
+        if (!res.ok) return;
+        umtkData = await res.json();
+        _umtkLoaded = true;
+        renderUmtkSettings();
+    } catch (e) { showToast('Failed to load UMTK settings', 'error'); }
+}
+
+function renderUmtkSettings() {
+    renderOptionSections(umtkData.options, document.getElementById('umtk-sections'), 'enable_umtk');
+    renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
+}
+
+async function saveUmtk() {
+    const scopeEl = document.getElementById('page-umtk');
+    const options = gatherOptionValues(umtkData.options, scopeEl);
+    const blocks = gatherBlocks('umtk');
+    try {
+        const res = await fetch('/api/config/umtk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options, blocks }),
+        });
+        if (res.ok) showToast('UMTK settings saved', 'success');
+        else showToast('Failed to save', 'error');
+    } catch (e) { showToast('Failed to save', 'error'); }
+}
+
+/* ── TSSK Settings page ───────────────────────────────────────────────── */
+async function fetchTssk() {
+    try {
+        const res = await fetch('/api/config/tssk');
+        if (!res.ok) return;
+        tsskData = await res.json();
+        _tsskLoaded = true;
+        renderTsskSettings();
+    } catch (e) { showToast('Failed to load TSSK settings', 'error'); }
+}
+
+function renderTsskSettings() {
+    renderOptionSections(tsskData.options, document.getElementById('tssk-sections'), 'enable_tssk');
+    renderBlocks(tsskData.blocks, document.getElementById('tssk-blocks'), 'tssk');
+}
+
+async function saveTssk() {
+    const scopeEl = document.getElementById('page-tssk');
+    const options = gatherOptionValues(tsskData.options, scopeEl);
+    const blocks = gatherBlocks('tssk');
+    try {
+        const res = await fetch('/api/config/tssk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options, blocks }),
+        });
+        if (res.ok) showToast('TSSK settings saved', 'success');
+        else showToast('Failed to save', 'error');
+    } catch (e) { showToast('Failed to save', 'error'); }
+}
+
+/* ── Shared: Render option sections ────────────────────────────────────── */
+function renderOptionSections(options, container, enableKey) {
+    const sections = {};
+    options.forEach(opt => {
+        if (!sections[opt.section]) sections[opt.section] = [];
+        sections[opt.section].push(opt);
+    });
+
+    let html = '';
+    let isFirst = true;
+    for (const [section, opts] of Object.entries(sections)) {
+        const isEnableSection = isFirst && enableKey;
+        const enableOpt = isEnableSection ? opts.find(o => o.key === enableKey) : null;
+        const otherOpts = enableOpt ? opts.filter(o => o.key !== enableKey) : opts;
+
+        html += `<div class="settings-section">`;
+
+        if (enableOpt) {
+            html += `<div class="setting-item" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:8px">
+                <div class="setting-info">
+                    <div class="setting-label" style="font-size:16px;font-weight:600">${enableOpt.label}</div>
+                    <div class="setting-desc">${enableOpt.description}</div>
+                </div>
+                <div class="setting-control">${createSettingHTML(enableOpt)}</div>
+            </div>`;
+        }
+
+        html += `<h2>${section}</h2>`;
+        const sectionId = section.toLowerCase().replace(/\s+/g, '-') + '-' + (enableKey || '');
+        html += `<div id="section-opts-${sectionId}">`;
+        otherOpts.forEach(opt => {
+            html += `<div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">${opt.label}</div>
+                    <div class="setting-desc">${opt.description}</div>
+                </div>
+                <div class="setting-control">${createSettingHTML(opt)}</div>
+            </div>`;
+        });
+        html += '</div></div>';
+        isFirst = false;
+    }
+    container.innerHTML = html;
+
+    /* Wire up enable toggle to disable/enable rest of settings */
+    if (enableKey) {
+        const toggle = container.querySelector(`[data-key="${enableKey}"]`);
+        if (toggle) {
+            const updateDisabled = () => {
+                const enabled = toggle.checked;
+                const allSections = container.querySelectorAll('.settings-section');
+                allSections.forEach((sec, idx) => {
+                    if (idx === 0) {
+                        /* First section: only disable the options below the toggle */
+                        const optsDiv = sec.querySelector('[id^="section-opts-"]');
+                        if (optsDiv) optsDiv.classList.toggle('section-disabled', !enabled);
+                    } else {
+                        sec.classList.toggle('section-disabled', !enabled);
+                    }
+                });
+            };
+            toggle.addEventListener('change', updateDisabled);
+            updateDisabled();
+        }
+    }
+}
+
+/* ── Block editor ──────────────────────────────────────────────────────── */
+
+/* Preferred display order for block groups per prefix (umtk / tssk) */
+const GROUP_ORDER = {
+    umtk: ['new_show', 'upcoming_shows', 'trending_shows', 'trending_top_10_tv',
+           'upcoming_movies', 'trending_movies', 'trending_top_10_movies'],
+    tssk: ['new_show', 'new_season', 'new_season_started', 'upcoming_episode',
+           'upcoming_finale', 'season_finale', 'final_episode', 'returning',
+           'canceled', 'ended']
+};
+
+/* Custom display-name overrides for group headers (groupBase → label) */
+const GROUP_DISPLAY_NAMES = {
+    umtk: {
+        'trending_top_10_tv': 'Trending Shows Top10 Overlay',
+        'trending_top_10_movies': 'Trending Movies Top10 Overlay'
+    },
+    tssk: {
+        'new_show': 'New Shows',
+        'new_season': 'New Season Soon'
+    }
+};
+
+function blockDisplayName(key) {
+    return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function groupBlocksByCategory(blocks, prefix) {
+    const typePrefixes = ['collection_', 'backdrop_', 'text_'];
+
+    /* Collect collection suffixes as group bases */
+    const collectionBases = [];
+    for (const key of Object.keys(blocks)) {
+        if (key.startsWith('collection_')) {
+            collectionBases.push(key.substring('collection_'.length));
+        }
+    }
+    /* Sort longest first so longer prefixes match before shorter ones */
+    collectionBases.sort((a, b) => b.length - a.length);
+
+    const groups = {};   /* groupBase → { blockKey: blockData } */
+    const groupOrder = []; /* preserve first-seen order */
+
+    for (const [key, data] of Object.entries(blocks)) {
+        let suffix = key;
+        for (const p of typePrefixes) {
+            if (key.startsWith(p)) { suffix = key.substring(p.length); break; }
+        }
+
+        /* Find best matching collection base */
+        let groupBase = suffix;
+        for (const base of collectionBases) {
+            if (suffix === base || suffix.startsWith(base + '_')) {
+                groupBase = base;
+                break;
+            }
+        }
+
+        if (!groups[groupBase]) { groups[groupBase] = {}; groupOrder.push(groupBase); }
+        groups[groupBase][key] = data;
+    }
+
+    /* Apply preferred ordering if defined for this prefix */
+    const preferredOrder = GROUP_ORDER[prefix];
+    let finalOrder;
+    if (preferredOrder) {
+        const known = preferredOrder.filter(b => groups[b]);
+        const extra = groupOrder.filter(b => !preferredOrder.includes(b));
+        finalOrder = [...known, ...extra];
+    } else {
+        finalOrder = groupOrder;
+    }
+
+    /* Return in order, with blocks within each group sorted: collection → backdrop → text */
+    const ordered = {};
+    for (const base of finalOrder) {
+        const sorted = {};
+        const entries = Object.entries(groups[base]);
+        entries.sort((a, b) => {
+            const order = k => k.startsWith('collection_') ? 0 : k.startsWith('backdrop_') ? 1 : 2;
+            return order(a[0]) - order(b[0]);
+        });
+        for (const [k, v] of entries) sorted[k] = v;
+        ordered[base] = sorted;
+    }
+    return ordered;
+}
+
+function renderBlocks(blocks, container, prefix) {
+    if (!blocks || Object.keys(blocks).length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No collection/overlay blocks found in config.</p></div>';
+        return;
+    }
+
+    const groups = groupBlocksByCategory(blocks, prefix);
+    const displayNames = GROUP_DISPLAY_NAMES[prefix] || {};
+    let html = '';
+
+    for (const [groupBase, groupBlocks] of Object.entries(groups)) {
+        /* Determine group-level enable state from the collection block */
+        const collectionKey = Object.keys(groupBlocks).find(k => k.startsWith('collection_'));
+        const collectionData = collectionKey ? (groupBlocks[collectionKey] || {}) : null;
+        const isEnabled = collectionData ? (collectionData.enable !== false && collectionData.enable !== 'false') : true;
+        const enableBadge = collectionData && collectionData.hasOwnProperty('enable')
+            ? `<span class="block-enable-badge ${isEnabled ? 'enabled' : 'disabled'}">${isEnabled ? 'Enabled' : 'Disabled'}</span>`
+            : '';
+
+        html += `<div class="block-group">
+            <div class="block-group-header" onclick="this.closest('.block-group').classList.toggle('open')">
+                <span class="block-arrow">&#9654;</span>
+                <span>${displayNames[groupBase] || blockDisplayName(groupBase)}</span>
+                ${enableBadge}
+            </div>
+            <div class="block-group-body">`;
+
+        for (const [blockKey, blockData] of Object.entries(groupBlocks)) {
+            const data = blockData || {};
+            html += `<div class="block-section" data-block="${blockKey}" data-prefix="${prefix}">
+                <div class="block-header" onclick="toggleBlock(this)">
+                    <div class="block-header-left">
+                        <span class="block-arrow">&#9654;</span>
+                        <span class="block-title">${blockDisplayName(blockKey)}</span>
+                    </div>
+                </div>
+                <div class="block-body">`;
+
+            /* Known keys first */
+            const knownKeys = Object.keys(BLOCK_KEY_TYPES);
+            const sortedKeys = Object.keys(data).sort((a, b) => {
+                const ai = knownKeys.indexOf(a);
+                const bi = knownKeys.indexOf(b);
+                if (ai !== -1 && bi !== -1) return ai - bi;
+                if (ai !== -1) return -1;
+                if (bi !== -1) return 1;
+                return 0;
+            });
+
+            sortedKeys.forEach(k => {
+                const v = data[k];
+                html += renderBlockRow(blockKey, k, v, prefix);
+            });
+
+            /* Custom variables section */
+            html += `<div class="custom-vars-header">
+                <span>Custom Variables</span>
+                <button class="btn-icon" onclick="addCustomVar('${blockKey}', '${prefix}')" title="Add variable">+</button>
+            </div>
+            <div class="custom-vars" data-block="${blockKey}" data-prefix="${prefix}"></div>`;
+
+            html += '</div></div>';
+        }
+
+        html += '</div></div>';
+    }
+    container.innerHTML = html;
+}
+
+function renderBlockRow(blockKey, key, value, prefix) {
+    const typeSpec = BLOCK_KEY_TYPES[key];
+    let control = '';
+
+    if (typeSpec === 'bool') {
+        const checked = value === true || value === 'true';
+        control = `<label class="toggle">
+            <input type="checkbox" data-block="${blockKey}" data-bkey="${key}" ${checked ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+        </label>`;
+    } else if (typeSpec === 'color') {
+        const colorVal = String(value || '#000000');
+        const hexVal = colorVal.startsWith('#') ? colorVal : '#000000';
+        control = `<input type="color" data-block="${blockKey}" data-bkey="${key}" value="${hexVal}">
+                   <input type="text" data-block="${blockKey}" data-bkey="${key}-text" value="${escapeAttr(colorVal)}" style="width:100px"
+                   oninput="this.previousElementSibling.value=this.value"
+                   onchange="this.previousElementSibling.value=this.value">`;
+    } else if (typeSpec === 'number') {
+        control = `<input type="number" data-block="${blockKey}" data-bkey="${key}" value="${value != null ? value : ''}">`;
+    } else if (typeSpec && typeSpec.startsWith('select:')) {
+        const opts = typeSpec.substring(7).split(',');
+        control = `<select data-block="${blockKey}" data-bkey="${key}">
+            ${opts.map(o => `<option value="${o}" ${value == o ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>`;
+    } else {
+        control = `<input type="text" data-block="${blockKey}" data-bkey="${key}" value="${escapeAttr(value != null ? value : '')}" style="width:100%">`;
+    }
+
+    return `<div class="block-row">
+        <span class="block-key">${escapeHtml(key)}</span>
+        <div class="block-value">${control}</div>
+        <button class="btn-icon danger" onclick="removeBlockRow(this)" title="Remove">&times;</button>
+    </div>`;
+}
+
+function toggleBlock(header) {
+    header.closest('.block-section').classList.toggle('open');
+}
+
+function removeBlockRow(btn) {
+    btn.closest('.block-row').remove();
+}
+
+function addCustomVar(blockKey, prefix) {
+    const container = document.querySelector(`.custom-vars[data-block="${blockKey}"][data-prefix="${prefix}"]`);
+    const div = document.createElement('div');
+    div.className = 'custom-var-row';
+    div.innerHTML = `
+        <input type="text" placeholder="Key" style="max-width:180px">
+        <input type="text" placeholder="Value" style="flex:1">
+        <button class="btn-icon danger" onclick="this.closest('.custom-var-row').remove()" title="Remove">&times;</button>`;
+    container.appendChild(div);
+}
+
+function gatherBlocks(prefix) {
+    const blocks = {};
+    document.querySelectorAll(`.block-section[data-prefix="${prefix}"]`).forEach(section => {
+        const blockKey = section.dataset.block;
+        const data = {};
+
+        /* Known & existing rows */
+        section.querySelectorAll('.block-row').forEach(row => {
+            const keyEl = row.querySelector('.block-key');
+            const key = keyEl ? keyEl.textContent.trim() : null;
+            if (!key) return;
+
+            const typeSpec = BLOCK_KEY_TYPES[key];
+            if (typeSpec === 'bool') {
+                const el = row.querySelector('input[type="checkbox"]');
+                data[key] = el ? el.checked : false;
+            } else if (typeSpec === 'color') {
+                const textEl = row.querySelector(`[data-bkey="${key}-text"]`);
+                data[key] = textEl ? textEl.value : '';
+            } else if (typeSpec === 'number') {
+                const el = row.querySelector('input[type="number"]');
+                data[key] = el ? (parseFloat(el.value) || 0) : 0;
+            } else if (typeSpec && typeSpec.startsWith('select:')) {
+                const el = row.querySelector('select');
+                data[key] = el ? el.value : '';
+            } else {
+                const el = row.querySelector('input[type="text"]');
+                data[key] = el ? el.value : '';
+            }
+        });
+
+        /* Custom variables */
+        section.querySelectorAll('.custom-var-row').forEach(row => {
+            const inputs = row.querySelectorAll('input');
+            if (inputs.length >= 2 && inputs[0].value.trim()) {
+                const k = inputs[0].value.trim();
+                const v = inputs[1].value;
+                /* Auto-detect type */
+                if (v === 'true') data[k] = true;
+                else if (v === 'false') data[k] = false;
+                else if (v !== '' && !isNaN(v)) data[k] = Number(v);
+                else data[k] = v;
+            }
+        });
+
+        blocks[blockKey] = data;
+    });
+    return blocks;
+}
+
+/* ── Log page ──────────────────────────────────────────────────────────── */
+async function fetchLog() {
+    try {
+        const res = await fetch('/api/log?limit=1000');
+        if (!res.ok) return;
+        const data = await res.json();
+        logLines = data.lines || [];
+        _logLoaded = true;
+        renderLog();
+    } catch (e) { showToast('Failed to load log', 'error'); }
+}
+
+function classifyLogLine(line) {
+    const lower = line.toLowerCase();
+    if (lower.includes('error') || lower.includes('failed') || lower.includes('traceback') || lower.includes('exception')) return 'error';
+    if (lower.includes('warning') || lower.includes('skipped') || lower.includes('not found')) return 'warning';
+    if (lower.includes('success') || lower.includes('completed') || lower.includes('saved') || lower.includes('✓') || lower.includes('ok')) return 'success';
+    if (/^[*=\-]{4,}/.test(line.trim()) || /^#{4,}/.test(line.trim())) return 'separator';
+    if (lower.includes('starting') || lower.includes('checking') || lower.includes('processing') || lower.includes('web ui')) return 'info';
+    return '';
+}
+
+function renderLog() {
+    const output = document.getElementById('log-output');
+    const countEl = document.getElementById('log-line-count');
+
+    if (logLines.length === 0) {
+        output.innerHTML = '<div class="empty-state"><p>No log output available.</p></div>';
+        countEl.textContent = '';
+        return;
+    }
+
+    countEl.textContent = logLines.length + ' lines';
+
+    const fragment = document.createDocumentFragment();
+    logLines.forEach(line => {
+        const div = document.createElement('div');
+        div.className = 'log-line ' + classifyLogLine(line);
+        div.textContent = line.replace(/\n$/, '');
+        fragment.appendChild(div);
+    });
+
+    output.innerHTML = '';
+    output.appendChild(fragment);
+
+    if (document.getElementById('log-autoscroll').checked) {
+        output.scrollTop = output.scrollHeight;
+    }
+}
+
+/* Auto-refresh log while on the log page and running */
+let _logRefreshTimer = null;
+function startLogAutoRefresh() {
+    if (_logRefreshTimer) return;
+    _logRefreshTimer = setInterval(() => {
+        const logPage = document.getElementById('page-log');
+        if (logPage.classList.contains('active')) {
+            fetchLog();
+        }
+    }, 5000);
+}
+
+/* ── Dashboard ──────────────────────────────────────────────────────────── */
+let _serverToday = ''; /* YYYY-MM-DD from backend, matches Sonarr/Radarr server time */
+
+function formatDateShort(dateStr) {
+    if (!dateStr) return '';
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const d = new Date(dateStr + 'T00:00:00');
+
+    if (_serverToday) {
+        const today = new Date(_serverToday + 'T00:00:00');
+        const diffDays = Math.round((d - today) / 86400000);
+
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return 'Tomorrow';
+        if (diffDays === -1) return 'Yesterday';
+        if (diffDays >= 2 && diffDays <= 6) return days[d.getDay()];
+    }
+
+    return d.getDate() + ' ' + months[d.getMonth()];
+}
+
+async function fetchDashboardUpcoming() {
+    try {
+        const res = await fetch('/api/dashboard/upcoming');
+        if (!res.ok) return;
+        const data = await res.json();
+        _serverToday = data.today || '';
+        const items = data.items || data;
+        renderPosterCarousel(items);
+    } catch (e) {
+        document.getElementById('poster-carousel').innerHTML =
+            '<div class="carousel-empty">Failed to load upcoming content.</div>';
+    }
+}
+
+const _carouselTvIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>';
+const _carouselMovieIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>';
+let _carouselItems = [];
+let _carouselAnimId = null;
+
+function _buildPosterCard(item) {
+    const dateStr = formatDateShort(item.date);
+    const posterSrc = item.posterUrl ? escapeAttr(item.posterUrl) : '';
+    const imgHtml = posterSrc
+        ? `<img src="${posterSrc}" alt="${escapeAttr(item.title)}" loading="lazy" onerror="this.onerror=null;this.style.opacity='0.15'">`
+        : `<div class="poster-placeholder">No Poster</div>`;
+    const icon = item.type === 'movie' ? _carouselMovieIcon : _carouselTvIcon;
+    return `<div class="poster-card">
+        ${imgHtml}
+        <div class="poster-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</div>
+        <div class="poster-label ${item.label.includes('Premiere') ? (item.label === 'Show Premiere' ? 'label-show-premiere' : 'label-season-premiere') : item.label.includes('Finale') ? 'label-season-finale' : ''}">${icon}${escapeHtml(item.label)}</div>
+        <div class="poster-date">${escapeHtml(dateStr)}</div>
+    </div>`;
+}
+
+function renderPosterCarousel(items) {
+    _carouselItems = items || [];
+    const carousel = document.getElementById('poster-carousel');
+    if (!_carouselItems.length) {
+        carousel.innerHTML = '<div class="carousel-empty">No upcoming content in the next 30 days.</div>';
+        return;
+    }
+
+    /* Init toggle from localStorage (default: on) */
+    const toggle = document.getElementById('carousel-autoscroll');
+    const saved = localStorage.getItem('umtk-carousel-autoscroll');
+    const autoOn = saved === null ? true : saved === '1';
+    toggle.checked = autoOn;
+
+    toggle.addEventListener('change', () => {
+        localStorage.setItem('umtk-carousel-autoscroll', toggle.checked ? '1' : '0');
+        _applyCarouselMode(toggle.checked);
+    });
+
+    _applyCarouselMode(autoOn);
+}
+
+function _applyCarouselMode(autoScroll) {
+    const carousel = document.getElementById('poster-carousel');
+
+    /* Stop any running animation */
+    if (_carouselAnimId) { cancelAnimationFrame(_carouselAnimId); _carouselAnimId = null; }
+
+    let html = '';
+    _carouselItems.forEach(item => { html += _buildPosterCard(item); });
+
+    if (autoScroll) {
+        /* Auto-scroll mode: translateX animation on a track */
+        carousel.classList.add('autoscroll');
+        carousel.innerHTML = `<div class="poster-carousel-track" id="poster-track">${html}</div>`;
+        carousel.scrollLeft = 0;
+        requestAnimationFrame(() => _initAutoScroll());
+    } else {
+        /* Manual mode: normal scrollable row */
+        carousel.classList.remove('autoscroll');
+        carousel.innerHTML = html;
+        carousel.scrollLeft = 0;
+        _initManualDrag();
+    }
+}
+
+function _initAutoScroll() {
+    const carousel = document.getElementById('poster-carousel');
+    const track = document.getElementById('poster-track');
+    if (!carousel || !track) return;
+
+    const wrapperW = carousel.clientWidth;
+    const trackW = track.scrollWidth;
+    const travel = trackW - wrapperW; /* how far to scroll (0 = start, travel = end) */
+    if (travel <= 0) return;
+
+    const speed = 50;      /* px per second */
+    const endPauseMs = 5000;
+    let offset = 0;
+    let paused = false;
+    let lastTs = null;
+
+    function tick(ts) {
+        if (!lastTs) lastTs = ts;
+        const dt = ts - lastTs;
+        lastTs = ts;
+
+        if (!paused) {
+            offset += speed * (dt / 1000);
+
+            if (offset >= travel) {
+                offset = travel;
+                paused = true;
+                setTimeout(() => {
+                    /* Reset to start and scroll left again */
+                    offset = 0;
+                    track.style.transform = `translateX(0px)`;
+                    paused = false;
+                    lastTs = null;
+                }, endPauseMs);
+            }
+        }
+
+        track.style.transform = `translateX(${-offset}px)`;
+        _carouselAnimId = requestAnimationFrame(tick);
+    }
+
+    /* Disable auto-scroll on user interaction (mouse or touch) */
+    function _stopAutoScrollOnInteract() {
+        carousel.removeEventListener('mousedown', _stopAutoScrollOnInteract);
+        carousel.removeEventListener('touchstart', _stopAutoScrollOnInteract);
+        const toggle = document.getElementById('carousel-autoscroll');
+        if (toggle) {
+            toggle.checked = false;
+            localStorage.setItem('umtk-carousel-autoscroll', '0');
+            _applyCarouselMode(false);
+        }
+    }
+    carousel.addEventListener('mousedown', _stopAutoScrollOnInteract);
+    carousel.addEventListener('touchstart', _stopAutoScrollOnInteract);
+
+    _carouselAnimId = requestAnimationFrame(tick);
+}
+
+function _initManualDrag() {
+    const carousel = document.getElementById('poster-carousel');
+    if (!carousel) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let scrollStart = 0;
+
+    /* Prevent native image drag which interferes with scroll dragging */
+    carousel.addEventListener('dragstart', e => e.preventDefault());
+
+    carousel.addEventListener('mousedown', e => {
+        isDragging = true;
+        startX = e.clientX;
+        scrollStart = carousel.scrollLeft;
+        carousel.classList.add('dragging');
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        carousel.scrollLeft = scrollStart - (e.clientX - startX);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            carousel.classList.remove('dragging');
+        }
+    });
+
+    carousel.addEventListener('touchstart', e => {
+        isDragging = true;
+        startX = e.touches[0].clientX;
+        scrollStart = carousel.scrollLeft;
+    }, { passive: true });
+
+    carousel.addEventListener('touchmove', e => {
+        if (!isDragging) return;
+        carousel.scrollLeft = scrollStart - (e.touches[0].clientX - startX);
+    }, { passive: true });
+
+    carousel.addEventListener('touchend', () => {
+        isDragging = false;
+    });
+}
+
+const SERVICE_LOGOS = {
+    Plex: '/static/plex_logo.png',
+    Radarr: '/static/radarr_logo.png',
+    Sonarr: '/static/sonarr_logo.png'
+};
+
+async function fetchDashboardServices() {
+    try {
+        const res = await fetch('/api/dashboard/services');
+        if (!res.ok) return;
+        const services = await res.json();
+        renderServices(services);
+    } catch (e) {}
+}
+
+function renderServices(services) {
+    const container = document.getElementById('services-grid');
+    let html = '';
+    services.forEach(svc => {
+        const logoSrc = SERVICE_LOGOS[svc.name] || '';
+        const isOnline = svc.online;
+        const statusColor = isOnline ? 'var(--success)' : 'var(--danger)';
+        const statusText = isOnline ? 'Online' : 'Offline';
+        const responseTime = isOnline && svc.responseTime ? `${svc.responseTime}ms` : '';
+
+        html += `<div class="service-card">
+            <div class="service-logo">${logoSrc ? `<img src="${logoSrc}" alt="${escapeAttr(svc.name)}" style="width:30px;height:30px;object-fit:contain">` : ''}</div>
+            <div class="service-info">
+                <div class="service-name">${escapeHtml(svc.name)}</div>
+                <div class="service-status-row">
+                    <span class="service-dot ${isOnline ? 'online' : 'offline'}"></span>
+                    <span class="service-status-label" style="color:${statusColor}">${statusText}</span>
+                    ${responseTime ? `<span class="service-response-time">${responseTime}</span>` : ''}
+                </div>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function loadDashboard() {
+    if (_dashLoaded) return;
+    _dashLoaded = true;
+    fetchDashboardUpcoming();
+    fetchDashboardServices();
+    setInterval(fetchDashboardServices, 60000);
+}
+
+/* ── Init ───────────────────────────────────────────────────────────────── */
+loadDashboard();
+fetchStatus();
+setInterval(fetchStatus, 3000);
+fetchUpdateStatus();
+startLogAutoRefresh();
+</script>
+</body>
+</html>

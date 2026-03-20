@@ -1,6 +1,8 @@
 ################################################################################
 ##########                         GENERAL:                           ##########
 ################################################################################
+enable_umtk: true
+enable_tssk: false
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 method_fallback: true
@@ -50,7 +52,7 @@ past_days_upcoming_movies: 0 #0=no limit
 include_inCinemas: false
 future_only: false
 exclude_radarr_tags: exclude, private
-umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
+umtk_root_movies: /umtkmovies
 
 ################################################################################
 ##########                         TV SHOWS:                          ##########
@@ -59,7 +61,7 @@ future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
 exclude_sonarr_tags: exclude, private
-umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv`
+umtk_root_tv: /umtktv
 
 ################################################################################
 ##########                        TRENDING:                           ##########

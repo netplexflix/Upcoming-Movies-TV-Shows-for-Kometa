@@ -3,34 +3,32 @@
    <a href="https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa?style=plastic"></a> <a href="https://hub.docker.com/repository/docker/netplexflix/umtk"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/netplexflix/umtk?style=plastic"></a> <a href="https://discord.gg/VBNUJd7tx3"><img alt="Discord" src="https://img.shields.io/discord/1329439972796928041?style=plastic&label=Discord"></a>
 </p>
 
-**UMTK** (Upcoming Movies & TV Shows for Kometa) creates 'Coming Soon' collections in your Plex server.<br> 
-It accomplishes this by:
+**UMTK** (Upcoming Movies & TV Shows for Kometa) manages your Plex media collections and overlays using [Kometa](https://kometa.wiki/en/latest/) (formerly Plex Meta Manager).<br>
+It includes:
 
-- Checking [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content expected to be released/air within x days
-- Either downloading trailers using [yt-dlp](https://github.com/yt-dlp/yt-dlp) or creating placeholder video files
-  - For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account)
-  - For TV Shows, the Trailer or placeholder file is saved as a "special"(S00E00)
-- Creating collection and overlay .yml files which can be used with [Kometa](https://kometa.wiki/en/latest/) (formerly Plex Meta Manager)
-
-UMTK can also use MDBList to create "Trending" categories and create placeholder files for missing items with an overlay indicating that a request is required.
-Optionally applies a TOP 10 ranking overlay.
+- **Coming Soon** — Checks [Radarr](https://radarr.video/) and [Sonarr](https://sonarr.tv/) for upcoming (monitored) content expected to be released/air within x days. Either downloads trailers using [yt-dlp](https://github.com/yt-dlp/yt-dlp) or creates placeholder video files. For movies, Plex's 'editions' feature is used (Plex Pass required for Server admin account). For TV Shows, the trailer or placeholder file is saved as a "special" (S00E00).
+- **TV Show Status** (formerly [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)) — Checks your Sonarr for TV show statuses and creates `.yml` files for overlays and collections. Categories include: new shows, new seasons, upcoming episodes, upcoming finales, season finales, final episodes, returning, ended, and canceled shows.
+- **Trending** — Uses MDBList to create "Trending" categories and creates placeholder files for missing items with an overlay indicating that a request is required. Optionally applies a TOP 10 ranking overlay.
 
 ## Examples:
+### TV Show Status Overlays:
 
-### Movies:
+![Image](https://github.com/user-attachments/assets/e7c517cc-5164-41d9-8e5e-015577aad36e)
 
-<img width="585" height="301" alt="Image" src="https://github.com/user-attachments/assets/cb5e748d-c345-468a-a697-f555cefc6543" />
+### Coming Soon Movies:
 
-### TV Shows:
+<img width="1617" height="303" alt="Image" src="https://github.com/user-attachments/assets/51bdcbb2-1d0a-4d2f-b6ac-662678f54bb5" />
 
-<img width="585" height="301" alt="Image" src="https://github.com/user-attachments/assets/ec064344-9ff7-4ecc-8b02-29ee97462f29" />
+### Coming Soon TV Shows:
+
+<img width="1617" height="303" alt="Image" src="https://github.com/user-attachments/assets/5c0b5f80-329e-4c17-ba1b-cd71f22e9b92" />
 
 ### TV Shows Trending TOP 10:
 
 <img width="2000" height="375" alt="Image" src="https://github.com/user-attachments/assets/5559d281-6fc2-4e6a-9c72-1f49f45f5ef6" />
 
 In this example 3 trending shows have not been added to Sonarr (and are not available).
-This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)
+This example uses the Kabeb template + TV Show Status overlays.
 
 ---
 
@@ -47,10 +45,11 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
     - [Step 7: Add the yml files to your Kometa config](#step-7-add-the-yml-files-to-your-kometa-config)
   - [Option 2: Manual Installation](#option-2-manual-installation)
     - [Step 1: Clone the repository](#step-1-clone-the-repository)
-    - [Step2: Install Python dependencies](#step-2-install-python-dependencies)
-    - [Step3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
+    - [Step 2: Install Python dependencies](#step-2-install-python-dependencies)
+    - [Step 3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
     - [Step 4: Configure Your Config Settings](#2.4)
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
+- [🖥️ Web UI](#web-ui)
 - [⚙️ Configuration](#️-configuration)
   - [General](#general)
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
@@ -60,6 +59,7 @@ This example uses the Kabeb template + [TSSK](https://github.com/netplexflix/TV-
   - [TV Show Settings](#tv-show-settings)
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
+  - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
 - [🗂️ Create your Coming Soon Collection](#️-create-your-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
@@ -103,6 +103,8 @@ services:
     image: netplexflix/umtk:latest
     container_name: umtk
     network_mode: "host" # Use host network to access localhost services
+    ports:
+      - "2120:2120" # Web UI
     environment:
       - CRON=0 2 * * * # Run daily at 2am
       - DOCKER=true
@@ -142,6 +144,7 @@ services:
 2. **Download the required files**:
    - Go to the [GitHub repository](https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa)
    - Download `config/config.sample.yml` and save it as `config/config.yml` in your UMTK folder
+   - If using TSSK: Download `config/tssk_config.sample.yml` and save it as `config/tssk_config.yml`
    - Download `video/UMTK.mp4` and save it in your `video` folder (if using placeholder method)
    - You can also use your own video file. Just make sure it is called `UMTK`.
 
@@ -151,7 +154,8 @@ services:
    - These are the UMTK roots you have to mount in your docker-compose
    
 #### Step 4: Configure Your Settings
-- See [⚙️ Configuration](#️-configuration)
+- You can skip this if you want to edit your settings in the webUI.
+- Alternatively you can manually edit your settings in the yml files. See [⚙️ Configuration](#️-configuration)
 
 #### Step 5: Update Media Paths
 You must update the media paths in the existing `docker-compose.yml` file.
@@ -243,12 +247,31 @@ Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_
 
 ---
 
+<a id="web-ui"></a>
+## 🖥️ Web UI
+<img src="https://github.com/user-attachments/assets/b8f1d7c7-5dfb-431b-9a30-837272459500" width="15%"></img> <img src="https://github.com/user-attachments/assets/c0a5b354-347b-4d1f-932a-dcf0c71bb2d3" width="15%"></img> <img src="https://github.com/user-attachments/assets/cfea0396-28fa-4bbc-a0a5-2d08127f5d2a" width="15%"></img>
+
+UMTK includes a built-in web interface for configuration and monitoring, accessible at `http://localhost:2120` (or `http://your-ip:2120`).
+Features:
+- **Configuration**: Edit all UMTK and TSSK settings through the UI. Organized in tabs: Connections (Plex/Radarr/Sonarr), UMTK settings, and TSSK settings.
+- **Connection Testing**: Test your Plex, Radarr, and Sonarr connections directly from the UI with response time feedback.
+- **Scheduler Control**: View the current status (idle/running/stopped), trigger a "Run Now", pause or resume the schedule, and see next/last run times.
+- **Live Logs**: Monitor real-time application logs.
+- **Update Checker**: Check for new UMTK versions.
+
+> [!TIP]
+> All settings can also be edited manually in the YAML config files if you prefer.
+
+---
+
 ## ⚙️ Configuration
 
-Rename `config.example.yml` to `config.yml` and update your settings:
+Rename `config.sample.yml` to `config.yml` and update your settings:
 
 ### General:
 
+- **enable_umtk:** Enable/disable the UMTK module — Coming Soon and Trending (default: `true`)
+- **enable_tssk:** Enable/disable the TSSK module — TV Show Status (default: `false`). See [TSSK Configuration](#tssk-configuration-tv-show-status) for settings.
 - **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
@@ -345,13 +368,79 @@ The remaining settings customize the output .yml files for Kometa.
 >
 > Dividers can be `/`, `-` or a space
 
+<a id="tssk-configuration-tv-show-status"></a>
+### TSSK Configuration (TV Show Status):
+
+TSSK settings are stored in a separate config file. Rename `tssk_config.sample.yml` to `tssk_config.yml` in your config folder (next to `config.yml`).
+
+> [!NOTE]
+> Sonarr/Plex credentials and shared settings (`utc_offset`, `debug`, `simplify_next_week_dates`) are automatically read from the main `config.yml` — you do not need to duplicate them.
+
+#### TSSK General Settings:
+
+- **use_tvdb:** Change to `true` if you prefer TheTVDB statuses for returning and ended. (Note: TheTVDB does not have the 'canceled' status)
+- **skip_unmonitored:** Default `true` will skip a show if the upcoming season/episode is unmonitored.
+- **edit_sort_titles:** Set to `true` to have TSSK edit sort titles directly in Plex. The air date of the new season premiere will be added to the sort title so you can sort shows by air date.
+- **ignore_finales_tags:** Shows with these Sonarr tags will be ignored when checking for finales.
+
+> [!NOTE]
+> For some shows, episodes are listed one at a time — usually one week ahead — in TheTVDB/Sonarr. Because of this, TSSK may wrongly think the last episode listed in the season is a finale.
+> You can give problematic shows like this a tag in Sonarr (and add that tag to `ignore_finales_tags`) so TSSK will ignore finales for that show and treat the current 'last' episode as a regular episode.
+
+#### TSSK Categories:
+
+Each category can be individually enabled or disabled. Set to `false` to disable:
+
+- **process_new_shows:** New shows that were added in the past x days
+- **process_new_season_soon:** Shows for which a new season is airing within x days
+- **process_new_season_started:** Shows for which a new season has been added which aired in the past x days
+- **process_upcoming_episode:** Shows with upcoming regular episodes within x days
+- **process_upcoming_finale:** Shows with upcoming season finales within x days
+- **process_season_finale:** Shows for which a season finale was added which aired in the past x days
+- **process_final_episode:** Shows for which a final episode was added which aired in the past x days
+- **process_returning_shows:** Returning shows
+- **process_ended_shows:** Ended shows
+- **process_canceled_shows:** Canceled shows
+
+#### TSSK Timeframe Settings:
+
+For each category, you can change the relevant timeframe:
+
+- **recent_days_new_show:** How many days in the past to look for new shows (default: `7`)
+- **future_days_new_season:** How many days into the future to look for new seasons (default: `31`)
+- **recent_days_new_season_started:** How many days in the past to look for started seasons (default: `7`)
+- **future_days_upcoming_episode:** How many days into the future for upcoming episodes (default: `31`)
+- **future_days_upcoming_finale:** How many days into the future for upcoming finales (default: `31`)
+- **recent_days_season_finale:** How many days in the past for aired season finales (default: `7`)
+- **recent_days_final_episode:** How many days in the past for aired final episodes (default: `7`)
+
+#### TSSK Collection & Overlay Settings:
+
+Each category has its own collection and overlay blocks, following the same pattern as the UMTK overlay settings.
+
+- **Collection blocks:** Customize `collection_name`, `item_label`, `build_collection`, `sync_mode`, etc. You can enter any Kometa collection variables.
+- **Backdrop blocks:** Enable/disable the backdrop, set colors, size, and positioning. Supports both `back_color` (solid color) and `url` (image) backdrops.
+- **Text blocks:** Customize `use_text`, `date_format`, `capitalize_dates`, font color, size, and positioning.
+
+> [!TIP]
+> For `New Season Soon`, `New Season Started`, `Upcoming Finale` and `Season Finale` you can use `[#]` in the `use_text` field to display the season number. For example: `"SEASON [#] AIRS"`
+
+> [!TIP]
+> `group` and `weight` are used to determine which overlays are applied when multiple are valid for the same show.
+> For example: You add a new show, for which season 2 just aired in full yesterday. In this case the following overlays would be valid: `new show`, `new season started` and `season finale`.
+> The overlay with the highest `weight` will be applied. If you prefer a different priority, adjust the weights accordingly.
+> You can also have multiple overlays applied at the same time by removing `group` and `weight`, in case you position them differently.
+
+> [!NOTE]
+> The date format options are the same as listed above in the [Overlay & Collection Settings](#overlay--collection-settings) section.
+
 ---
 
 ## 🗂️ Create your Coming Soon Collection
 
 In the config example, we use `build_collection: false`.<br>
 This will tell Kometa to only apply labels to the content without actually creating the collection directly.<br>
-That way we can manually create a smart filter which includes both `Coming Soon` items from UMTK and `New Season Soon` items from TSSK:<br>
+That way we can manually create a smart filter which includes both `Coming Soon` items and `New Season Soon` items from TSSK:<br>
 <img width="754" height="198" alt="Image" src="https://github.com/user-attachments/assets/acd4b521-27a8-457f-b056-9f3a8d130442" /><br>
 It also makes the collection more flexible allowing filters to be easily added and removed.
 
@@ -361,19 +450,43 @@ You can replace `build_collection: false` with your own [Kometa collection varia
 
 ## ☄️ Add to Kometa Configuration
 
-Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the UMTK .yml files under `collection_files` and `overlay_files`.
+Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the generated .yml files under `collection_files` and `overlay_files`.
 
 Example:
 
 ```yaml
 TV Shows:
   collection_files:
+    # UMTK
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_TRENDING_COLLECTION.yml
+    # TSSK
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SHOW_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SEASON_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SEASON_STARTED_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_UPCOMING_EPISODE_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_UPCOMING_FINALE_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_SEASON_FINALE_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_FINAL_EPISODE_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_RETURNING_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_ENDED_COLLECTION.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_CANCELED_COLLECTION.yml
   overlay_files:
+    # UMTK
     - file: /path/to/UMTK/kometa/UMTK_TV_UPCOMING_SHOWS_OVERLAYS.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_TOP10_OVERLAYS.yml
     - file: /path/to/UMTK/kometa/UMTK_TV_NEW_SHOWS_OVERLAYS.yml
+    # TSSK
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SHOW_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SEASON_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_NEW_SEASON_STARTED_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_UPCOMING_EPISODE_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_UPCOMING_FINALE_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_SEASON_FINALE_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_FINAL_EPISODE_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_RETURNING_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_ENDED_OVERLAYS.yml
+    - file: /path/to/UMTK/kometa/TSSK_TV_CANCELED_OVERLAYS.yml
 
 Movies:
   collection_files:
@@ -383,6 +496,9 @@ Movies:
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_UPCOMING_OVERLAYS.yml
     - file: /path/to/UMTK/kometa/UMTK_MOVIES_TOP10_OVERLAYS.yml
 ```
+
+> [!TIP]
+> Only add the files for the categories you have enabled. All are optional and independently generated based on your config settings.
 
 ---
 
@@ -436,6 +552,11 @@ Open a Terminal in your script directory and run:
 ```bash
 python UMTK.py
 ```
+
+> [!TIP]
+> You can also trigger a run from the [Web UI](#web-ui) using the "Run Now" button.
+
+When both modules are enabled, UMTK runs first, followed by TSSK.
 
 ---
 

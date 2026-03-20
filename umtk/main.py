@@ -10,8 +10,9 @@ from pathlib import Path, PureWindowsPath
 
 from .constants import VERSION, GREEN, ORANGE, RED, BLUE, RESET
 from .config_loader import load_config, load_localization, get_cookies_path, get_kometa_folder, get_video_folder
+from .updater import check_for_updates
 from .utils import (
-    check_for_updates, check_yt_dlp_installed, check_video_file,
+    check_yt_dlp_installed, check_video_file,
     get_tag_ids_from_names, sanitize_filename
 )
 from .sonarr import process_sonarr_url, get_sonarr_series
@@ -36,17 +37,19 @@ from .yaml_generators import (
 from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata
 
 
-def main():
+def main(config=None, localization=None):
     start_time = datetime.now()
-    
+
     # Add Docker detection message
     if os.environ.get('DOCKER') == 'true':
         print(f"{GREEN}Running in Docker container{RESET}")
-    
-    check_for_updates()
-    
-    config = load_config()
-    localization = load_localization()  # Load localization
+
+    # Load config/localization if not provided by orchestrator
+    if config is None:
+        check_for_updates()
+        config = load_config()
+    if localization is None:
+        localization = load_localization()
     
     radarr_timeout = config.get('radarr_timeout', 90)
     sonarr_timeout = config.get('sonarr_timeout', 90)
@@ -619,6 +622,7 @@ def main():
                     successful = 0
                     failed = 0
                     fallback_used = 0
+                    skipped_existing = 0
                     
                     for movie in all_movies_to_process:
                         print(f"\nProcessing: {movie['title']}")
@@ -648,6 +652,7 @@ def main():
                                     if existing_files:
                                         existing_file = existing_files[0]
                                         print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
+                                        skipped_existing += 1
                                         successful += 1
                                         all_movies_with_content.append(movie)
                                         content_exists = True
@@ -693,6 +698,7 @@ def main():
                     
                     print(f"\n{GREEN}Movie content processing summary:{RESET}")
                     print(f"Successful: {successful}")
+                    print(f"Skipped (already exist): {skipped_existing}")
                     if fallback_used > 0:
                         print(f"Fallback used: {fallback_used}")
                     print(f"Failed: {failed}")
@@ -931,13 +937,10 @@ def main():
         print(f"Total runtime: {runtime_formatted}")
         
     except ConnectionError as e:
-        print(f"{RED}Error: {str(e)}{RESET}")
-        sys.exit(1)
+        print(f"{RED}UMTK Error: {str(e)}{RESET}")
+        raise
     except Exception as e:
-        print(f"{RED}Unexpected error: {str(e)}{RESET}")
+        print(f"{RED}UMTK Unexpected error: {str(e)}{RESET}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
+        raise

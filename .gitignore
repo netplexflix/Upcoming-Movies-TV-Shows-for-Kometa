@@ -1,2 +1,37 @@
+# OS files
 .DS_Store
-__pycache__
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Temp files
+*.tmp
+*.temp
+
+# Config (user-specific, not sample)
+config/config.yml
+config/tssk_config.yml
+config/status.json
+
+# Runtime
+kometa/
+video/

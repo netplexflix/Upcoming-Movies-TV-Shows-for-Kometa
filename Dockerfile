@@ -19,7 +19,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Install system dependencies including ffmpeg for yt-dlp and unzip for Deno
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    cron \
     tzdata \
     ffmpeg \
     curl \
@@ -54,6 +53,9 @@ COPY . /app
 # Create necessary directories with proper permissions
 RUN mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs /app/.deno && \
     chown -R umtk:umtk /app
+
+# Expose web UI port
+EXPOSE 2120
 
 # Copy and prepare the entrypoint
 COPY docker-entrypoint.sh /entrypoint.sh

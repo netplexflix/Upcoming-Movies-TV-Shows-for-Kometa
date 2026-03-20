@@ -30,8 +30,19 @@ __pycache__/
 Thumbs.db
 
 # Logs
+logs/
 *.log
 
 # Temporary files
 *.tmp
 *.temp
+
+# Archives
+*.zip
+
+# Runtime data
+config/config.yml
+config/tssk_config.yml
+config/status.json
+kometa/
+video/
