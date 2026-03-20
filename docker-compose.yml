@@ -2,7 +2,6 @@ services:
   umtk:
     image: netplexflix/umtk:latest
     container_name: umtk
-    network_mode: "host" # Use host network to access localhost services
     ports:
       - "2120:2120" # Web UI
     environment:
