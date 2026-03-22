@@ -1932,8 +1932,8 @@ function gatherBlocks(prefix) {
 
         /* Known & existing rows */
         section.querySelectorAll('.block-row').forEach(row => {
-            const keyEl = row.querySelector('.block-key');
-            const key = keyEl ? keyEl.textContent.trim() : null;
+            const bkeyEl = row.querySelector('[data-bkey]');
+            const key = bkeyEl ? bkeyEl.dataset.bkey : null;
             if (!key) return;
 
             const typeSpec = BLOCK_KEY_TYPES[key];

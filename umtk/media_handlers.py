@@ -4,9 +4,7 @@ Media handling functions for UMTK - trailers, placeholders, and cleanup
 
 import os
 import re
-import json
 import shutil
-import subprocess
 import yt_dlp
 from pathlib import Path, PureWindowsPath
 from datetime import datetime, timedelta, timezone
@@ -31,38 +29,44 @@ def _title_matches(video_title: str, content_title: str) -> bool:
     """Check if video title matches content title"""
     base = _normalize(_base_title(content_title))
     vt = _normalize(video_title)
-    return base and base in vt
+    if not base:
+        return False
+    # For short titles (3 chars or fewer), require word boundary match
+    if len(base) <= 3:
+        return bool(re.search(r'\b' + re.escape(base) + r'\b', vt))
+    return base in vt
 
 
 def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None):
     """Return the best matching trailer info from YouTube (dict) or None."""
     search_terms = [
-        f"{content_title} {year} trailer" if year else None,
-        f"{content_title} {year} official trailer" if year else None,
-        f"{content_title} {year} teaser" if year else None,
+        f"{content_title} {year} official trailer" if year else f"{content_title} official trailer",
+        f"{content_title} {year} trailer" if year else f"{content_title} trailer",
         f"{content_title} trailer",
-        f"{content_title} official trailer",
         f"{content_title} teaser",
-        f"{content_title} official teaser",
-        f"{content_title} first look",
     ]
-    search_terms = [t for t in search_terms if t]
+    # Deduplicate while preserving order
+    search_terms = list(dict.fromkeys(search_terms))
 
     avoid_keywords = [
         'reaction','review','breakdown','analysis','explained','easter eggs','theory',
         'predictions','recap','commentary','first time watching','blind reaction',
-        'behind the scenes','fan made','concept','music video','news','interview'
+        'behind the scenes','fan made','concept','music video','news','interview',
+        'parody','spoof','honest trailer','pitch meeting','everything wrong',
+        'comparison','ranking','top 10','top 5','best scenes',
+        'cast interview','press tour','red carpet','premiere','panel',
+        'ending explained','scene','clip',
     ]
 
     preferred_channels = {
-        "Netflix", "Prime Video", "HBO Max", "Max", "Apple TV", "Apple TV+",
-        "Marvel Entertainment", "Star Wars", "Lucasfilm", "Disney Plus",
-        "Disney", "Pixar", "Paramount Pictures", "Sony Pictures Entertainment",
-        "Warner Bros. Pictures", "Universal Pictures", "20th Century Studios",
-        "Lionsgate Movies", "BBC", "Peacock", "AMC", "Showtime", "Starz",
-        "netflix","hbo","max","amazon","prime video","disney","marvel","lucasfilm",
-        "apple tv","paramount","showtime","starz","fx","amc","peacock","universal",
-        "sony pictures","warner bros","20th century","lionsgate","bbc","itv","channel 4","hulu"
+        "netflix", "prime video", "hbo max", "max", "apple tv", "apple tv+",
+        "marvel entertainment", "star wars", "lucasfilm", "disney plus",
+        "disney", "pixar", "paramount pictures", "sony pictures entertainment",
+        "warner bros. pictures", "universal pictures", "20th century studios",
+        "lionsgate movies", "bbc", "peacock", "amc", "showtime", "starz",
+        "hbo", "amazon", "paramount", "universal", "sony pictures",
+        "warner bros", "20th century", "lionsgate", "itv", "channel 4",
+        "hulu", "fx networks", "amc+",
     }
 
     if debug:
@@ -72,29 +76,39 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
 
     best = None
     best_score = -1
+    cookies_path = get_cookies_path()
 
     for term in search_terms:
         try:
             if debug:
                 print(f"{BLUE}[DEBUG] Trying search term: '{term}'{RESET}")
 
-            cmd = ['yt-dlp','--dump-json','--no-warnings','--flat-playlist', f'ytsearch15:{term}']
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+                'skip_download': True,
+                'socket_timeout': 10,
+            }
+            if cookies_path:
+                ydl_opts['cookiefile'] = cookies_path
 
-            if res.returncode != 0 or not res.stdout.strip():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                results = ydl.extract_info(f'ytsearch15:{term}', download=False)
+
+            entries = results.get('entries', []) if results else []
+            if not entries:
                 if debug:
                     print(f"{ORANGE}[DEBUG] No results for '{term}'{RESET}")
                 continue
 
-            for line in res.stdout.strip().splitlines():
-                try:
-                    info = json.loads(line)
-                except json.JSONDecodeError:
+            for info in entries:
+                if not info:
                     continue
 
                 title = info.get('title') or ''
-                vid   = info.get('id') or ''
-                up    = info.get('uploader') or 'Unknown'
+                vid   = info.get('id') or info.get('url') or ''
+                up    = info.get('uploader') or info.get('channel') or 'Unknown'
                 dur   = info.get('duration')
 
                 if not title or not vid:
@@ -120,12 +134,18 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
                 if 'trailer'  in tl: score += 2
                 if 'teaser'   in tl: score += 1
 
-                if up.strip() in preferred_channels:
+                up_lower = up.strip().lower()
+                if up_lower in preferred_channels:
                     score += 20
-                elif any(ch in up.lower() for ch in preferred_channels):
+                elif any(up_lower.startswith(ch) or ch.startswith(up_lower) for ch in preferred_channels):
                     score += 5
 
-                if year and str(year) in tl: score += 2
+                if year and str(year) in tl:
+                    score += 2
+                elif year:
+                    found_years = re.findall(r'\b((?:19|20)\d{2})\b', tl)
+                    if found_years and str(year) not in found_years:
+                        score -= 5
 
                 if score > best_score:
                     d = int(dur) if isinstance(dur, (int, float)) else 0
@@ -139,11 +159,16 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
                         'url': f'https://www.youtube.com/watch?v={vid}',
                         'is_official': True
                     }
+                    # Early exit: official channel + "trailer" in title
+                    if best_score >= 22:
+                        if debug:
+                            print(f"{BLUE}[DEBUG] High-confidence match (score={best_score}), stopping search{RESET}")
+                        break
 
-        except subprocess.TimeoutExpired:
-            if debug:
-                print(f"{ORANGE}[DEBUG] Search timeout for '{term}'{RESET}")
-            continue
+            # Early exit from outer loop too
+            if best_score >= 22:
+                break
+
         except Exception as e:
             if debug:
                 print(f"{ORANGE}[DEBUG] Search error: {e}{RESET}")
@@ -240,20 +265,20 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
                 'outtmpl': str(output_path),
                 'noplaylist': True,
                 'postprocessors': [{
-                    'key': 'FFmpegVideoConvertor',
-                    'preferedformat': 'mkv'
+                    'key': 'FFmpegVideoRemuxer',
+                    'preferedformat': 'mkv',
                 }],
                 'ignoreerrors': False,
                 'quiet': not debug,
                 'no_warnings': not debug,
                 'extractor_args': {'youtube': {'player_js_version': ['actual']}}
             }
-            
+
             if cookies_path:
                 ydl_opts['cookiefile'] = cookies_path
                 if debug:
                     print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
-            
+
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -263,11 +288,11 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         print(f"Downloading trailer for {show['title']} (prefer 1080p MKV/MP4)...")
 
         try:
-            _run('(bv*[ext=mkv][height=1080]+ba/b[ext=mkv][height=1080]) / (bv*[ext=mp4][height=1080]+ba[ext=m4a]/b[ext=mp4][height=1080]) / (bv*[height=1080]+ba/b[height=1080])')
+            _run('bestvideo[height=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height=1080]+bestaudio/best[height=1080]')
         except Exception as e1:
             if debug:
                 print(f"{ORANGE}[DEBUG] 1080p exact failed ({e1}); trying best <=1080p{RESET}")
-            _run('(bv*[ext=mkv][height<=1080]+ba/b[ext=mkv][height<=1080]) / (bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]) / (bv*[height<=1080]+ba/b[height<=1080])')
+            _run('bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]')
 
         downloaded_files = list(season_00_path.glob(f"{clean_title}.S00E00.Trailer.*"))
         if downloaded_files:
@@ -395,20 +420,20 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
                 'outtmpl': str(output_path),
                 'noplaylist': True,
                 'postprocessors': [{
-                    'key': 'FFmpegVideoConvertor',
-                    'preferedformat': 'mkv'
+                    'key': 'FFmpegVideoRemuxer',
+                    'preferedformat': 'mkv',
                 }],
                 'ignoreerrors': False,
                 'quiet': not debug,
                 'no_warnings': not debug,
                 'extractor_args': {'youtube': {'player_js_version': ['actual']}}
             }
-            
+
             if cookies_path:
                 ydl_opts['cookiefile'] = cookies_path
                 if debug:
                     print(f"{BLUE}[DEBUG] Using cookies file: {cookies_path}{RESET}")
-            
+
             if debug:
                 print(f"{BLUE}[DEBUG] yt-dlp opts (format): {format_string}{RESET}")
                 print(f"{BLUE}[DEBUG] URL: {trailer_info['url']}{RESET}")
@@ -418,11 +443,11 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         print(f"Downloading trailer for {movie['title']} (prefer 1080p MKV/MP4)...")
 
         try:
-            _run('(bv*[ext=mkv][height=1080]+ba/b[ext=mkv][height=1080]) / (bv*[ext=mp4][height=1080]+ba[ext=m4a]/b[ext=mp4][height=1080]) / (bv*[height=1080]+ba/b[height=1080])')
+            _run('bestvideo[height=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height=1080]+bestaudio/best[height=1080]')
         except Exception as e1:
             if debug:
                 print(f"{ORANGE}[DEBUG] 1080p exact failed ({e1}); trying best <=1080p{RESET}")
-            _run('(bv*[ext=mkv][height<=1080]+ba/b[ext=mkv][height<=1080]) / (bv*[ext=mp4][height<=1080]+ba[ext=m4a]/b[ext=mp4][height<=1080]) / (bv*[height<=1080]+ba/b[height<=1080])')
+            _run('bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]')
 
         downloaded_files = list(target_path.glob(f"{file_name}.*"))
         if downloaded_files:
