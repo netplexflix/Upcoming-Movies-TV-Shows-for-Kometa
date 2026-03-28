@@ -50,7 +50,7 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [Step 4: Configure Your Config Settings](#2.4)
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
 - [🖥️ Web UI](#web-ui)
-- [⚙️ Configuration](#️-configuration)
+- [⚙️ Configuration](#configuration)
   - [General](#general)
   - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
   - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
@@ -60,8 +60,8 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
   - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
-- [🗂️ Create your Coming Soon Collection](#️-create-your-coming-soon-collection)
-- [☄️ Add to Kometa Configuration](#️-add-to-kometa-configuration)
+- [🗂️ Create your Coming Soon Collection](#create-coming-soon-collection)
+- [☄️ Add to Kometa Configuration](#add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
 - [📼 Placeholder Video (Method 2)](#-choose-placeholder-video-method-2)
 - [🚀 Usage](#-usage)
@@ -78,6 +78,7 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [❌ "No config.yml found"](#-no-configyml-found)
   - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
+  - [❌ Plex Error: label: RequestNeeded not found / Plex Error: label: Coming Soon not found](#plex-error-label-not-found)
 
 ---
 <a id="installation"></a>
@@ -140,14 +141,7 @@ services:
    - `video` folder (for placeholder videos)
    - `kometa` folder (for generated YAML files) 
 
-2. **Download the required files**:
-   - Go to the [GitHub repository](https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa)
-   - Download `config/config.sample.yml` and save it as `config/config.yml` in your UMTK folder
-   - If using TSSK: Download `config/tssk_config.sample.yml` and save it as `config/tssk_config.yml`
-   - Download `video/UMTK.mp4` and save it in your `video` folder (if using placeholder method)
-   - You can also use your own video file. Just make sure it is called `UMTK`.
-
-3. **Create your UMTK video file roots**:
+2. **Create your UMTK video file roots**:
    - These will be the folders UMTK creates the trailer or placeholder files in. Make sure it's not within your Arr root path.
    - For example if your Arr roots are `/mnt/media/movies` and `/mnt/media/tv`then you can create `/mnt/media/umtk/movies` and `/mnt/media/umtk/tv`
    - These are the UMTK roots you have to mount in your docker-compose
@@ -263,6 +257,7 @@ Features:
 
 ---
 
+<a id="configuration"></a>
 ## ⚙️ Configuration
 
 Rename `config.sample.yml` to `config.yml` and update your settings:
@@ -435,6 +430,7 @@ Each category has its own collection and overlay blocks, following the same patt
 
 ---
 
+<a id="create-coming-soon-collection"></a>
 ## 🗂️ Create your Coming Soon Collection
 
 In the config example, we use `build_collection: false`.<br>
@@ -447,6 +443,7 @@ You can replace `build_collection: false` with your own [Kometa collection varia
 
 ---
 
+<a id="add-to-kometa-configuration"></a>
 ## ☄️ Add to Kometa Configuration
 
 Open your **Kometa** config.yml (typically at `Kometa/config/config.yml`) and add the path to the generated .yml files under `collection_files` and `overlay_files`.
@@ -661,6 +658,11 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 - That means you have those items monitored in Radarr/Sonarr but not downloaded.
 - You need to either trigger them to download if you want them, or unmonitor them if you don't. Basically your Arrs needed a cleanup.
 - Alternatively, set `future_only` and/or `future_only_tv` to `true` if you don't want any items that have been released to show up as Coming Soon.
+
+<a id="plex-error-label-not-found"></a>
+### ❌ Plex Error: label: RequestNeeded not found / Plex Error: label: Coming Soon not found
+- This happens when using the TSSK new show overlay file at a time where one of these labels are not present in your Plex library. Kometa needs these labels to 'exist' somewhere in your library or it will throw this error
+- To solve this: edit any of your collections in Plex, and add the labels `Coming Soon` and `RequestNeeded` to it. This way the labels "exist" and it will not impact anything else.
 
 ---
 

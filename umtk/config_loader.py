@@ -4,6 +4,7 @@ Configuration loading and management for UMTK
 
 import os
 import sys
+import shutil
 import yaml
 from pathlib import Path
 from copy import deepcopy
@@ -27,8 +28,21 @@ def load_config(file_path=None):
         with open(file_path, 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        print(f"Config file '{file_path}' not found.")
-        sys.exit(1)
+        # Try to auto-copy from sample file
+        sample_path = Path(str(file_path)).parent / 'config.sample.yml'
+        if sample_path.exists():
+            print(f"{ORANGE}Config file '{file_path}' not found. Copying from sample...{RESET}")
+            shutil.copy2(str(sample_path), str(file_path))
+            print(f"{GREEN}Created '{file_path}' from sample. Please edit it with your settings.{RESET}")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return yaml.safe_load(f)
+            except Exception as e:
+                print(f"Error reading copied config file: {e}")
+                sys.exit(1)
+        else:
+            print(f"Config file '{file_path}' not found and no sample available.")
+            sys.exit(1)
     except yaml.YAMLError as e:
         print(f"Error parsing YAML config file: {e}")
         sys.exit(1)

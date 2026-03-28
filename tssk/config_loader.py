@@ -2,6 +2,7 @@
 
 import os
 import sys
+import shutil
 import yaml
 from pathlib import Path
 
@@ -72,9 +73,23 @@ def load_tssk_config(file_path=None):
             config = yaml.safe_load(file)
             return config if config else {}
     except FileNotFoundError:
-        print(f"{RED}TSSK config file '{file_path}' not found.{RESET}")
-        print(f"{ORANGE}Please create it from tssk_config.sample.yml or disable TSSK with enable_tssk: false{RESET}")
-        return None
+        # Try to auto-copy from sample file
+        sample_path = Path(file_path).parent / 'tssk_config.sample.yml'
+        if sample_path.exists():
+            print(f"{ORANGE}TSSK config file '{file_path}' not found. Copying from sample...{RESET}")
+            shutil.copy2(str(sample_path), str(file_path))
+            print(f"{GREEN}Created '{file_path}' from sample. Please edit it with your settings.{RESET}")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                    return config if config else {}
+            except Exception as e:
+                print(f"{RED}Error reading copied TSSK config file: {e}{RESET}")
+                return None
+        else:
+            print(f"{RED}TSSK config file '{file_path}' not found.{RESET}")
+            print(f"{ORANGE}Please create it from tssk_config.sample.yml or disable TSSK with enable_tssk: false{RESET}")
+            return None
     except yaml.YAMLError as e:
         print(f"{RED}Error parsing TSSK config file: {e}{RESET}")
         return None

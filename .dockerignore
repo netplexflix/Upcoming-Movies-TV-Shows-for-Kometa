@@ -46,3 +46,4 @@ config/tssk_config.yml
 config/status.json
 kometa/
 video/
+!video/UMTK.mkv

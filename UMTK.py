@@ -5,14 +5,114 @@ Main entry point and orchestrator for UMTK and TSSK.
 """
 
 import os
+import re
 import sys
+from datetime import datetime
+from pathlib import Path
+
 from umtk.constants import VERSION, BLUE, GREEN, ORANGE, RED, RESET
 from umtk.config_loader import load_config, load_localization
 from umtk.updater import check_for_updates
 
 
+def _get_config_dir():
+    """Return the config directory path."""
+    if os.environ.get('DOCKER') == 'true':
+        return Path('/app/config')
+    return Path(__file__).parent / 'config'
+
+
+class _TeeToFile:
+    """Write to both an original stream and a log file, stripping ANSI from the file copy."""
+
+    _ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+    def __init__(self, original, log_file):
+        self._original = original
+        self._log_file = log_file
+
+    def write(self, data):
+        if data:
+            self._original.write(data)
+            try:
+                clean = self._ANSI_RE.sub('', data)
+                self._log_file.write(clean)
+                self._log_file.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        self._original.flush()
+        try:
+            self._log_file.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
+
+class _RunLogger:
+    """Context manager that tees all stdout/stderr to a timestamped log file for a single run."""
+
+    MAX_LOGS = 20
+
+    def __init__(self):
+        self._log_dir = _get_config_dir() / 'logs'
+        self._log_file = None
+        self._old_stdout = None
+        self._old_stderr = None
+
+    def __enter__(self):
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_path = self._log_dir / f'UMTK_{timestamp}.log'
+        try:
+            self._log_file = open(log_path, 'w', encoding='utf-8', errors='replace')
+        except Exception:
+            return self
+
+        self._old_stdout = sys.stdout
+        self._old_stderr = sys.stderr
+        sys.stdout = _TeeToFile(self._old_stdout, self._log_file)
+        sys.stderr = _TeeToFile(self._old_stderr, self._log_file)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._old_stdout is not None:
+            sys.stdout = self._old_stdout
+        if self._old_stderr is not None:
+            sys.stderr = self._old_stderr
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+        self._cleanup_old_logs()
+        return False
+
+    def _cleanup_old_logs(self):
+        """Keep only the most recent MAX_LOGS log files."""
+        try:
+            log_files = sorted(self._log_dir.glob('UMTK_*.log'))
+            if len(log_files) > self.MAX_LOGS:
+                for old_file in log_files[:-self.MAX_LOGS]:
+                    try:
+                        old_file.unlink()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
 def run():
     """Run UMTK and/or TSSK based on config enable flags."""
+    with _RunLogger():
+        _run_inner()
+
+
+def _run_inner():
+    """The actual run logic, wrapped by run() for per-run logging."""
     print(f"{BLUE}{'*' * 50}")
     print(f"{'*' * 1}Upcoming Movies & TV Shows for Kometa {VERSION}{'*' * 1}")
     print(f"{'*' * 50}{RESET}")
@@ -91,7 +191,6 @@ def run():
 
 if __name__ == "__main__":
     try:
-        from datetime import datetime
         from umtk.scheduler_state import SchedulerState
         from umtk.scheduler import get_cron_schedule, run_on_schedule
 

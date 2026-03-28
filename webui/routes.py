@@ -1,6 +1,9 @@
 """Flask routes and config metadata for UMTK Web UI."""
 
 import os
+import sys
+import subprocess
+import time
 import yaml
 import requests
 from datetime import datetime, timedelta
@@ -228,6 +231,68 @@ def _resolve_arr_api_url(base_url, api_key, service='radarr'):
         except Exception:
             continue
     return None
+
+
+# ── yt-dlp version info ────────────────────────────────────────────────────
+_ytdlp_info_cache = {"data": None, "timestamp": 0}
+_YTDLP_CACHE_TTL = 300  # 5 minutes
+
+
+def _get_ytdlp_info():
+    """Get yt-dlp version info and check for updates. Cached for 5 minutes."""
+    now = time.time()
+    if _ytdlp_info_cache["data"] and (now - _ytdlp_info_cache["timestamp"]) < _YTDLP_CACHE_TTL:
+        return _ytdlp_info_cache["data"]
+
+    installed_version = None
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--version"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            installed_version = result.stdout.strip()
+    except Exception:
+        pass
+
+    if not installed_version:
+        info = {
+            "name": "yt-dlp", "service": "ytdlp", "online": False,
+            "message": "Not installed", "responseTime": 0,
+            "version": None, "latestVersion": None, "updateAvailable": False,
+        }
+        _ytdlp_info_cache["data"] = info
+        _ytdlp_info_cache["timestamp"] = now
+        return info
+
+    latest_version = None
+    update_available = False
+    try:
+        resp = requests.get(
+            "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
+            timeout=5
+        )
+        resp.raise_for_status()
+        latest_version = resp.json().get("tag_name", "").lstrip("v")
+        if latest_version and installed_version:
+            try:
+                installed_parts = tuple(int(x) for x in installed_version.split('.'))
+                latest_parts = tuple(int(x) for x in latest_version.split('.'))
+                update_available = latest_parts > installed_parts
+            except Exception:
+                update_available = latest_version != installed_version
+    except Exception:
+        pass
+
+    info = {
+        "name": "yt-dlp", "service": "ytdlp", "online": True,
+        "message": f"v{installed_version}", "responseTime": 0,
+        "version": installed_version, "latestVersion": latest_version,
+        "updateAvailable": update_available,
+    }
+    _ytdlp_info_cache["data"] = info
+    _ytdlp_info_cache["timestamp"] = now
+    return info
 
 
 # ── Route registration ─────────────────────────────────────────────────────
@@ -556,7 +621,39 @@ def register_routes(app):
         else:
             services.append({'name': 'Sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
+        services.append(_get_ytdlp_info())
+
         return jsonify(services)
+
+    # ── yt-dlp update ──────────────────────────────────────────────────
+    @app.route("/api/ytdlp/update", methods=["POST"])
+    def api_ytdlp_update():
+        """Update yt-dlp via pip."""
+        try:
+            import glob as _glob
+            site_pkg = os.path.join(os.path.dirname(os.__file__), 'site-packages')
+            for bad in _glob.glob(os.path.join(site_pkg, '~t-dlp*')):
+                import shutil
+                shutil.rmtree(bad, ignore_errors=True)
+
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp[default]"],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                _ytdlp_info_cache["timestamp"] = 0
+                ver_result = subprocess.run(
+                    ["yt-dlp", "--version"],
+                    capture_output=True, text=True, timeout=5
+                )
+                new_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
+                return jsonify({"ok": True, "version": new_version})
+            else:
+                return jsonify({"ok": False, "error": result.stderr[-500:] if result.stderr else "pip upgrade failed"})
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": "Update timed out (120s)"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
 
     # ── Log ────────────────────────────────────────────────────────────
     @app.route("/api/log")

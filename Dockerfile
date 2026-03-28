@@ -50,9 +50,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy files
 COPY . /app
 
+# Copy default UMTK video (excluded by .dockerignore via video/)
+COPY video/UMTK.mkv /app/UMTK.mkv
+
 # Create necessary directories with proper permissions
-RUN mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs /app/.deno && \
+RUN mkdir -p /app/config /video /app/kometa /app/config/overlay /app/logs /app/.deno && \
     chown -R umtk:umtk /app
+
+# Copy sample configs outside the config volume mount point so they survive bind mounts
+# (when users mount ./config:/app/config, it overlays the built-in /app/config/)
+RUN cp /app/config/config.sample.yml /app/config.sample.yml 2>/dev/null || true && \
+    cp /app/config/tssk_config.sample.yml /app/tssk_config.sample.yml 2>/dev/null || true
 
 # Expose web UI port
 EXPOSE 2120

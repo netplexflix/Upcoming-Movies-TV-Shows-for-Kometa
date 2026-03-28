@@ -14,6 +14,16 @@ log() {
     echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Extract a simple YAML key value from config file
+# Usage: get_config_value "key_name" "/path/to/config.yml"
+get_config_value() {
+    local key="$1"
+    local file="$2"
+    if [ -f "$file" ]; then
+        grep -E "^${key}:" "$file" 2>/dev/null | sed "s/^${key}:[[:space:]]*//" | sed "s/['\"]//g" | sed 's/#.*//' | sed 's/[[:space:]]*$//'
+    fi
+}
+
 # Handle PUID/PGID environment variables
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
@@ -43,7 +53,7 @@ fi
 
 # Check and setup directories (as root)
 log "${BLUE}Setting up directories...${NC}"
-mkdir -p /app/config /app/video /app/kometa /app/config/overlay /app/logs
+mkdir -p /app/config /video /app/kometa /app/config/overlay /app/logs
 
 # Check if config exists, if not copy sample or create minimal config
 if [ ! -f /app/config/config.yml ]; then
@@ -75,16 +85,33 @@ CFGEOF
     fi
 fi
 
+# Check if tssk_config exists, if not copy sample
+if [ ! -f /app/config/tssk_config.yml ]; then
+    log "${YELLOW}tssk_config.yml not found, checking for sample config...${NC}"
+    if [ -f /app/config/tssk_config.sample.yml ]; then
+        cp /app/config/tssk_config.sample.yml /app/config/tssk_config.yml
+        log "${GREEN}Copied tssk_config.sample.yml to tssk_config.yml${NC}"
+        log "${YELLOW}Please edit /app/config/tssk_config.yml with your settings${NC}"
+    elif [ -f /app/tssk_config.sample.yml ]; then
+        cp /app/tssk_config.sample.yml /app/config/tssk_config.yml
+        log "${GREEN}Copied bundled tssk_config.sample.yml to tssk_config.yml${NC}"
+        log "${YELLOW}Please edit /app/config/tssk_config.yml with your settings${NC}"
+    else
+        log "${YELLOW}No tssk_config.sample.yml found — TSSK will use defaults or be skipped${NC}"
+    fi
+fi
+
 # Check if video file exists for placeholder method
+# Note: /video is the volume mount point (not /app/video)
 if grep -E "^(tv|movies):\s*2" /app/config/config.yml > /dev/null 2>&1; then
-    if ! ls /app/video/UMTK.* 1> /dev/null 2>&1; then
-        log "${YELLOW}Placeholder method detected but no UMTK video file found${NC}"
+    if ! ls /video/UMTK.mkv 1> /dev/null 2>&1; then
+        log "${YELLOW}Placeholder method detected but no UMTK video file found in /video/${NC}"
         # Look for UMTK video files in the app directory and copy if found
-        if ls /app/UMTK.* 1> /dev/null 2>&1; then
-            cp /app/UMTK.* /app/video/
-            log "${GREEN}Copied default UMTK video file to video directory${NC}"
+        if ls /app/UMTK.mkv 1> /dev/null 2>&1; then
+            cp /app/UMTK.mkv /video/
+            log "${GREEN}Copied default UMTK video file to /video/${NC}"
         else
-            log "${YELLOW}No default video file found. Please add UMTK video file to /app/video/${NC}"
+            log "${YELLOW}No default video file found. Please add UMTK video file to /video/${NC}"
         fi
     else
         log "${GREEN}UMTK video file found for placeholder method${NC}"
@@ -126,6 +153,40 @@ fi
 mkdir -p /app/logs
 chown -R $PUID:$PGID /app/logs 2>/dev/null || true
 chmod -R u+rw /app/logs 2>/dev/null || true
+
+# Pre-create media root directories from config (runs as root)
+# This ensures paths like /data/media/movies exist with proper ownership
+# before switching to the unprivileged user via gosu
+CONFIG_FILE="/app/config/config.yml"
+if [ -f "$CONFIG_FILE" ]; then
+    UMTK_ROOT_MOVIES=$(get_config_value "umtk_root_movies" "$CONFIG_FILE")
+    UMTK_ROOT_TV=$(get_config_value "umtk_root_tv" "$CONFIG_FILE")
+
+    if [ -n "$UMTK_ROOT_MOVIES" ]; then
+        log "${BLUE}Ensuring movie root directory exists: $UMTK_ROOT_MOVIES${NC}"
+        mkdir -p "$UMTK_ROOT_MOVIES" 2>/dev/null && chown $PUID:$PGID "$UMTK_ROOT_MOVIES" 2>/dev/null
+        log "${GREEN}Movie root directory ready${NC}"
+    fi
+
+    if [ -n "$UMTK_ROOT_TV" ]; then
+        log "${BLUE}Ensuring TV root directory exists: $UMTK_ROOT_TV${NC}"
+        mkdir -p "$UMTK_ROOT_TV" 2>/dev/null && chown $PUID:$PGID "$UMTK_ROOT_TV" 2>/dev/null
+        log "${GREEN}TV root directory ready${NC}"
+    fi
+else
+    log "${YELLOW}Config file not found yet, skipping media directory pre-creation${NC}"
+fi
+
+# Ensure common Docker volume mount points exist with proper ownership
+for mount_point in /umtkmovies /umtktv; do
+    if [ ! -d "$mount_point" ]; then
+        mkdir -p "$mount_point" 2>/dev/null
+        chown $PUID:$PGID "$mount_point" 2>/dev/null
+        log "${GREEN}Created mount point: $mount_point${NC}"
+    else
+        chown $PUID:$PGID "$mount_point" 2>/dev/null || true
+    fi
+done
 
 # Function to fix media directory permissions
 fix_media_permissions() {

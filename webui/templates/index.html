@@ -940,6 +940,16 @@ select { min-width: 120px; }
     margin-left: auto;
 }
 
+.service-version { font-size: 13px; color: var(--text-primary); }
+.service-update-info { font-size: 11px; color: var(--text-secondary); }
+.service-update-btn {
+    margin-top: 6px; padding: 3px 10px; font-size: 12px; font-weight: 500;
+    border: none; border-radius: 6px; background: var(--accent); color: #fff;
+    cursor: pointer; transition: opacity 0.2s;
+}
+.service-update-btn:hover { opacity: 0.85; }
+.service-update-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Mobile / Responsive ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
     /* Navbar: stack brand above nav links */
@@ -2246,8 +2256,30 @@ function _initManualDrag() {
 const SERVICE_LOGOS = {
     Plex: '/static/plex_logo.png',
     Radarr: '/static/radarr_logo.png',
-    Sonarr: '/static/sonarr_logo.png'
+    Sonarr: '/static/sonarr_logo.png',
+    'yt-dlp': '/static/ytdlp_logo.png'
 };
+
+async function updateYtdlp(btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+        const res = await fetch('/api/ytdlp/update', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+            showToast('yt-dlp updated to v' + data.version, 'success');
+            fetchDashboardServices();
+        } else {
+            showToast('yt-dlp update failed: ' + (data.error || 'Unknown error'), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Update';
+        }
+    } catch (e) {
+        showToast('yt-dlp update failed', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Update';
+    }
+}
 
 async function fetchDashboardServices() {
     try {
@@ -2263,6 +2295,38 @@ function renderServices(services) {
     let html = '';
     services.forEach(svc => {
         const logoSrc = SERVICE_LOGOS[svc.name] || '';
+
+        if (svc.service === 'ytdlp') {
+            const isOnline = svc.online;
+            let statusHtml = '';
+            let updateBtn = '';
+            if (!isOnline) {
+                statusHtml = `
+                    <span class="service-dot offline"></span>
+                    <span class="service-status-label" style="color:var(--danger)">${escapeHtml(svc.message)}</span>`;
+            } else {
+                const versionText = svc.version ? `v${escapeHtml(svc.version)}` : '';
+                statusHtml = `
+                    <span class="service-dot online"></span>
+                    <span class="service-version">${versionText}</span>`;
+                if (svc.updateAvailable && svc.latestVersion) {
+                    statusHtml += `<span class="service-update-info" style="color:var(--warning)">Update available (v${escapeHtml(svc.latestVersion)})</span>`;
+                    updateBtn = `<button class="service-update-btn" onclick="updateYtdlp(this)">Update</button>`;
+                } else if (svc.version) {
+                    statusHtml += `<span class="service-update-info" style="color:var(--success)">Up to date</span>`;
+                }
+            }
+            html += `<div class="service-card">
+                <div class="service-logo">${logoSrc ? `<img src="${logoSrc}" alt="yt-dlp" style="width:30px;height:30px;object-fit:contain">` : ''}</div>
+                <div class="service-info">
+                    <div class="service-name">yt-dlp</div>
+                    <div class="service-status-row">${statusHtml}</div>
+                    ${updateBtn}
+                </div>
+            </div>`;
+            return;
+        }
+
         const isOnline = svc.online;
         const statusColor = isOnline ? 'var(--success)' : 'var(--danger)';
         const statusText = isOnline ? 'Online' : 'Offline';
