@@ -697,14 +697,6 @@ def register_routes(app):
                 [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "yt-dlp[default]"],
                 capture_output=True, text=True, timeout=120
             )
-            # Fallback: if pip fails due to filesystem permission issues (common on unRAID
-            # where HOME=/ and /.local isn't writable), use yt-dlp's own self-updater
-            # which downloads a pre-built binary directly from GitHub.
-            if result.returncode != 0 and ("Permission denied" in result.stderr or "Errno 13" in result.stderr):
-                result = subprocess.run(
-                    ["yt-dlp", "-U"],
-                    capture_output=True, text=True, timeout=120
-                )
             if result.returncode == 0:
                 _ytdlp_info_cache["timestamp"] = 0
                 ver_result = subprocess.run(
