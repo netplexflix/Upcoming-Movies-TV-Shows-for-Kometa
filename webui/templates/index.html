@@ -1112,6 +1112,24 @@ select { min-width: 120px; }
     }
 }
 
+/* ── Unsaved changes banner ──────────────────────────────────────────── */
+.unsaved-banner {
+    position: sticky;
+    top: 56px;
+    z-index: 99;
+    background: #3d2600;
+    border-bottom: 1px solid var(--warning);
+    color: var(--text-primary);
+    padding: 8px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    gap: 12px;
+}
+.unsaved-banner span { display: flex; align-items: center; gap: 6px; }
+.unsaved-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
 </style>
 </head>
 <body>
@@ -1127,6 +1145,15 @@ select { min-width: 120px; }
         <a href="#" data-page="log">Log</a>
     </div>
 </nav>
+
+<!-- ── Unsaved changes banner ─────────────────────────────────────────── -->
+<div id="unsaved-banner" class="unsaved-banner" style="display:none">
+    <span>⚠ You have unsaved changes</span>
+    <div class="unsaved-banner-actions">
+        <button class="btn btn-sm" onclick="bannerSave()">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="bannerDiscard()">Discard</button>
+    </div>
+</div>
 
 <div class="container">
 
@@ -1263,11 +1290,76 @@ const BLOCK_KEY_HINTS = {
     build_collection: 'Off = Kometa manages labels only (recommended). On = Kometa creates the collection directly.',
 };
 
+/* ── Dirty-state tracking ───────────────────────────────────────────────── */
+const _settingsPages = new Set(['connections', 'umtk', 'tssk']);
+const _dirtyPages = new Set();
+const _pageSnapshots = {};
+const _watchedPages = new Set();
+let _currentSettingsPage = null;
+
+function _snapshotPage(pageId) {
+    const el = document.getElementById('page-' + pageId);
+    const inputs = el.querySelectorAll('input, select, textarea');
+    _pageSnapshots[pageId] = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
+    _dirtyPages.delete(pageId);
+    _updateUnsavedBanner();
+}
+
+function _watchPage(pageId) {
+    if (_watchedPages.has(pageId)) return;
+    _watchedPages.add(pageId);
+    document.getElementById('page-' + pageId).addEventListener('input', () => _checkDirty(pageId));
+    document.getElementById('page-' + pageId).addEventListener('change', () => _checkDirty(pageId));
+}
+
+function _checkDirty(pageId) {
+    const el = document.getElementById('page-' + pageId);
+    const inputs = el.querySelectorAll('input, select, textarea');
+    const current = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
+    if (current !== _pageSnapshots[pageId]) _dirtyPages.add(pageId);
+    else _dirtyPages.delete(pageId);
+    _updateUnsavedBanner();
+}
+
+function _updateUnsavedBanner() {
+    const banner = document.getElementById('unsaved-banner');
+    if (_currentSettingsPage && _dirtyPages.has(_currentSettingsPage)) {
+        banner.style.display = 'flex';
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+function bannerSave() {
+    if (_currentSettingsPage === 'connections') saveConnections();
+    else if (_currentSettingsPage === 'umtk') saveUmtk();
+    else if (_currentSettingsPage === 'tssk') saveTssk();
+}
+
+function bannerDiscard() {
+    if (_currentSettingsPage === 'connections') fetchConnections();
+    else if (_currentSettingsPage === 'umtk') fetchUmtk();
+    else if (_currentSettingsPage === 'tssk') fetchTssk();
+}
+
+window.addEventListener('beforeunload', e => {
+    if (_dirtyPages.size > 0) { e.preventDefault(); e.returnValue = ''; }
+});
+
 /* ── Navigation ────────────────────────────────────────────────────────── */
 document.querySelectorAll('.nav-links a').forEach(a => {
     a.addEventListener('click', e => {
         e.preventDefault();
         const page = a.dataset.page;
+
+        if (_currentSettingsPage && _dirtyPages.has(_currentSettingsPage) && page !== _currentSettingsPage) {
+            if (!confirm('You have unsaved changes. Leave without saving?')) return;
+            _dirtyPages.delete(_currentSettingsPage);
+        }
+
+        _currentSettingsPage = _settingsPages.has(page) ? page : null;
+        _updateUnsavedBanner();
+
         document.querySelectorAll('.nav-links a').forEach(l => l.classList.remove('active'));
         a.classList.add('active');
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1520,6 +1612,8 @@ async function fetchConnections() {
         connData = await res.json();
         _connLoaded = true;
         renderConnections();
+        _snapshotPage('connections');
+        _watchPage('connections');
     } catch (e) { showToast('Failed to load connections', 'error'); }
 }
 
@@ -1587,7 +1681,7 @@ async function saveConnections() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        if (res.ok) showToast('Connections saved', 'success');
+        if (res.ok) { showToast('Connections saved', 'success'); _snapshotPage('connections'); }
         else showToast('Failed to save', 'error');
     } catch (e) { showToast('Failed to save', 'error'); }
 }
@@ -1600,6 +1694,8 @@ async function fetchUmtk() {
         umtkData = await res.json();
         _umtkLoaded = true;
         renderUmtkSettings();
+        _snapshotPage('umtk');
+        _watchPage('umtk');
     } catch (e) { showToast('Failed to load UMTK settings', 'error'); }
 }
 
@@ -1648,7 +1744,7 @@ async function saveUmtk() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ options, blocks }),
         });
-        if (res.ok) showToast('UMTK settings saved', 'success');
+        if (res.ok) { showToast('UMTK settings saved', 'success'); _snapshotPage('umtk'); }
         else showToast('Failed to save', 'error');
     } catch (e) { showToast('Failed to save', 'error'); }
 }
@@ -1661,6 +1757,8 @@ async function fetchTssk() {
         tsskData = await res.json();
         _tsskLoaded = true;
         renderTsskSettings();
+        _snapshotPage('tssk');
+        _watchPage('tssk');
     } catch (e) { showToast('Failed to load TSSK settings', 'error'); }
 }
 
@@ -1679,7 +1777,7 @@ async function saveTssk() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ options, blocks }),
         });
-        if (res.ok) showToast('TSSK settings saved', 'success');
+        if (res.ok) { showToast('TSSK settings saved', 'success'); _snapshotPage('tssk'); }
         else showToast('Failed to save', 'error');
     } catch (e) { showToast('Failed to save', 'error'); }
 }
