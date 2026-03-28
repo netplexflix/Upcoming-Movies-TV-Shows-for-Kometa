@@ -1604,8 +1604,38 @@ async function fetchUmtk() {
 }
 
 function renderUmtkSettings() {
-    renderOptionSections(umtkData.options, document.getElementById('umtk-sections'), 'enable_umtk');
+    renderOptionSections(umtkData.options, document.getElementById('umtk-sections'), 'enable_umtk', {
+        'Trending': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`
+    });
     renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
+}
+
+async function testMdblist() {
+    const resultEl = document.getElementById('test-mdblist');
+    resultEl.className = 'test-result';
+    resultEl.textContent = 'Testing...';
+
+    const data = {};
+    umtkData.options.forEach(opt => {
+        if (opt.section === 'Trending') {
+            const el = document.querySelector(`[data-key="${opt.key}"]`);
+            if (el) data[opt.key] = opt.type === 'int' ? parseInt(el.value) : el.value;
+        }
+    });
+
+    try {
+        const res = await fetch('/api/test/mdblist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        const result = await res.json();
+        resultEl.className = 'test-result ' + (result.success ? 'success' : 'fail');
+        resultEl.textContent = result.message;
+    } catch (e) {
+        resultEl.className = 'test-result fail';
+        resultEl.textContent = 'Request failed';
+    }
 }
 
 async function saveUmtk() {
@@ -1655,7 +1685,7 @@ async function saveTssk() {
 }
 
 /* ── Shared: Render option sections ────────────────────────────────────── */
-function renderOptionSections(options, container, enableKey) {
+function renderOptionSections(options, container, enableKey, sectionButtons = {}) {
     const sections = {};
     options.forEach(opt => {
         if (!sections[opt.section]) sections[opt.section] = [];
@@ -1681,7 +1711,8 @@ function renderOptionSections(options, container, enableKey) {
             </div>`;
         }
 
-        html += `<h2>${section}</h2>`;
+        const sectionBtnHTML = sectionButtons[section] || '';
+        html += `<h2>${section}${sectionBtnHTML}</h2>`;
         const sectionId = section.toLowerCase().replace(/\s+/g, '-') + '-' + (enableKey || '');
         html += `<div id="section-opts-${sectionId}">`;
         otherOpts.forEach(opt => {

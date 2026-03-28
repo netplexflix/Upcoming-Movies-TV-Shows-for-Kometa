@@ -452,6 +452,63 @@ def register_routes(app):
         ok, msg, ms = _test_connection(url, api_key=key)
         return jsonify({"success": ok, "message": msg, "response_time": ms})
 
+    @app.route("/api/test/mdblist", methods=["POST"])
+    def api_test_mdblist():
+        data = request.get_json() or {}
+        api_key = data.get("mdblist_api_key", "").strip()
+        movies_url = data.get("mdblist_movies", "").strip()
+        tv_url = data.get("mdblist_tv", "").strip()
+
+        if not api_key:
+            return jsonify({"success": False, "message": "API key required"})
+
+        try:
+            start = time.time()
+            resp = requests.get(
+                "https://api.mdblist.com/user",
+                params={"apikey": api_key},
+                timeout=10
+            )
+            elapsed = int((time.time() - start) * 1000)
+
+            if resp.status_code == 401:
+                return jsonify({"success": False, "message": "Invalid API key"})
+            elif resp.status_code != 200:
+                return jsonify({"success": False, "message": f"API returned HTTP {resp.status_code}"})
+
+            messages = [f"API key valid ({elapsed}ms)"]
+
+            for label, url in [("Movies list", movies_url), ("TV list", tv_url)]:
+                if not url:
+                    continue
+                parts = url.rstrip('/').split('/')
+                if len(parts) < 2:
+                    messages.append(f"{label}: invalid URL format")
+                    continue
+                list_id = parts[-1]
+                username = parts[-2]
+                try:
+                    r = requests.get(
+                        f"https://api.mdblist.com/lists/{username}/{list_id}/items",
+                        params={"apikey": api_key, "limit": 1},
+                        timeout=10
+                    )
+                    if r.status_code == 200:
+                        messages.append(f"{label} OK")
+                    else:
+                        messages.append(f"{label}: HTTP {r.status_code}")
+                except Exception as e:
+                    messages.append(f"{label}: {str(e)}")
+
+            return jsonify({"success": True, "message": " | ".join(messages)})
+
+        except requests.exceptions.ConnectionError:
+            return jsonify({"success": False, "message": "Connection refused"})
+        except requests.exceptions.Timeout:
+            return jsonify({"success": False, "message": "Connection timed out"})
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)})
+
     # ── Dashboard: upcoming content ──────────────────────────────────
     @app.route("/api/dashboard/upcoming")
     def api_dashboard_upcoming():
@@ -637,9 +694,17 @@ def register_routes(app):
                 shutil.rmtree(bad, ignore_errors=True)
 
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp[default]"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "yt-dlp[default]"],
                 capture_output=True, text=True, timeout=120
             )
+            # Fallback: if pip fails due to filesystem permission issues (common on unRAID
+            # where HOME=/ and /.local isn't writable), use yt-dlp's own self-updater
+            # which downloads a pre-built binary directly from GitHub.
+            if result.returncode != 0 and ("Permission denied" in result.stderr or "Errno 13" in result.stderr):
+                result = subprocess.run(
+                    ["yt-dlp", "-U"],
+                    capture_output=True, text=True, timeout=120
+                )
             if result.returncode == 0:
                 _ytdlp_info_cache["timestamp"] = 0
                 ver_result = subprocess.run(
