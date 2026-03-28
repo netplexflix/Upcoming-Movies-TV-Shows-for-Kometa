@@ -211,11 +211,10 @@ fix_media_permissions() {
 fix_media_permissions
 
 # Allow the app user to pip-upgrade packages at runtime (e.g. yt-dlp from the web UI).
-SITE_PKG=$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null)
-if [ -n "$SITE_PKG" ]; then
-    chown -R $PUID:$PGID "$SITE_PKG" 2>/dev/null || true
-    chown -R $PUID:$PGID /usr/local/bin 2>/dev/null || true
-fi
+# pip was run as root during the image build, so /usr/local is root-owned. Re-owning
+# lib, bin, and share covers all locations pip writes to: site-packages, entry-point
+# scripts, and data files (e.g. bash completions).
+chown -R $PUID:$PGID /usr/local/lib /usr/local/bin /usr/local/share 2>/dev/null || true
 
 # Start UMTK as the configured user
 # Python handles: scheduling (CRON env var), web UI (port 2120), log capture

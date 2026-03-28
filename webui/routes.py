@@ -694,7 +694,7 @@ def register_routes(app):
                 shutil.rmtree(bad, ignore_errors=True)
 
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "yt-dlp[default]"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp[default]"],
                 capture_output=True, text=True, timeout=120
             )
             if result.returncode == 0:
