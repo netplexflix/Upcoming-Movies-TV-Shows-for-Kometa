@@ -199,7 +199,8 @@ if __name__ == "__main__":
         # Start web UI if available
         try:
             from webui import start_webui
-            start_webui(scheduler_state=sched_state)
+            webui_host = "0.0.0.0" if os.environ.get('DOCKER') == 'true' else "127.0.0.1"
+            start_webui(scheduler_state=sched_state, host=webui_host)
         except ImportError:
             pass
         except Exception as e:
