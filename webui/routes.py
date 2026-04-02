@@ -1,13 +1,20 @@
 """Flask routes and config metadata for UMTK Web UI."""
 
+import ipaddress
 import os
+import socket
 import sys
 import subprocess
 import time
+from urllib.parse import urlparse
 import yaml
 import requests
 from datetime import datetime, timedelta
 from flask import render_template, jsonify, request
+
+# Placeholder used to mask sensitive values in API responses.
+# If this exact value is sent back on save, it is ignored (the real value is kept).
+MASKED_VALUE = "********"
 
 import webui
 from umtk.constants import VERSION
@@ -136,6 +143,12 @@ TSSK_OPTIONS = [
 ]
 
 
+# ── Allowed-key whitelists (derived from option metadata above) ───────────
+_ALLOWED_CONNECTION_KEYS = {o["key"] for o in CONNECTION_OPTIONS}
+_ALLOWED_UMTK_KEYS = {o["key"] for o in UMTK_OPTIONS}
+_ALLOWED_TSSK_KEYS = {o["key"] for o in TSSK_OPTIONS}
+_ALLOWED_BLOCK_PREFIXES = ('collection_', 'backdrop_', 'text_')
+
 # ── Helper functions ───────────────────────────────────────────────────────
 
 def _load_yaml(path):
@@ -174,6 +187,14 @@ def _save_yaml(path, data):
         raise e
 
 
+def _safe_error(e):
+    """Return a sanitized error message suitable for API responses."""
+    msg = str(e)
+    if any(kw in msg.lower() for kw in ('traceback', 'errno', '/app/', '/usr/', '\\users\\')):
+        return "An internal error occurred"
+    return msg[:200]
+
+
 def _get_config_value(config, key, default=None):
     """Get a value from config with type coercion."""
     val = config.get(key)
@@ -182,9 +203,56 @@ def _get_config_value(config, key, default=None):
     return val
 
 
+def _is_url_safe(url):
+    """Validate that a URL is safe to request (SSRF protection).
+
+    Allows private-network IPs (needed for local Plex/Radarr/Sonarr) but
+    blocks link-local (169.254.x.x / cloud metadata), loopback IPv6 tricks,
+    and non-HTTP schemes.  Returns (safe: bool, reason: str).
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Invalid URL"
+
+    if parsed.scheme not in ("http", "https"):
+        return False, "Only http/https URLs are allowed"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "No hostname in URL"
+
+    # Resolve hostname to IP(s) to catch DNS rebinding to dangerous addresses
+    try:
+        infos = socket.getaddrinfo(hostname, parsed.port or 80,
+                                   proto=socket.IPPROTO_TCP)
+        addrs = {info[4][0] for info in infos}
+    except socket.gaierror:
+        # Can't resolve — let the actual request fail with a clear error
+        return True, ""
+
+    for addr_str in addrs:
+        try:
+            addr = ipaddress.ip_address(addr_str)
+        except ValueError:
+            continue
+        # Block link-local (169.254.0.0/16, fe80::/10) — covers cloud metadata
+        if addr.is_link_local:
+            return False, "Link-local addresses are not allowed"
+        # Block IPv6-mapped IPv4 link-local (::ffff:169.254.x.x)
+        if hasattr(addr, 'ipv4_mapped') and addr.ipv4_mapped and addr.ipv4_mapped.is_link_local:
+            return False, "Link-local addresses are not allowed"
+
+    return True, ""
+
+
 def _test_connection(url, api_key=None, token=None, timeout=10):
     """Test a connection to a service. Returns (success, message, response_time_ms)."""
-    import time
+    # SSRF guard — validate URL before making any request
+    safe, reason = _is_url_safe(url)
+    if not safe:
+        return False, reason, 0
+
     try:
         start = time.time()
         headers = {}
@@ -211,11 +279,14 @@ def _test_connection(url, api_key=None, token=None, timeout=10):
     except requests.exceptions.Timeout:
         return False, "Connection timed out", 0
     except Exception as e:
-        return False, str(e), 0
+        return False, _safe_error(e), 0
 
 
 def _resolve_arr_api_url(base_url, api_key, service='radarr'):
     """Resolve the working API v3 URL for a *arr service."""
+    safe, reason = _is_url_safe(base_url)
+    if not safe:
+        return None
     base = base_url.rstrip('/')
     if base.startswith('http'):
         protocol_end = base.find('://') + 3
@@ -344,6 +415,8 @@ def register_routes(app):
         result = []
         for opt in CONNECTION_OPTIONS:
             val = _get_config_value(config, opt["key"], opt["default"])
+            if opt.get("sensitive") and val:
+                val = MASKED_VALUE
             result.append({**opt, "value": val})
         return jsonify(result)
 
@@ -351,7 +424,13 @@ def register_routes(app):
     def api_save_connections():
         config = _load_yaml(webui._config_path)
         data = request.get_json()
+        sensitive_keys = {o["key"] for o in CONNECTION_OPTIONS if o.get("sensitive")}
         for key, value in data.items():
+            if key not in _ALLOWED_CONNECTION_KEYS:
+                continue
+            # Don't overwrite real credentials with the mask placeholder
+            if key in sensitive_keys and value == MASKED_VALUE:
+                continue
             config[key] = value
         _save_yaml(webui._config_path, config)
         return jsonify({"ok": True})
@@ -363,6 +442,8 @@ def register_routes(app):
         result = {"options": [], "blocks": {}}
         for opt in UMTK_OPTIONS:
             val = _get_config_value(config, opt["key"], opt["default"])
+            if opt.get("sensitive") and val:
+                val = MASKED_VALUE
             result["options"].append({**opt, "value": val})
         # Include collection/overlay blocks as raw dicts
         for key, value in config.items():
@@ -376,9 +457,18 @@ def register_routes(app):
         data = request.get_json()
         options = data.get("options", {})
         blocks = data.get("blocks", {})
+        sensitive_keys = {o["key"] for o in UMTK_OPTIONS if o.get("sensitive")}
         for key, value in options.items():
+            if key not in _ALLOWED_UMTK_KEYS:
+                continue
+            if key in sensitive_keys and value == MASKED_VALUE:
+                continue
             config[key] = value
         for key, value in blocks.items():
+            if not any(key.startswith(p) for p in _ALLOWED_BLOCK_PREFIXES):
+                continue
+            if not isinstance(value, dict):
+                continue
             config[key] = value
         _save_yaml(webui._config_path, config)
         return jsonify({"ok": True})
@@ -409,6 +499,8 @@ def register_routes(app):
         options = data.get("options", {})
         blocks = data.get("blocks", {})
         for key, value in options.items():
+            if key not in _ALLOWED_TSSK_KEYS:
+                continue
             # Check if this option should go to UMTK config
             opt_meta = next((o for o in TSSK_OPTIONS if o["key"] == key), None)
             if opt_meta and opt_meta.get("config_file") == "umtk":
@@ -416,17 +508,29 @@ def register_routes(app):
             else:
                 tssk_config[key] = value
         for key, value in blocks.items():
+            if not any(key.startswith(p) for p in _ALLOWED_BLOCK_PREFIXES):
+                continue
+            if not isinstance(value, dict):
+                continue
             tssk_config[key] = value
         _save_yaml(webui._config_path, umtk_config)
         _save_yaml(webui._tssk_config_path, tssk_config)
         return jsonify({"ok": True})
 
     # ── Connection tests ──────────────────────────────────────────────
+    def _resolve_masked(data, key):
+        """If the value is the mask placeholder, return the real value from config."""
+        val = data.get(key, "")
+        if val == MASKED_VALUE:
+            config = _load_yaml(webui._config_path)
+            return config.get(key, "")
+        return val
+
     @app.route("/api/test/plex", methods=["POST"])
     def api_test_plex():
         data = request.get_json() or {}
         url = data.get("plex_url", "")
-        token = data.get("plex_token", "")
+        token = _resolve_masked(data, "plex_token")
         if not url or not token:
             return jsonify({"success": False, "message": "URL and token required"})
         ok, msg, ms = _test_connection(url, token=token)
@@ -436,7 +540,7 @@ def register_routes(app):
     def api_test_radarr():
         data = request.get_json() or {}
         url = data.get("radarr_url", "")
-        key = data.get("radarr_api_key", "")
+        key = _resolve_masked(data, "radarr_api_key")
         if not url or not key:
             return jsonify({"success": False, "message": "URL and API key required"})
         ok, msg, ms = _test_connection(url, api_key=key)
@@ -446,7 +550,7 @@ def register_routes(app):
     def api_test_sonarr():
         data = request.get_json() or {}
         url = data.get("sonarr_url", "")
-        key = data.get("sonarr_api_key", "")
+        key = _resolve_masked(data, "sonarr_api_key")
         if not url or not key:
             return jsonify({"success": False, "message": "URL and API key required"})
         ok, msg, ms = _test_connection(url, api_key=key)
@@ -455,7 +559,7 @@ def register_routes(app):
     @app.route("/api/test/mdblist", methods=["POST"])
     def api_test_mdblist():
         data = request.get_json() or {}
-        api_key = data.get("mdblist_api_key", "").strip()
+        api_key = _resolve_masked(data, "mdblist_api_key").strip()
         movies_url = data.get("mdblist_movies", "").strip()
         tv_url = data.get("mdblist_tv", "").strip()
 
@@ -497,8 +601,8 @@ def register_routes(app):
                         messages.append(f"{label} OK")
                     else:
                         messages.append(f"{label}: HTTP {r.status_code}")
-                except Exception as e:
-                    messages.append(f"{label}: {str(e)}")
+                except Exception:
+                    messages.append(f"{label}: connection failed")
 
             return jsonify({"success": True, "message": " | ".join(messages)})
 
@@ -507,7 +611,7 @@ def register_routes(app):
         except requests.exceptions.Timeout:
             return jsonify({"success": False, "message": "Connection timed out"})
         except Exception as e:
-            return jsonify({"success": False, "message": str(e)})
+            return jsonify({"success": False, "message": _safe_error(e)})
 
     # ── Dashboard: upcoming content ──────────────────────────────────
     @app.route("/api/dashboard/upcoming")
@@ -706,18 +810,18 @@ def register_routes(app):
                 new_version = ver_result.stdout.strip() if ver_result.returncode == 0 else "unknown"
                 return jsonify({"ok": True, "version": new_version})
             else:
-                return jsonify({"ok": False, "error": result.stderr[-500:] if result.stderr else "pip upgrade failed"})
+                return jsonify({"ok": False, "error": (result.stderr or "pip upgrade failed")[-200:]})
         except subprocess.TimeoutExpired:
             return jsonify({"ok": False, "error": "Update timed out (120s)"})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)})
+            return jsonify({"ok": False, "error": _safe_error(e)})
 
     # ── Log ────────────────────────────────────────────────────────────
     @app.route("/api/log")
     def api_log():
         """Return the last N lines from the log file, filtering out HTTP request noise."""
         import re
-        limit = request.args.get("limit", 500, type=int)
+        limit = min(request.args.get("limit", 500, type=int), 5000)
         project_root = os.path.dirname(os.path.dirname(__file__))
         log_paths = [
             os.path.join(project_root, "logs", "umtk.log"),

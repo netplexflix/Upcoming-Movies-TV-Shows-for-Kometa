@@ -1130,9 +1130,64 @@ select { min-width: 120px; }
 .unsaved-banner span { display: flex; align-items: center; gap: 6px; }
 .unsaved-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
+/* ── Auth overlay ──────────────────────────────────────────────────────── */
+.auth-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.85); backdrop-filter: blur(6px);
+}
+.auth-overlay.hidden { display: none; }
+.auth-box {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2rem; width: 340px;
+    text-align: center;
+}
+.auth-box h2 { margin-bottom: .25rem; font-size: 1.3rem; }
+.auth-box p { color: var(--text-secondary); font-size: .85rem; margin-bottom: 1.25rem; }
+.auth-box input[type="password"] {
+    width: 100%; padding: .6rem .75rem; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--bg-tertiary);
+    color: var(--text-primary); font-size: .95rem; margin-bottom: .75rem;
+}
+.auth-box input[type="password"]:focus { outline: none; border-color: var(--accent); }
+.btn-auth {
+    width: 100%; padding: .6rem; border: none; border-radius: var(--radius);
+    background: var(--accent); color: #fff; font-size: .95rem; cursor: pointer;
+    font-weight: 600;
+}
+.btn-auth:hover { background: var(--accent-hover); }
+.auth-error { color: var(--danger); font-size: .85rem; margin-bottom: .75rem; min-height: 1.2em; }
+.btn-logout {
+    background: none; border: 1px solid var(--border); color: var(--text-secondary);
+    padding: 4px 12px; border-radius: var(--radius); font-size: 12px;
+    cursor: pointer; transition: color 0.15s, border-color 0.15s;
+    margin-left: 12px; flex-shrink: 0;
+}
+.btn-logout:hover { color: var(--text-primary); border-color: var(--text-secondary); }
 </style>
 </head>
 <body>
+
+<!-- ── Auth overlay ────────────────────────────────────────────────────── -->
+<div id="auth-overlay" class="auth-overlay">
+    <!-- Setup screen (first run) -->
+    <div id="auth-setup" class="auth-box" style="display:none;">
+        <h2>Welcome to UMTK</h2>
+        <p>Set a password to secure your instance.</p>
+        <div class="auth-error" id="setup-error"></div>
+        <input type="password" id="setup-password" placeholder="Choose a password" autocomplete="new-password">
+        <input type="password" id="setup-confirm" placeholder="Confirm password" autocomplete="new-password">
+        <button class="btn-auth" onclick="doSetup()">Set Password</button>
+    </div>
+    <!-- Login screen -->
+    <div id="auth-login" class="auth-box" style="display:none;">
+        <h2>UMTK</h2>
+        <p>Enter your password to continue.</p>
+        <div class="auth-error" id="login-error"></div>
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <button class="btn-auth" onclick="doLogin()">Log In</button>
+    </div>
+</div>
 
 <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
 <nav class="navbar">
@@ -1144,6 +1199,7 @@ select { min-width: 120px; }
         <a href="#" data-page="tssk">TSSK Settings</a>
         <a href="#" data-page="log">Log</a>
     </div>
+    <button class="btn-logout" id="btn-logout" onclick="doLogout()" style="display:none">Logout</button>
 </nav>
 
 <!-- ── Unsaved changes banner ─────────────────────────────────────────── -->
@@ -1394,7 +1450,7 @@ function formatDuration(seconds) {
 
 async function fetchStatus() {
     try {
-        const res = await fetch('/api/status');
+        const res = await apiFetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
         updateStatusUI(data);
@@ -1461,7 +1517,7 @@ function updateStatusUI(data) {
 
 async function schedulerRunNow() {
     try {
-        const res = await fetch('/api/scheduler/run-now', { method: 'POST' });
+        const res = await apiFetch('/api/scheduler/run-now', { method: 'POST' });
         if (res.ok) { showToast('Run triggered', 'success'); fetchStatus(); }
         else showToast('Failed to trigger run', 'error');
     } catch (e) { showToast('Failed to trigger run', 'error'); }
@@ -1469,7 +1525,7 @@ async function schedulerRunNow() {
 
 async function schedulerStop() {
     try {
-        const res = await fetch('/api/scheduler/stop', { method: 'POST' });
+        const res = await apiFetch('/api/scheduler/stop', { method: 'POST' });
         if (res.ok) { showToast('Scheduler stopped', 'success'); fetchStatus(); }
         else showToast('Failed to stop', 'error');
     } catch (e) { showToast('Failed to stop', 'error'); }
@@ -1477,7 +1533,7 @@ async function schedulerStop() {
 
 async function schedulerStart() {
     try {
-        const res = await fetch('/api/scheduler/start', { method: 'POST' });
+        const res = await apiFetch('/api/scheduler/start', { method: 'POST' });
         if (res.ok) { showToast('Scheduler resumed', 'success'); fetchStatus(); }
         else showToast('Failed to resume', 'error');
     } catch (e) { showToast('Failed to resume', 'error'); }
@@ -1486,7 +1542,7 @@ async function schedulerStart() {
 /* ── Version check ─────────────────────────────────────────────────────── */
 async function fetchUpdateStatus() {
     try {
-        const res = await fetch('/api/update');
+        const res = await apiFetch('/api/update');
         if (!res.ok) return;
         const data = await res.json();
         const dot = document.getElementById('version-dot');
@@ -1607,7 +1663,7 @@ function gatherOptionValues(optionsList, scopeEl) {
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
     try {
-        const res = await fetch('/api/config/connections');
+        const res = await apiFetch('/api/config/connections');
         if (!res.ok) return;
         connData = await res.json();
         _connLoaded = true;
@@ -1659,7 +1715,7 @@ async function testConnection(service) {
     });
 
     try {
-        const res = await fetch('/api/test/' + service, {
+        const res = await apiFetch('/api/test/' + service, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
@@ -1676,7 +1732,7 @@ async function testConnection(service) {
 async function saveConnections() {
     const data = gatherOptionValues(connData, document.getElementById('page-connections'));
     try {
-        const res = await fetch('/api/config/connections', {
+        const res = await apiFetch('/api/config/connections', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
@@ -1689,7 +1745,7 @@ async function saveConnections() {
 /* ── UMTK Settings page ───────────────────────────────────────────────── */
 async function fetchUmtk() {
     try {
-        const res = await fetch('/api/config/umtk');
+        const res = await apiFetch('/api/config/umtk');
         if (!res.ok) return;
         umtkData = await res.json();
         _umtkLoaded = true;
@@ -1720,7 +1776,7 @@ async function testMdblist() {
     });
 
     try {
-        const res = await fetch('/api/test/mdblist', {
+        const res = await apiFetch('/api/test/mdblist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
@@ -1739,7 +1795,7 @@ async function saveUmtk() {
     const options = gatherOptionValues(umtkData.options, scopeEl);
     const blocks = gatherBlocks('umtk');
     try {
-        const res = await fetch('/api/config/umtk', {
+        const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ options, blocks }),
@@ -1752,7 +1808,7 @@ async function saveUmtk() {
 /* ── TSSK Settings page ───────────────────────────────────────────────── */
 async function fetchTssk() {
     try {
-        const res = await fetch('/api/config/tssk');
+        const res = await apiFetch('/api/config/tssk');
         if (!res.ok) return;
         tsskData = await res.json();
         _tsskLoaded = true;
@@ -1772,7 +1828,7 @@ async function saveTssk() {
     const options = gatherOptionValues(tsskData.options, scopeEl);
     const blocks = gatherBlocks('tssk');
     try {
-        const res = await fetch('/api/config/tssk', {
+        const res = await apiFetch('/api/config/tssk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ options, blocks }),
@@ -2116,7 +2172,7 @@ function gatherBlocks(prefix) {
 /* ── Log page ──────────────────────────────────────────────────────────── */
 async function fetchLog() {
     try {
-        const res = await fetch('/api/log?limit=1000');
+        const res = await apiFetch('/api/log?limit=1000');
         if (!res.ok) return;
         const data = await res.json();
         logLines = data.lines || [];
@@ -2199,7 +2255,7 @@ function formatDateShort(dateStr) {
 
 async function fetchDashboardUpcoming() {
     try {
-        const res = await fetch('/api/dashboard/upcoming');
+        const res = await apiFetch('/api/dashboard/upcoming');
         if (!res.ok) return;
         const data = await res.json();
         _serverToday = data.today || '';
@@ -2215,6 +2271,8 @@ const _carouselTvIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="n
 const _carouselMovieIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>';
 let _carouselItems = [];
 let _carouselAnimId = null;
+let _carouselToggleInited = false;
+let _dragAbortCtrl = null;
 
 function _buildPosterCard(item) {
     const dateStr = formatDateShort(item.date);
@@ -2245,10 +2303,13 @@ function renderPosterCarousel(items) {
     const autoOn = saved === null ? true : saved === '1';
     toggle.checked = autoOn;
 
-    toggle.addEventListener('change', () => {
-        localStorage.setItem('umtk-carousel-autoscroll', toggle.checked ? '1' : '0');
-        _applyCarouselMode(toggle.checked);
-    });
+    if (!_carouselToggleInited) {
+        _carouselToggleInited = true;
+        toggle.addEventListener('change', () => {
+            localStorage.setItem('umtk-carousel-autoscroll', toggle.checked ? '1' : '0');
+            _applyCarouselMode(toggle.checked);
+        });
+    }
 
     _applyCarouselMode(autoOn);
 }
@@ -2339,12 +2400,17 @@ function _initManualDrag() {
     const carousel = document.getElementById('poster-carousel');
     if (!carousel) return;
 
+    /* Abort previous drag listeners so they don't stack on re-render */
+    if (_dragAbortCtrl) _dragAbortCtrl.abort();
+    _dragAbortCtrl = new AbortController();
+    const sig = { signal: _dragAbortCtrl.signal };
+
     let isDragging = false;
     let startX = 0;
     let scrollStart = 0;
 
     /* Prevent native image drag which interferes with scroll dragging */
-    carousel.addEventListener('dragstart', e => e.preventDefault());
+    carousel.addEventListener('dragstart', e => e.preventDefault(), sig);
 
     carousel.addEventListener('mousedown', e => {
         isDragging = true;
@@ -2352,34 +2418,34 @@ function _initManualDrag() {
         scrollStart = carousel.scrollLeft;
         carousel.classList.add('dragging');
         e.preventDefault();
-    });
+    }, sig);
 
     document.addEventListener('mousemove', e => {
         if (!isDragging) return;
         carousel.scrollLeft = scrollStart - (e.clientX - startX);
-    });
+    }, sig);
 
     document.addEventListener('mouseup', () => {
         if (isDragging) {
             isDragging = false;
             carousel.classList.remove('dragging');
         }
-    });
+    }, sig);
 
     carousel.addEventListener('touchstart', e => {
         isDragging = true;
         startX = e.touches[0].clientX;
         scrollStart = carousel.scrollLeft;
-    }, { passive: true });
+    }, { passive: true, ...sig });
 
     carousel.addEventListener('touchmove', e => {
         if (!isDragging) return;
         carousel.scrollLeft = scrollStart - (e.touches[0].clientX - startX);
-    }, { passive: true });
+    }, { passive: true, ...sig });
 
     carousel.addEventListener('touchend', () => {
         isDragging = false;
-    });
+    }, sig);
 }
 
 const SERVICE_LOGOS = {
@@ -2393,7 +2459,7 @@ async function updateYtdlp(btn) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>';
     try {
-        const res = await fetch('/api/ytdlp/update', { method: 'POST' });
+        const res = await apiFetch('/api/ytdlp/update', { method: 'POST' });
         const data = await res.json();
         if (data.ok) {
             showToast('yt-dlp updated to v' + data.version, 'success');
@@ -2412,7 +2478,7 @@ async function updateYtdlp(btn) {
 
 async function fetchDashboardServices() {
     try {
-        const res = await fetch('/api/dashboard/services');
+        const res = await apiFetch('/api/dashboard/services');
         if (!res.ok) return;
         const services = await res.json();
         renderServices(services);
@@ -2482,14 +2548,106 @@ function loadDashboard() {
     fetchDashboardUpcoming();
     fetchDashboardServices();
     setInterval(fetchDashboardServices, 60000);
+    setInterval(fetchDashboardUpcoming, 900000);   /* refresh upcoming every 15 min */
 }
 
+/* ── Auth ──────────────────────────────────────────────────────────────── */
+async function apiFetch(url, opts = {}) {
+    opts.headers = Object.assign({}, opts.headers || {});
+    opts.headers['X-Requested-With'] = 'UMTK';
+    opts.credentials = 'same-origin';
+    const res = await fetch(url, opts);
+    if (res.status === 401) { showAuthOverlay(); throw new Error('unauthorized'); }
+    return res;
+}
+
+function showAuthOverlay(setupMode) {
+    const overlay = document.getElementById('auth-overlay');
+    overlay.classList.remove('hidden');
+    document.getElementById('auth-setup').style.display = setupMode ? '' : 'none';
+    document.getElementById('auth-login').style.display = setupMode ? 'none' : '';
+    document.getElementById('btn-logout').style.display = 'none';
+    if (setupMode) document.getElementById('setup-password').focus();
+    else document.getElementById('login-password').focus();
+}
+
+function hideAuthOverlay() {
+    document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('btn-logout').style.display = '';
+}
+
+async function doSetup() {
+    const pw = document.getElementById('setup-password').value;
+    const confirm = document.getElementById('setup-confirm').value;
+    const err = document.getElementById('setup-error');
+    err.textContent = '';
+    if (!pw || pw.length < 4) { err.textContent = 'Password must be at least 4 characters.'; return; }
+    if (pw !== confirm) { err.textContent = 'Passwords do not match.'; return; }
+    try {
+        const res = await fetch('/api/auth/setup', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-Requested-With':'UMTK'},
+            body: JSON.stringify({password: pw}), credentials: 'same-origin',
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) { hideAuthOverlay(); initApp(); }
+        else { err.textContent = data.error || 'Setup failed'; }
+    } catch(e) { err.textContent = 'Connection error'; }
+}
+
+async function doLogin() {
+    const pw = document.getElementById('login-password').value;
+    const err = document.getElementById('login-error');
+    err.textContent = '';
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-Requested-With':'UMTK'},
+            body: JSON.stringify({password: pw}), credentials: 'same-origin',
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) { hideAuthOverlay(); initApp(); }
+        else { err.textContent = data.error || 'Login failed'; }
+    } catch(e) { err.textContent = 'Connection error'; }
+}
+
+async function doLogout() {
+    try {
+        await fetch('/api/auth/logout', {
+            method: 'POST', headers: {'X-Requested-With':'UMTK'}, credentials: 'same-origin',
+        });
+    } catch(e) {}
+    location.reload();
+}
+
+// Enter key support for login/setup forms
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    if (document.getElementById('login-password') === document.activeElement) doLogin();
+    else if (document.getElementById('setup-password') === document.activeElement ||
+             document.getElementById('setup-confirm') === document.activeElement) doSetup();
+});
+
 /* ── Init ───────────────────────────────────────────────────────────────── */
-loadDashboard();
-fetchStatus();
-setInterval(fetchStatus, 3000);
-fetchUpdateStatus();
-startLogAutoRefresh();
+function initApp() {
+    loadDashboard();
+    fetchStatus();
+    setInterval(fetchStatus, 3000);
+    fetchUpdateStatus();
+    startLogAutoRefresh();
+}
+
+(async function checkAuth() {
+    try {
+        const res = await fetch('/api/auth/status', {credentials: 'same-origin'});
+        const data = await res.json();
+        if (data.setup_required) { showAuthOverlay(true); }
+        else if (!data.authenticated) { showAuthOverlay(false); }
+        else { hideAuthOverlay(); initApp(); }
+    } catch(e) {
+        // If auth endpoint fails, try loading anyway
+        hideAuthOverlay();
+        initApp();
+    }
+})();
 </script>
 </body>
 </html>
