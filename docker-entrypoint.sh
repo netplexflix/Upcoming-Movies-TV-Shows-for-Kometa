@@ -30,24 +30,40 @@ PGID=${PGID:-1000}
 
 log "${BLUE}Using PUID:${PUID} PGID:${PGID}${NC}"
 
-# Check if we need to create/modify user
+# Adjust umtk user/group to match requested PUID/PGID
 if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
-    log "${BLUE}Creating user with PUID:${PUID} PGID:${PGID}${NC}"
+    log "${BLUE}Adjusting user/group to PUID:${PUID} PGID:${PGID}${NC}"
 
-    # Create group if it doesn't exist
-    if ! getent group $PGID > /dev/null 2>&1; then
-        groupadd -g $PGID umtk
-        log "${GREEN}Created group with GID:${PGID}${NC}"
+    # Adjust group: modify existing umtk group or create new one
+    CURRENT_GID=$(getent group umtk 2>/dev/null | cut -d: -f3)
+    if [ -n "$CURRENT_GID" ] && [ "$CURRENT_GID" != "$PGID" ]; then
+        groupmod -g $PGID umtk 2>/dev/null || true
+        log "${GREEN}Modified group umtk to GID:${PGID}${NC}"
+    elif [ -z "$CURRENT_GID" ]; then
+        if ! getent group $PGID > /dev/null 2>&1; then
+            groupadd -g $PGID umtk
+            log "${GREEN}Created group umtk with GID:${PGID}${NC}"
+        else
+            log "${GREEN}GID:${PGID} already exists, using it${NC}"
+        fi
     fi
 
-    # Create user if it doesn't exist
-    if ! getent passwd $PUID > /dev/null 2>&1; then
-        useradd -u $PUID -g $PGID -d /app -s /bin/bash umtk
-        log "${GREEN}Created user with UID:${PUID}${NC}"
+    # Adjust user: modify existing umtk user or create new one
+    CURRENT_UID=$(id -u umtk 2>/dev/null)
+    if [ -n "$CURRENT_UID" ] && [ "$CURRENT_UID" != "$PUID" ]; then
+        usermod -u $PUID -g $PGID -d /app -s /bin/bash umtk 2>/dev/null || true
+        log "${GREEN}Modified user umtk to UID:${PUID} GID:${PGID}${NC}"
+    elif [ -z "$CURRENT_UID" ]; then
+        if ! getent passwd $PUID > /dev/null 2>&1; then
+            useradd -u $PUID -g $PGID -d /app -s /bin/bash umtk
+            log "${GREEN}Created user umtk with UID:${PUID}${NC}"
+        else
+            log "${GREEN}UID:${PUID} already exists, using it${NC}"
+        fi
     else
-        # Update existing user's group
+        # UID matches but group may need updating
         usermod -g $PGID umtk 2>/dev/null || true
-        log "${GREEN}Updated user group to GID:${PGID}${NC}"
+        log "${GREEN}User umtk already has UID:${PUID}, updated GID${NC}"
     fi
 fi
 
@@ -142,6 +158,7 @@ fi
 
 # Fix ownership of all directories before switching user
 chown -R $PUID:$PGID /app 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of some files in /app${NC}"
+chown -R $PUID:$PGID /video 2>/dev/null || log "${YELLOW}Warning: Could not change ownership of /video${NC}"
 
 # Fix ownership of kometa directory specifically and ensure it's writable
 if [ -d /app/kometa ]; then
@@ -203,6 +220,8 @@ fix_media_permissions() {
         log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
         find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
         find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R 775 {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chmod -R 775 {} \; 2>/dev/null || true
         log "${GREEN}Movie directory permissions fixed${NC}"
     fi
 }

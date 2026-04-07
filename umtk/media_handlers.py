@@ -217,10 +217,10 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o777)
+                os.chmod(parent_dir, 0o775)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
-                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 775 on {parent_dir}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -237,9 +237,9 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     try:
         season_00_path.mkdir(parents=True, exist_ok=True)
         try:
-            os.chmod(season_00_path, 0o777)
+            os.chmod(season_00_path, 0o775)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 775 on {season_00_path}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -299,9 +299,9 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
             downloaded_file = downloaded_files[0]
             
             try:
-                os.chmod(downloaded_file, 0o666)
+                os.chmod(downloaded_file, 0o664)
                 if debug:
-                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 664 on {downloaded_file}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
@@ -372,10 +372,10 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o777)
+                os.chmod(parent_dir, 0o775)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
-                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 775 on {parent_dir}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -393,9 +393,9 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
-            os.chmod(target_path, 0o777)
+            os.chmod(target_path, 0o775)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 755 on {target_path}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 775 on {target_path}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -454,9 +454,9 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
             downloaded_file = downloaded_files[0]
             
             try:
-                os.chmod(downloaded_file, 0o666)
+                os.chmod(downloaded_file, 0o664)
                 if debug:
-                    print(f"{BLUE}[DEBUG] Set permissions 644 on {downloaded_file}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 664 on {downloaded_file}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
@@ -529,10 +529,10 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o777)
+                os.chmod(parent_dir, 0o775)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
-                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 775 on {parent_dir}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -550,9 +550,9 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         season_00_path.mkdir(parents=True, exist_ok=True)
         
         try:
-            os.chmod(season_00_path, 0o777)
+            os.chmod(season_00_path, 0o775)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 775 on {season_00_path}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -569,9 +569,9 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         shutil.copy2(source_file, dest_file)
         
         try:
-            os.chmod(dest_file, 0o666)
+            os.chmod(dest_file, 0o664)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 664 on {dest_file}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
@@ -652,10 +652,10 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         try:
             parent_dir.mkdir(parents=True, exist_ok=True)
             try:
-                os.chmod(parent_dir, 0o777)
+                os.chmod(parent_dir, 0o775)
                 if debug:
                     print(f"{BLUE}[DEBUG] Created parent directory: {parent_dir}{RESET}")
-                    print(f"{BLUE}[DEBUG] Set permissions 755 on {parent_dir}{RESET}")
+                    print(f"{BLUE}[DEBUG] Set permissions 775 on {parent_dir}{RESET}")
             except Exception as perm_error:
                 if debug:
                     print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -678,9 +678,9 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         target_path.mkdir(parents=True, exist_ok=True)
         
         try:
-            os.chmod(target_path, 0o777)
+            os.chmod(target_path, 0o775)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 755 on {target_path}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 775 on {target_path}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_error}{RESET}")
@@ -697,9 +697,9 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         shutil.copy2(source_file, dest_file)
         
         try:
-            os.chmod(dest_file, 0o666)
+            os.chmod(dest_file, 0o664)
             if debug:
-                print(f"{BLUE}[DEBUG] Set permissions 644 on {dest_file}{RESET}")
+                print(f"{BLUE}[DEBUG] Set permissions 664 on {dest_file}{RESET}")
         except Exception as perm_error:
             if debug:
                 print(f"{ORANGE}[DEBUG] Could not set file permissions: {perm_error}{RESET}")
