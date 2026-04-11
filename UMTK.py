@@ -192,9 +192,15 @@ def _run_inner():
 if __name__ == "__main__":
     try:
         from umtk.scheduler_state import SchedulerState
-        from umtk.scheduler import get_cron_schedule, run_on_schedule
+        from umtk.scheduler import _load_initial_schedule, run_on_schedule
 
         sched_state = SchedulerState(config_dir="config")
+
+        # Resolve the config path the same way webui does
+        if os.environ.get('DOCKER') == 'true':
+            config_path = '/app/config/config.yml'
+        else:
+            config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'config.yml')
 
         # Start web UI if available
         try:
@@ -206,14 +212,13 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"{ORANGE}Web UI not started: {e}{RESET}")
 
-        # Check for CRON scheduling
-        cron = get_cron_schedule()
-        if cron:
-            print(f"CRON scheduling enabled: {cron}")
-            run_on_schedule(cron, run, state=sched_state)
-            # run_on_schedule never returns
+        if os.environ.get('DOCKER') == 'true':
+            # Seed schedule from config.yml (or env vars on first launch)
+            _load_initial_schedule(sched_state, config_path)
+            # Enters the scheduler loop and never returns.
+            run_on_schedule(run, state=sched_state)
         else:
-            # Single run mode
+            # Single run mode for local/manual execution
             sched_state.set_status("running")
             try:
                 run()
@@ -221,27 +226,7 @@ if __name__ == "__main__":
                     sched_state.set_status("idle")
             except Exception as e:
                 sched_state.set_status("error", str(e))
-
-            # If running in Docker without CRON, keep alive so Web UI stays accessible
-            if os.environ.get('DOCKER') == 'true':
-                sched_state._has_cron = True  # show Run Now / Stop controls in the UI
-                if sched_state.status == "error":
-                    print(f"{ORANGE}Run failed but Web UI remains available at port 2120.{RESET}")
-                    print(f"{ORANGE}Fix your config in the Web UI and use 'Run Now' to retry.{RESET}")
-                while True:
-                    sched_state._wake_event.wait()
-                    sched_state._wake_event.clear()
-                    if sched_state.is_run_requested():
-                        sched_state.clear_run_request()
-                        sched_state.set_status("running")
-                        try:
-                            run()
-                            if sched_state.status != "error":
-                                sched_state.set_status("idle")
-                        except Exception as e2:
-                            sched_state.set_status("error", str(e2))
-                        sched_state.set_last_run(datetime.now())
-            elif sched_state.status == "error":
+            if sched_state.status == "error":
                 sys.exit(1)
 
     except KeyboardInterrupt:

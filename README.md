@@ -106,7 +106,8 @@ services:
     ports:
       - "2120:2120" # Web UI
     environment:
-      - CRON=0 2 * * * # Run daily at 2am
+      - CRON=0 2 * * * # Run daily at 2am (used as initial default only)
+      # - SCHEDULE_HOURS=24 # Alternative: run every X hours instead of a cron expression
       - DOCKER=true
       - TZ=America/New_York # Set your timezone
       - PUID=1000 # Set to your user ID (run `id -u` in terminal)
@@ -248,7 +249,7 @@ UMTK includes a built-in web interface for configuration and monitoring, accessi
 Features:
 - **Configuration**: Edit all UMTK and TSSK settings through the UI. Organized in tabs: Connections (Plex/Radarr/Sonarr), UMTK settings, and TSSK settings.
 - **Connection Testing**: Test your Plex, Radarr, and Sonarr connections directly from the UI with response time feedback.
-- **Scheduler Control**: View the current status (idle/running/stopped), trigger a "Run Now", pause or resume the schedule, and see next/last run times.
+- **Scheduler Control**: View the current status (idle/running/stopped), trigger a "Run Now", pause or resume the schedule, and see next/last run times. The schedule itself can also be edited live from the Connections tab (switch between hours-interval and cron, and save — changes take effect without a container restart).
 - **Live Logs**: Monitor real-time application logs.
 - **Update Checker**: Check for new UMTK versions.
 
@@ -610,15 +611,19 @@ When `include_inCinemas` is enabled, UMTK considers three release types:
 UMTK uses the earliest available date when multiple types exist.
 Keep `include_inCinemas` set to `false` to ignore cinema/theater release dates.
 
-### Scheduling with Cron (Docker)
+### Scheduling (Docker)
 
-The default schedule is `0 2 * * *` (2 AM daily). Common alternatives:
+UMTK supports two schedule modes — **every X hours** or a **cron expression** — and both can be edited live from the Web UI's Connections tab without restarting the container.
+
+On first launch, UMTK seeds the schedule from the `CRON` / `SCHEDULE_HOURS` environment variables in your `docker-compose.yml`. The resolved values are then persisted into `config/config.yml` under `schedule_type`, `schedule_hours`, and `schedule_cron`. From that point on, **the Web UI is the source of truth** — env vars are ignored unless you wipe the scheduler keys from `config.yml`.
+
+The default cron is `0 2 * * *` (2 AM daily). Common alternatives:
 
 - `0 */6 * * *` - Every 6 hours
 - `0 0 * * 0` - Weekly on Sunday at midnight
 - `0 4 * * 1,4` - Monday and Thursday at 4 AM
 
-Use [crontab.guru](https://crontab.guru/) to create custom schedules.
+Use [crontab.guru](https://crontab.guru/) to create custom schedules, or switch to "Every X hours" mode in the Web UI if you prefer interval scheduling.
 
 <a id="prevent-request-platforms"></a>
 ### Prevent Request Platforms from marking coming soon items as available

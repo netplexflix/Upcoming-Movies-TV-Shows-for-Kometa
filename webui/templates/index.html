@@ -58,12 +58,29 @@ body {
     flex-shrink: 0;
 }
 
-.navbar-brand > span:first-child {
+.navbar-brand .version {
     color: var(--accent);
     font-weight: 400;
     font-size: 12px;
     margin-left: 8px;
     vertical-align: middle;
+}
+
+.github-link {
+    display: flex;
+    align-items: center;
+    line-height: 0;
+}
+
+.github-logo {
+    height: 20px;
+    width: auto;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.github-logo:hover {
+    opacity: 1;
 }
 
 .version-status {
@@ -1191,7 +1208,7 @@ select { min-width: 120px; }
 
 <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
 <nav class="navbar">
-    <div class="navbar-brand">UMTK <span>v{{ version }}</span><span class="version-status"><span class="version-dot" id="version-dot" title="Checking for updates..."></span><span class="version-status-text" id="version-status-text"></span></span></div>
+    <div class="navbar-brand">UMTK <a href="https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/" target="_blank" rel="noopener noreferrer" class="github-link"><img src="{{ url_for('static', filename='github_logo.png') }}" alt="GitHub" class="github-logo"></a><span class="version">v{{ version }}</span><span class="version-status"><span class="version-dot" id="version-dot" title="Checking for updates..."></span><span class="version-status-text" id="version-status-text"></span></span></div>
     <div class="nav-links">
         <a href="#" data-page="dashboard" class="active">Dashboard</a>
         <a href="#" data-page="connections">Connections</a>
@@ -1688,10 +1705,16 @@ function renderConnections() {
         html += `<div class="settings-section">
             <h2>${section}${hasTest ? `<button class="test-btn" style="margin-left:12px" onclick="testConnection('${testService}')">Test Connection</button><span class="test-result" id="test-${testService}"></span>` : ''}</h2>`;
         opts.forEach(opt => {
+            let descHtml = '';
+            if (opt.description_html) {
+                descHtml = `<div class="setting-desc">${opt.description_html}</div>`;
+            } else if (opt.description) {
+                descHtml = `<div class="setting-desc">${escapeHtml(opt.description)}</div>`;
+            }
             html += `<div class="setting-item">
                 <div class="setting-info">
-                    <div class="setting-label">${opt.label}</div>
-                    <div class="setting-desc">${opt.description}</div>
+                    <div class="setting-label">${escapeHtml(opt.label)}</div>
+                    ${descHtml}
                 </div>
                 <div class="setting-control">${createSettingHTML(opt)}</div>
             </div>`;
@@ -1699,6 +1722,31 @@ function renderConnections() {
         html += '</div>';
     }
     container.innerHTML = html;
+
+    // Wire schedule type → enable/disable sibling fields
+    const typeEl = container.querySelector('[data-key="schedule_type"]');
+    if (typeEl) {
+        typeEl.addEventListener('change', updateSchedulerFieldState);
+        updateSchedulerFieldState();
+    }
+}
+
+function updateSchedulerFieldState() {
+    const scopeEl = document.getElementById('page-connections');
+    if (!scopeEl) return;
+    const typeEl = scopeEl.querySelector('[data-key="schedule_type"]');
+    const hoursEl = scopeEl.querySelector('[data-key="schedule_hours"]');
+    const cronEl = scopeEl.querySelector('[data-key="schedule_cron"]');
+    if (!typeEl) return;
+    const isCron = typeEl.value === 'cron';
+    if (hoursEl) {
+        hoursEl.disabled = isCron;
+        hoursEl.style.opacity = isCron ? '0.4' : '';
+    }
+    if (cronEl) {
+        cronEl.disabled = !isCron;
+        cronEl.style.opacity = !isCron ? '0.4' : '';
+    }
 }
 
 async function testConnection(service) {
@@ -1737,8 +1785,19 @@ async function saveConnections() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        if (res.ok) { showToast('Connections saved', 'success'); _snapshotPage('connections'); }
-        else showToast('Failed to save', 'error');
+        if (res.ok) {
+            showToast('Connections saved', 'success');
+            _snapshotPage('connections');
+            // Refresh the status bar so a schedule change is reflected immediately.
+            if (typeof fetchStatus === 'function') fetchStatus();
+        } else {
+            let msg = 'Failed to save';
+            try {
+                const err = await res.json();
+                if (err && err.error) msg = err.error;
+            } catch (e) {}
+            showToast(msg, 'error');
+        }
     } catch (e) { showToast('Failed to save', 'error'); }
 }
 

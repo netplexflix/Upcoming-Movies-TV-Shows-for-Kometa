@@ -38,6 +38,7 @@ _QuotedDumper.add_representer(str, _quoted_str)
 
 UMTK_SECTION_HEADERS = {
     'enable_umtk': '################################################################################\n##########                         GENERAL:                           ##########\n################################################################################',
+    'schedule_type': '################################################################################\n##########                         SCHEDULER:                         ##########\n################################################################################',
     'radarr_url': '################################################################################\n##########                   RADARR CONFIGURATION:                    ##########\n################################################################################',
     'sonarr_url': '################################################################################\n##########                   SONARR CONFIGURATION:                    ##########\n################################################################################',
     'plex_url': '################################################################################\n##########                    PLEX CONFIGURATION:                     ##########\n################################################################################',
@@ -73,6 +74,10 @@ CONNECTION_OPTIONS = [
     {"key": "plex_token", "type": "string", "default": "", "label": "Plex Token", "description": "Your Plex authentication token", "section": "Plex", "sensitive": True},
     {"key": "movie_libraries", "type": "string", "default": "Movies", "label": "Movie Libraries", "description": "Comma-separated Plex movie library names", "section": "Plex"},
     {"key": "tv_libraries", "type": "string", "default": "TV Shows", "label": "TV Libraries", "description": "Comma-separated Plex TV library names", "section": "Plex"},
+    # Scheduler
+    {"key": "schedule_type", "type": "select", "default": "cron", "label": "Schedule Type", "description": "", "section": "Scheduler", "options": [{"value": "hours", "label": "Every X hours"}, {"value": "cron", "label": "Cron expression"}]},
+    {"key": "schedule_hours", "type": "int", "default": 24, "label": "Hours Interval", "description": "Run every X hours", "section": "Scheduler"},
+    {"key": "schedule_cron", "type": "string", "default": "0 2 * * *", "label": "Cron Expression", "description": "Standard 5-field cron expression. For help: crontab.guru", "description_html": 'Standard 5-field cron expression. For help: <a href="https://crontab.guru/" target="_blank" rel="noopener">crontab.guru</a>', "section": "Scheduler"},
 ]
 
 UMTK_OPTIONS = [
@@ -431,8 +436,38 @@ def register_routes(app):
             # Don't overwrite real credentials with the mask placeholder
             if key in sensitive_keys and value == MASKED_VALUE:
                 continue
+            # Coerce schedule_hours to int (UI may send a string)
+            if key == "schedule_hours":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    return jsonify({"ok": False, "error": "Hours Interval must be a whole number"}), 400
+                if value < 1:
+                    return jsonify({"ok": False, "error": "Hours Interval must be >= 1"}), 400
             config[key] = value
+
+        # Validate the schedule before persisting so an invalid cron expression
+        # never reaches disk.
+        sched_type = (config.get("schedule_type") or "cron").strip().lower()
+        sched_hours = config.get("schedule_hours", 24) or 24
+        sched_cron = (config.get("schedule_cron") or "").strip()
+        if sched_type == "cron":
+            try:
+                from croniter import croniter
+                if not sched_cron or not croniter.is_valid(sched_cron):
+                    return jsonify({"ok": False, "error": f"Invalid cron expression: {sched_cron or '(empty)'}"}), 400
+            except ImportError:
+                return jsonify({"ok": False, "error": "croniter package not installed"}), 400
+
         _save_yaml(webui._config_path, config)
+
+        # Push the new schedule into the live scheduler so the next run is
+        # recomputed without a container restart.
+        if webui._scheduler_state is not None:
+            ok, err = webui._scheduler_state.update_schedule(sched_type, int(sched_hours), sched_cron)
+            if not ok:
+                return jsonify({"ok": False, "error": err}), 400
+
         return jsonify({"ok": True})
 
     # ── Config: UMTK ──────────────────────────────────────────────────
