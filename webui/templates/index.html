@@ -2244,7 +2244,7 @@ function classifyLogLine(line) {
     const lower = line.toLowerCase();
     if (lower.includes('error') || lower.includes('failed') || lower.includes('traceback') || lower.includes('exception')) return 'error';
     if (lower.includes('warning') || lower.includes('skipped') || lower.includes('not found')) return 'warning';
-    if (lower.includes('success') || lower.includes('completed') || lower.includes('saved') || lower.includes('✓') || lower.includes('ok')) return 'success';
+    if (lower.includes('success') || lower.includes('completed') || lower.includes('saved') || lower.includes('✓') || /\bok\b/i.test(lower)) return 'success';
     if (/^[*=\-]{4,}/.test(line.trim()) || /^#{4,}/.test(line.trim())) return 'separator';
     if (lower.includes('starting') || lower.includes('checking') || lower.includes('processing') || lower.includes('web ui')) return 'info';
     return '';
