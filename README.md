@@ -52,8 +52,8 @@ This example uses the Kabeb template + TV Show Status overlays.
 - [🖥️ Web UI](#web-ui)
 - [⚙️ Configuration](#configuration)
   - [General](#general)
-  - [Radarr Configuration (for Movies)](#radarr-configuration-for-movies)
-  - [Sonarr Configuration (for TV Shows)](#sonarr-configuration-for-tv-shows)
+  - [Radarr/Sonarr Instances](#radarrsonarr-instances)
+  - [Instance Output Mode](#instance-output-mode)
   - [Plex Configuration (for metadata edits)](#plex-configuration-for-metadata-edits)
   - [Movie Settings](#movie-settings)
   - [TV Show Settings](#tv-show-settings)
@@ -277,17 +277,38 @@ Rename `config.sample.yml` to `config.yml` and update your settings:
 - **simplify_next_week_dates:** Set to `true` to simplify dates to `today`, `tomorrow`, `friday` etc if the air date is within the coming week.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
 
-### Radarr Configuration (for Movies):
+### Radarr/Sonarr Instances:
 
-- **radarr_url:** Your Radarr URL (default: `http://localhost:7878`)
-- **radarr_api_key:** Found in Radarr under Settings → General → Security
-- **radarr_timeout:** Increase if needed for large libraries
+You can configure one or more Radarr and Sonarr instances. Each instance needs:
+- **name:** A unique name for this instance (e.g., "Radarr", "Radarr4K")
+- **url:** Your Radarr/Sonarr URL (default: `http://localhost:7878` / `http://localhost:8989`)
+- **api_key:** Found in Settings → General → Security
+- **timeout:** Increase if needed for large libraries (default: `90`)
+- **exclude_tags:** Comma-separated tag names to exclude from processing
 
-### Sonarr Configuration (for TV Shows):
+Example with multiple instances:
+```yaml
+radarr_instances:
+  - name: Radarr
+    url: 'http://localhost:7878'
+    api_key: 'YOUR_API_KEY'
+    timeout: 90
+    exclude_tags: exclude, private
+  - name: Radarr4K
+    url: 'http://localhost:7879'
+    api_key: 'YOUR_API_KEY'
+    timeout: 90
+    exclude_tags: exclude
+```
 
-- **sonarr_url:** Your Sonarr URL (default: `http://localhost:8989`)
-- **sonarr_api_key:** Found in Sonarr under Settings → General → Security
-- **sonarr_timeout:** Increase if needed for large libraries
+> [!NOTE]
+> Existing configs using the old flat format (`radarr_url`, `radarr_api_key`, etc.) will continue to work without changes. They are automatically converted to the new instance format at load time.
+
+### Instance Output Mode:
+
+- **instance_output_mode:** Controls how data from multiple instances is written to YML files:
+  - `combined` (default) — Data from all instances is merged into single YML files. Duplicate items (same TVDB/TMDB ID across instances) are deduplicated.
+  - `split` — Each instance gets its own set of YML files with the instance name appended (e.g., `UMTK_TV_UPCOMING_SHOWS_COLLECTION_Radarr4K.yml`).
 
 ### Plex Configuration (for metadata edits):
 
@@ -306,7 +327,6 @@ Rename `config.sample.yml` to `config.yml` and update your settings:
 - **past_days_upcoming_movies:** How many days in the past to look for releases (default: `0` means no limit)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** `false` (default) will include already-released but not-downloaded movies. `true` only looks at release dates in the future.
-- **exclude_radarr_tags**: Skip movies with these tags
 - **umtk_root_movies**: Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ### TV Show Settings:
@@ -314,7 +334,6 @@ Rename `config.sample.yml` to `config.yml` and update your settings:
 - **future_days_upcoming_shows:** How many days ahead to look for premieres (default: `30`)
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
 - **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
-- **exclude_sonarr_tags**: Skip TV Shows with these tags
 - **umtk_root_tv**: Where UMTK will output the tv folder. Docker users: use `/umtktv`
 
 > [!IMPORTANT]

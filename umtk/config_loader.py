@@ -15,6 +15,41 @@ from .constants import (
 )
 
 
+def normalize_instances(config):
+    """Convert legacy flat radarr_*/sonarr_* keys into radarr_instances/sonarr_instances lists.
+
+    If the new list keys already exist the config is returned as-is.
+    This provides full backward compatibility: users can keep the old flat
+    format in their config.yml forever and it will be transparently converted
+    at load time without rewriting the file on disk.
+    """
+    if config is None:
+        return config
+
+    # --- Radarr ---
+    if 'radarr_instances' not in config and config.get('radarr_url'):
+        config['radarr_instances'] = [{
+            'name': 'Radarr',
+            'url': config.pop('radarr_url'),
+            'api_key': config.pop('radarr_api_key', ''),
+            'timeout': config.pop('radarr_timeout', 90),
+            'exclude_tags': config.pop('exclude_radarr_tags', ''),
+        }]
+
+    # --- Sonarr ---
+    if 'sonarr_instances' not in config and config.get('sonarr_url'):
+        config['sonarr_instances'] = [{
+            'name': 'Sonarr',
+            'url': config.pop('sonarr_url'),
+            'api_key': config.pop('sonarr_api_key', ''),
+            'timeout': config.pop('sonarr_timeout', 90),
+            'exclude_tags': config.pop('exclude_sonarr_tags', ''),
+        }]
+
+    config.setdefault('instance_output_mode', 'combined')
+    return config
+
+
 def load_config(file_path=None):
     """Load configuration from YAML file"""
     if file_path is None:
@@ -23,10 +58,11 @@ def load_config(file_path=None):
             file_path = Path('/app/config/config.yml')
         else:
             file_path = Path(__file__).parent.parent / 'config' / 'config.yml'
-    
+
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
-            return yaml.safe_load(file)
+            config = yaml.safe_load(file)
+            return normalize_instances(config)
     except FileNotFoundError:
         # Try to auto-copy from sample file
         sample_path = Path(str(file_path)).parent / 'config.sample.yml'
@@ -36,7 +72,7 @@ def load_config(file_path=None):
             print(f"{GREEN}Created '{file_path}' from sample. Please edit it with your settings.{RESET}")
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    return yaml.safe_load(f)
+                    return normalize_instances(yaml.safe_load(f))
             except Exception as e:
                 print(f"Error reading copied config file: {e}")
                 sys.exit(1)

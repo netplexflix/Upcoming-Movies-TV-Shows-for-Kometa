@@ -39,8 +39,9 @@ _QuotedDumper.add_representer(str, _quoted_str)
 UMTK_SECTION_HEADERS = {
     'enable_umtk': '################################################################################\n##########                         GENERAL:                           ##########\n################################################################################',
     'schedule_type': '################################################################################\n##########                         SCHEDULER:                         ##########\n################################################################################',
-    'radarr_url': '################################################################################\n##########                   RADARR CONFIGURATION:                    ##########\n################################################################################',
-    'sonarr_url': '################################################################################\n##########                   SONARR CONFIGURATION:                    ##########\n################################################################################',
+    'instance_output_mode': '################################################################################\n##########              INSTANCE OUTPUT MODE:                         ##########\n################################################################################',
+    'radarr_instances': '################################################################################\n##########                   RADARR INSTANCES:                        ##########\n################################################################################',
+    'sonarr_instances': '################################################################################\n##########                   SONARR INSTANCES:                        ##########\n################################################################################',
     'plex_url': '################################################################################\n##########                    PLEX CONFIGURATION:                     ##########\n################################################################################',
     'future_days_upcoming_movies': '################################################################################\n##########                         MOVIES:                            ##########\n################################################################################',
     'future_days_upcoming_shows': '################################################################################\n##########                         TV SHOWS:                          ##########\n################################################################################',
@@ -64,12 +65,7 @@ UMTK_SECTION_HEADERS = {
 # ── Config option metadata ─────────────────────────────────────────────────
 
 CONNECTION_OPTIONS = [
-    {"key": "sonarr_url", "type": "string", "default": "http://localhost:8989", "label": "Sonarr URL", "description": "URL of your Sonarr instance", "section": "Sonarr"},
-    {"key": "sonarr_api_key", "type": "string", "default": "", "label": "Sonarr API Key", "description": "Your Sonarr API key", "section": "Sonarr", "sensitive": True},
-    {"key": "sonarr_timeout", "type": "int", "default": 90, "label": "Sonarr Timeout", "description": "Connection timeout in seconds", "section": "Sonarr"},
-    {"key": "radarr_url", "type": "string", "default": "http://localhost:7878", "label": "Radarr URL", "description": "URL of your Radarr instance", "section": "Radarr"},
-    {"key": "radarr_api_key", "type": "string", "default": "", "label": "Radarr API Key", "description": "Your Radarr API key", "section": "Radarr", "sensitive": True},
-    {"key": "radarr_timeout", "type": "int", "default": 90, "label": "Radarr Timeout", "description": "Connection timeout in seconds", "section": "Radarr"},
+    {"key": "instance_output_mode", "type": "select", "default": "combined", "label": "Instance Output Mode", "description": "Combined: merge all instances into single YML files. Split: separate YML files per instance.", "section": "Instances", "options": [{"value": "combined", "label": "Combined"}, {"value": "split", "label": "Split"}]},
     {"key": "plex_url", "type": "string", "default": "http://localhost:32400", "label": "Plex URL", "description": "URL of your Plex Media Server", "section": "Plex"},
     {"key": "plex_token", "type": "string", "default": "", "label": "Plex Token", "description": "Your Plex authentication token", "section": "Plex", "sensitive": True},
     {"key": "movie_libraries", "type": "string", "default": "Movies", "label": "Movie Libraries", "description": "Comma-separated Plex movie library names", "section": "Plex"},
@@ -96,13 +92,11 @@ UMTK_OPTIONS = [
     {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies"},
     {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies"},
     {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies"},
-    {"key": "exclude_radarr_tags", "type": "string", "default": "exclude, private", "label": "Exclude Radarr Tags", "description": "Comma-separated tags to exclude from processing", "section": "Movies"},
     {"key": "umtk_root_movies", "type": "string", "default": "", "label": "UMTK Root Movies", "description": "Custom root path for movie folders. Mount this in your Docker Compose", "section": "Movies"},
     # TV Shows
     {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows"},
     {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days back to look for newly premiered shows", "section": "TV Shows"},
     {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows"},
-    {"key": "exclude_sonarr_tags", "type": "string", "default": "exclude, private", "label": "Exclude Sonarr Tags", "description": "Comma-separated tags to exclude from processing", "section": "TV Shows"},
     {"key": "umtk_root_tv", "type": "string", "default": "", "label": "UMTK Root TV", "description": "Custom root path for TV folders. Mount this in your Docker Compose", "section": "TV Shows"},
     # Plex Metadata
     {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles", "description": "Add release dates to Plex sort titles", "section": "Plex Metadata"},
@@ -150,6 +144,7 @@ TSSK_OPTIONS = [
 
 # ── Allowed-key whitelists (derived from option metadata above) ───────────
 _ALLOWED_CONNECTION_KEYS = {o["key"] for o in CONNECTION_OPTIONS}
+_ALLOWED_CONNECTION_KEYS.update({'radarr_instances', 'sonarr_instances', 'instance_output_mode'})
 _ALLOWED_UMTK_KEYS = {o["key"] for o in UMTK_OPTIONS}
 _ALLOWED_TSSK_KEYS = {o["key"] for o in TSSK_OPTIONS}
 _ALLOWED_BLOCK_PREFIXES = ('collection_', 'backdrop_', 'text_')
@@ -552,6 +547,72 @@ def register_routes(app):
         _save_yaml(webui._tssk_config_path, tssk_config)
         return jsonify({"ok": True})
 
+    # ── Config: Instances ─────────────────────────────────────────────
+    @app.route("/api/config/instances")
+    def api_config_instances():
+        config = _load_yaml(webui._config_path)
+        # Apply normalization to handle legacy flat format
+        from umtk.config_loader import normalize_instances
+        config = normalize_instances(config)
+        # Mask API keys
+        for inst_list in [config.get('radarr_instances', []), config.get('sonarr_instances', [])]:
+            for inst in inst_list:
+                if inst.get('api_key'):
+                    inst['api_key'] = MASKED_VALUE
+        return jsonify({
+            "radarr_instances": config.get('radarr_instances', []),
+            "sonarr_instances": config.get('sonarr_instances', []),
+            "instance_output_mode": config.get('instance_output_mode', 'combined'),
+        })
+
+    @app.route("/api/config/instances", methods=["POST"])
+    def api_save_instances():
+        config = _load_yaml(webui._config_path)
+        data = request.get_json() or {}
+
+        # Read existing instances to preserve masked API keys
+        from umtk.config_loader import normalize_instances
+        existing = normalize_instances(dict(config))
+
+        for inst_type in ['radarr_instances', 'sonarr_instances']:
+            new_instances = data.get(inst_type, [])
+            old_instances = existing.get(inst_type, [])
+            old_by_name = {inst.get('name', ''): inst for inst in old_instances}
+
+            # Validate
+            names_seen = set()
+            for inst in new_instances:
+                name = (inst.get('name') or '').strip()
+                if not name:
+                    return jsonify({"ok": False, "error": f"All {inst_type.replace('_', ' ')} must have a name"}), 400
+                if name in names_seen:
+                    return jsonify({"ok": False, "error": f"Duplicate instance name: {name}"}), 400
+                names_seen.add(name)
+                if not inst.get('url', '').strip():
+                    return jsonify({"ok": False, "error": f"Instance '{name}' is missing a URL"}), 400
+                # Resolve masked API keys
+                if inst.get('api_key') == MASKED_VALUE:
+                    old = old_by_name.get(name, {})
+                    inst['api_key'] = old.get('api_key', '')
+                # Coerce timeout
+                try:
+                    inst['timeout'] = int(inst.get('timeout', 90))
+                except (TypeError, ValueError):
+                    inst['timeout'] = 90
+
+            config[inst_type] = new_instances
+
+        config['instance_output_mode'] = data.get('instance_output_mode', 'combined')
+
+        # Remove legacy flat keys if present (migrated to instances)
+        for old_key in ['radarr_url', 'radarr_api_key', 'radarr_timeout',
+                        'sonarr_url', 'sonarr_api_key', 'sonarr_timeout',
+                        'exclude_radarr_tags', 'exclude_sonarr_tags']:
+            config.pop(old_key, None)
+
+        _save_yaml(webui._config_path, config)
+        return jsonify({"ok": True})
+
     # ── Connection tests ──────────────────────────────────────────────
     def _resolve_masked(data, key):
         """If the value is the mask placeholder, return the real value from config."""
@@ -560,6 +621,31 @@ def register_routes(app):
             config = _load_yaml(webui._config_path)
             return config.get(key, "")
         return val
+
+    @app.route("/api/test/instance", methods=["POST"])
+    def api_test_instance():
+        """Test a specific Radarr/Sonarr instance connection."""
+        data = request.get_json() or {}
+        url = (data.get("url") or "").strip()
+        api_key = (data.get("api_key") or "").strip()
+        inst_name = data.get("name", "")
+
+        if not url or not api_key:
+            return jsonify({"success": False, "message": "URL and API key required"})
+
+        # If API key is masked, look it up from saved config
+        if api_key == MASKED_VALUE and inst_name:
+            config = _load_yaml(webui._config_path)
+            from umtk.config_loader import normalize_instances
+            config = normalize_instances(config)
+            for inst_list in [config.get('radarr_instances', []), config.get('sonarr_instances', [])]:
+                for inst in inst_list:
+                    if inst.get('name') == inst_name:
+                        api_key = inst.get('api_key', '')
+                        break
+
+        ok, msg, ms = _test_connection(url, api_key=api_key)
+        return jsonify({"success": ok, "message": msg, "response_time": ms})
 
     @app.route("/api/test/plex", methods=["POST"])
     def api_test_plex():
@@ -651,18 +737,23 @@ def register_routes(app):
     # ── Dashboard: upcoming content ──────────────────────────────────
     @app.route("/api/dashboard/upcoming")
     def api_dashboard_upcoming():
-        config = _load_yaml(webui._config_path)
+        from umtk.config_loader import normalize_instances
+        config = normalize_instances(_load_yaml(webui._config_path))
         items = []
+        seen_tv = set()
+        seen_movies = set()
         now = datetime.now()
         start = now.strftime('%Y-%m-%d')
         end_date = now + timedelta(days=30)
         end = end_date.strftime('%Y-%m-%d')
         include_in_cinemas = str(config.get('include_inCinemas', 'false')).lower() == 'true'
 
-        # ── Sonarr calendar ──
-        sonarr_url = config.get('sonarr_url', '')
-        sonarr_key = config.get('sonarr_api_key', '')
-        if sonarr_url and sonarr_key:
+        # ── Sonarr calendar (all instances) ──
+        for instance in config.get('sonarr_instances', []):
+            sonarr_url = instance.get('url', '')
+            sonarr_key = instance.get('api_key', '')
+            if not sonarr_url or not sonarr_key:
+                continue
             try:
                 api_url = _resolve_arr_api_url(sonarr_url, sonarr_key, 'sonarr')
                 if api_url:
@@ -679,8 +770,11 @@ def register_routes(app):
                             if ep.get('hasFile', False):
                                 continue
                             series = ep.get('series', {})
+                            tvdb_id = series.get('tvdbId')
                             sid = series.get('id')
                             if not sid:
+                                continue
+                            if tvdb_id and tvdb_id in seen_tv:
                                 continue
 
                             sn = ep.get('seasonNumber', 0)
@@ -713,19 +807,25 @@ def register_routes(app):
                                     'date': air,
                                     'label': label,
                                     'posterUrl': poster,
-                                    '_air': air
+                                    '_air': air,
+                                    '_tvdb': tvdb_id
                                 }
 
                         for entry in series_map.values():
+                            if entry.get('_tvdb'):
+                                seen_tv.add(entry['_tvdb'])
                             del entry['_air']
+                            entry.pop('_tvdb', None)
                             items.append(entry)
             except Exception:
                 pass
 
-        # ── Radarr movies ──
-        radarr_url = config.get('radarr_url', '')
-        radarr_key = config.get('radarr_api_key', '')
-        if radarr_url and radarr_key:
+        # ── Radarr movies (all instances) ──
+        for instance in config.get('radarr_instances', []):
+            radarr_url = instance.get('url', '')
+            radarr_key = instance.get('api_key', '')
+            if not radarr_url or not radarr_key:
+                continue
             try:
                 api_url = _resolve_arr_api_url(radarr_url, radarr_key, 'radarr')
                 if api_url:
@@ -738,6 +838,10 @@ def register_routes(app):
                         movies = resp.json()
                         for movie in movies:
                             if not movie.get('monitored', False) or movie.get('hasFile', False):
+                                continue
+
+                            tmdb_id = movie.get('tmdbId')
+                            if tmdb_id and tmdb_id in seen_movies:
                                 continue
 
                             release_date = None
@@ -768,6 +872,9 @@ def register_routes(app):
                             except ValueError:
                                 continue
 
+                            if tmdb_id:
+                                seen_movies.add(tmdb_id)
+
                             poster = ''
                             for img in movie.get('images', []):
                                 if img.get('coverType') == 'poster':
@@ -790,7 +897,8 @@ def register_routes(app):
     # ── Dashboard: service status ────────────────────────────────────
     @app.route("/api/dashboard/services")
     def api_dashboard_services():
-        config = _load_yaml(webui._config_path)
+        from umtk.config_loader import normalize_instances
+        config = normalize_instances(_load_yaml(webui._config_path))
         services = []
 
         plex_url = config.get('plex_url', '')
@@ -801,19 +909,31 @@ def register_routes(app):
         else:
             services.append({'name': 'Plex', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
-        radarr_url = config.get('radarr_url', '')
-        radarr_key = config.get('radarr_api_key', '')
-        if radarr_url and radarr_key:
-            ok, msg, ms = _test_connection(radarr_url, api_key=radarr_key, timeout=5)
-            services.append({'name': 'Radarr', 'online': ok, 'message': msg, 'responseTime': ms})
+        radarr_instances = config.get('radarr_instances', [])
+        if radarr_instances:
+            for instance in radarr_instances:
+                inst_url = instance.get('url', '')
+                inst_key = instance.get('api_key', '')
+                inst_name = instance.get('name', 'Radarr')
+                if inst_url and inst_key:
+                    ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
+                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                else:
+                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
             services.append({'name': 'Radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
-        sonarr_url = config.get('sonarr_url', '')
-        sonarr_key = config.get('sonarr_api_key', '')
-        if sonarr_url and sonarr_key:
-            ok, msg, ms = _test_connection(sonarr_url, api_key=sonarr_key, timeout=5)
-            services.append({'name': 'Sonarr', 'online': ok, 'message': msg, 'responseTime': ms})
+        sonarr_instances = config.get('sonarr_instances', [])
+        if sonarr_instances:
+            for instance in sonarr_instances:
+                inst_url = instance.get('url', '')
+                inst_key = instance.get('api_key', '')
+                inst_name = instance.get('name', 'Sonarr')
+                if inst_url and inst_key:
+                    ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
+                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                else:
+                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
             services.append({'name': 'Sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 

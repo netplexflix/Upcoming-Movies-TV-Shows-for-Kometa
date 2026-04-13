@@ -162,13 +162,17 @@ def _run_inner():
             else:
                 # Inject shared credentials from UMTK config
                 shared_keys = [
-                    'sonarr_url', 'sonarr_api_key', 'sonarr_timeout',
                     'plex_url', 'plex_token', 'tv_libraries',
                     'utc_offset', 'debug', 'simplify_next_week_dates'
                 ]
                 for key in shared_keys:
                     if key in config:
                         tssk_config[key] = config[key]
+
+                # Inject multi-instance Sonarr data
+                if 'sonarr_instances' in config:
+                    tssk_config['sonarr_instances'] = config['sonarr_instances']
+                tssk_config['instance_output_mode'] = config.get('instance_output_mode', 'combined')
 
                 run_tssk(tssk_config, localization)
         except Exception as e:

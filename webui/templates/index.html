@@ -459,6 +459,118 @@ select { min-width: 120px; }
 .test-result.success { color: var(--success); }
 .test-result.fail { color: var(--danger); }
 
+/* ── Instance cards ───────────────────────────────────────────────────── */
+.instance-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.instance-section h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.instance-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.instance-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+}
+
+.instance-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.instance-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.instance-card-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.instance-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.instance-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.instance-field.full-width {
+    grid-column: 1 / -1;
+}
+
+.instance-field label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.instance-field input {
+    width: 100%;
+}
+
+.btn-add-instance {
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    padding: 10px;
+    width: 100%;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    margin-top: 8px;
+}
+
+.btn-add-instance:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-remove-instance {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.btn-remove-instance:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
 /* ── Block editor ─────────────────────────────────────────────────────── */
 .block-group {
     background: var(--bg-secondary);
@@ -1283,6 +1395,30 @@ select { min-width: 120px; }
 <div id="page-connections" class="page">
     <h1 class="page-title">Connections</h1>
     <div id="conn-sections"></div>
+
+    <!-- Radarr Instances -->
+    <div class="instance-section" id="radarr-instances-section">
+        <h2>Radarr Instances
+            <button class="test-btn" onclick="testAllInstances('radarr')">Test All</button>
+            <span class="test-result" id="test-radarr-all"></span>
+        </h2>
+        <div class="instance-cards" id="radarr-instance-cards"></div>
+        <button class="btn-add-instance" onclick="addInstance('radarr')">+ Add Radarr Instance</button>
+    </div>
+
+    <!-- Sonarr Instances -->
+    <div class="instance-section" id="sonarr-instances-section">
+        <h2>Sonarr Instances
+            <button class="test-btn" onclick="testAllInstances('sonarr')">Test All</button>
+            <span class="test-result" id="test-sonarr-all"></span>
+        </h2>
+        <div class="instance-cards" id="sonarr-instance-cards"></div>
+        <button class="btn-add-instance" onclick="addInstance('sonarr')">+ Add Sonarr Instance</button>
+    </div>
+
+    <!-- Instance Output Mode (rendered dynamically) -->
+    <div id="conn-instances-section"></div>
+
     <div class="settings-actions">
         <button class="btn" onclick="saveConnections()">Save Connections</button>
     </div>
@@ -1677,6 +1813,9 @@ function gatherOptionValues(optionsList, scopeEl) {
     return data;
 }
 
+/* ── Instance editor state ────────────────────────────────────────────── */
+let _instanceData = { radarr_instances: [], sonarr_instances: [], instance_output_mode: 'combined' };
+
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
     try {
@@ -1685,6 +1824,7 @@ async function fetchConnections() {
         connData = await res.json();
         _connLoaded = true;
         renderConnections();
+        await loadInstances();
         _snapshotPage('connections');
         _watchPage('connections');
     } catch (e) { showToast('Failed to load connections', 'error'); }
@@ -1699,10 +1839,12 @@ function renderConnections() {
     });
 
     let html = '';
+    let instancesHtml = '';
     for (const [section, opts] of Object.entries(sections)) {
         const testService = section.toLowerCase();
-        const hasTest = ['plex', 'radarr', 'sonarr'].includes(testService);
-        html += `<div class="settings-section">
+        const hasTest = ['plex'].includes(testService);
+        const isInstances = section === 'Instances';
+        let sectionHtml = `<div class="settings-section">
             <h2>${section}${hasTest ? `<button class="test-btn" style="margin-left:12px" onclick="testConnection('${testService}')">Test Connection</button><span class="test-result" id="test-${testService}"></span>` : ''}</h2>`;
         opts.forEach(opt => {
             let descHtml = '';
@@ -1711,7 +1853,7 @@ function renderConnections() {
             } else if (opt.description) {
                 descHtml = `<div class="setting-desc">${escapeHtml(opt.description)}</div>`;
             }
-            html += `<div class="setting-item">
+            sectionHtml += `<div class="setting-item">
                 <div class="setting-info">
                     <div class="setting-label">${escapeHtml(opt.label)}</div>
                     ${descHtml}
@@ -1719,9 +1861,18 @@ function renderConnections() {
                 <div class="setting-control">${createSettingHTML(opt)}</div>
             </div>`;
         });
-        html += '</div>';
+        sectionHtml += '</div>';
+        if (isInstances) {
+            instancesHtml = sectionHtml;
+        } else {
+            html += sectionHtml;
+        }
     }
     container.innerHTML = html;
+
+    // Render Instances section below the Sonarr instance cards
+    const instancesContainer = document.getElementById('conn-instances-section');
+    if (instancesContainer) instancesContainer.innerHTML = instancesHtml;
 
     // Wire schedule type → enable/disable sibling fields
     const typeEl = container.querySelector('[data-key="schedule_type"]');
@@ -1777,23 +1928,178 @@ async function testConnection(service) {
     }
 }
 
-async function saveConnections() {
-    const data = gatherOptionValues(connData, document.getElementById('page-connections'));
+/* ── Instance management ──────────────────────────────────────────────── */
+async function loadInstances() {
     try {
+        const res = await apiFetch('/api/config/instances');
+        if (!res.ok) return;
+        _instanceData = await res.json();
+        renderInstances('radarr');
+        renderInstances('sonarr');
+    } catch (e) { /* silent */ }
+}
+
+function renderInstances(type) {
+    const container = document.getElementById(type + '-instance-cards');
+    const instances = _instanceData[type + '_instances'] || [];
+    let html = '';
+    instances.forEach((inst, idx) => {
+        html += renderInstanceCard(type, idx, inst);
+    });
+    container.innerHTML = html;
+}
+
+function renderInstanceCard(type, idx, inst) {
+    const nameVal = escapeAttr(inst.name || '');
+    const urlVal = escapeAttr(inst.url || '');
+    const keyVal = escapeAttr(inst.api_key || '');
+    const timeoutVal = inst.timeout != null ? inst.timeout : 90;
+    const tagsVal = escapeAttr(inst.exclude_tags || '');
+    return `<div class="instance-card" data-type="${type}" data-idx="${idx}">
+        <div class="instance-card-header">
+            <span class="instance-card-title">${escapeHtml(inst.name || 'New Instance')}</span>
+            <div class="instance-card-actions">
+                <button class="test-btn" onclick="testInstance('${type}', ${idx})">Test Connection</button>
+                <span class="test-result" id="test-${type}-${idx}"></span>
+                <button class="btn-remove-instance" onclick="removeInstance('${type}', ${idx})">Remove</button>
+            </div>
+        </div>
+        <div class="instance-fields">
+            <div class="instance-field">
+                <label>Name</label>
+                <input type="text" data-inst-field="name" value="${nameVal}" placeholder="e.g. ${type === 'radarr' ? 'Radarr' : 'Sonarr'}" oninput="updateInstanceField('${type}', ${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Instance';">
+            </div>
+            <div class="instance-field">
+                <label>URL</label>
+                <input type="text" data-inst-field="url" value="${urlVal}" placeholder="http://localhost:${type === 'radarr' ? '7878' : '8989'}">
+            </div>
+            <div class="instance-field">
+                <label>API Key</label>
+                <input type="password" data-inst-field="api_key" value="${keyVal}" placeholder="Your API key">
+            </div>
+            <div class="instance-field">
+                <label>Timeout</label>
+                <input type="number" data-inst-field="timeout" value="${timeoutVal}" step="1" min="1">
+            </div>
+            <div class="instance-field full-width">
+                <label>Exclude Tags</label>
+                <input type="text" data-inst-field="exclude_tags" value="${tagsVal}" placeholder="Comma-separated tag names to exclude">
+            </div>
+        </div>
+    </div>`;
+}
+
+function addInstance(type) {
+    const instances = _instanceData[type + '_instances'];
+    const count = instances.length + 1;
+    const defaultName = type === 'radarr' ? `Radarr${count > 1 ? count : ''}` : `Sonarr${count > 1 ? count : ''}`;
+    instances.push({ name: defaultName, url: '', api_key: '', timeout: 90, exclude_tags: '' });
+    renderInstances(type);
+    _checkDirty('connections');
+}
+
+function removeInstance(type, idx) {
+    const instances = _instanceData[type + '_instances'];
+    const name = instances[idx]?.name || 'this instance';
+    if (!confirm(`Remove ${name}?`)) return;
+    instances.splice(idx, 1);
+    renderInstances(type);
+    _checkDirty('connections');
+}
+
+function updateInstanceField(type, idx, field, value) {
+    const instances = _instanceData[type + '_instances'];
+    if (instances[idx]) {
+        instances[idx][field] = field === 'timeout' ? parseInt(value) || 90 : value;
+    }
+    _checkDirty('connections');
+}
+
+function gatherInstancesFromDOM() {
+    for (const type of ['radarr', 'sonarr']) {
+        const cards = document.querySelectorAll(`.instance-card[data-type="${type}"]`);
+        const instances = _instanceData[type + '_instances'];
+        cards.forEach((card, idx) => {
+            if (!instances[idx]) return;
+            card.querySelectorAll('[data-inst-field]').forEach(input => {
+                const field = input.dataset.instField;
+                instances[idx][field] = field === 'timeout' ? (parseInt(input.value) || 90) : input.value;
+            });
+        });
+    }
+}
+
+async function testInstance(type, idx) {
+    gatherInstancesFromDOM();
+    const inst = _instanceData[type + '_instances'][idx];
+    if (!inst) return;
+    const resultEl = document.getElementById(`test-${type}-${idx}`);
+    resultEl.className = 'test-result';
+    resultEl.textContent = 'Testing...';
+
+    try {
+        const res = await apiFetch('/api/test/instance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, url: inst.url, api_key: inst.api_key, name: inst.name }),
+        });
+        const result = await res.json();
+        resultEl.className = 'test-result ' + (result.success ? 'success' : 'fail');
+        resultEl.textContent = result.message;
+    } catch (e) {
+        resultEl.className = 'test-result fail';
+        resultEl.textContent = 'Request failed';
+    }
+}
+
+async function testAllInstances(type) {
+    const instances = _instanceData[type + '_instances'] || [];
+    const allEl = document.getElementById(`test-${type}-all`);
+    if (!instances.length) {
+        allEl.className = 'test-result fail';
+        allEl.textContent = 'No instances configured';
+        return;
+    }
+    allEl.className = 'test-result';
+    allEl.textContent = 'Testing...';
+    gatherInstancesFromDOM();
+    let allOk = true;
+    for (let i = 0; i < instances.length; i++) {
+        await testInstance(type, i);
+        const r = document.getElementById(`test-${type}-${i}`);
+        if (r && r.classList.contains('fail')) allOk = false;
+    }
+    allEl.className = 'test-result ' + (allOk ? 'success' : 'fail');
+    allEl.textContent = allOk ? 'All connected' : 'Some failed';
+}
+
+async function saveConnections() {
+    gatherInstancesFromDOM();
+    const data = gatherOptionValues(connData, document.getElementById('page-connections'));
+
+    // Save instances alongside connection options
+    try {
+        // Save connection options
         const res = await apiFetch('/api/config/connections', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        if (res.ok) {
+        // Save instances
+        const instRes = await apiFetch('/api/config/instances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(_instanceData),
+        });
+
+        if (res.ok && instRes.ok) {
             showToast('Connections saved', 'success');
             _snapshotPage('connections');
-            // Refresh the status bar so a schedule change is reflected immediately.
             if (typeof fetchStatus === 'function') fetchStatus();
         } else {
             let msg = 'Failed to save';
             try {
-                const err = await res.json();
+                const err = await (res.ok ? instRes : res).json();
                 if (err && err.error) msg = err.error;
             } catch (e) {}
             showToast(msg, 'error');
