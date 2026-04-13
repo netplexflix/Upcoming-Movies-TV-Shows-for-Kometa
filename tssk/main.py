@@ -82,6 +82,7 @@ def run_tssk(config, localization=None):
     recent_days_final_episode = config.get('recent_days_final_episode', 14)
     recent_days_new_season_started = config.get('recent_days_new_season_started', 7)
     recent_days_new_show = config.get('recent_days_new_show', 7)
+    debug = config.get('debug', False)
 
     utc_offset = float(config.get('utc_offset', 0))
     skip_unmonitored = str(config.get("skip_unmonitored", "false")).lower() == "true"
