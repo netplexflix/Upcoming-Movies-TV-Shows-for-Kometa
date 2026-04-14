@@ -116,6 +116,9 @@ def run_tssk(config, localization=None):
     plex_token = config.get('plex_token', '')
     tv_libraries = config.get('tv_libraries', '')
     edit_sort_titles = str(config.get('edit_sort_titles', 'false')).lower() == 'true'
+    edit_sort_titles_new_season_soon = str(config.get('edit_sort_titles_new_season_soon', 'true')).lower() == 'true'
+    edit_sort_titles_upcoming_episode = str(config.get('edit_sort_titles_upcoming_episode', 'false')).lower() == 'true'
+    edit_sort_titles_upcoming_finale = str(config.get('edit_sort_titles_upcoming_finale', 'false')).lower() == 'true'
 
     if edit_sort_titles:
         if not plex_url or not plex_token or not tv_libraries:
@@ -124,6 +127,9 @@ def run_tssk(config, localization=None):
         else:
             print(f"Edit sort titles: {edit_sort_titles}")
             print(f"  TV libraries: {tv_libraries}")
+            print(f"  New Season Soon: {edit_sort_titles_new_season_soon}")
+            print(f"  Upcoming Episode: {edit_sort_titles_upcoming_episode}")
+            print(f"  Upcoming Finale: {edit_sort_titles_upcoming_finale}")
 
     # Multi-instance support
     sonarr_instances = config.get('sonarr_instances', [])
@@ -364,10 +370,17 @@ def run_tssk(config, localization=None):
             print(f"{GREEN}TSSK YAML files created for instance '{result['name']}'{RESET}")
 
     # Update Plex sort titles (uses merged data from all instances)
-    merged_matched_for_plex = dedupe_by_key([r['matched_shows'] for r in instance_results], 'tvdbId')
     merged_all_series_for_plex = dedupe_by_key([r['all_series'] for r in instance_results], 'tvdbId')
     if edit_sort_titles:
-        update_plex_sort_titles(plex_url, plex_token, tv_libraries, merged_matched_for_plex, merged_all_series_for_plex, config)
+        shows_to_update = []
+        if edit_sort_titles_new_season_soon:
+            shows_to_update.extend(dedupe_by_key([r['matched_shows'] for r in instance_results], 'tvdbId'))
+        if edit_sort_titles_upcoming_episode:
+            shows_to_update.extend(dedupe_by_key([r['upcoming_eps'] for r in instance_results], 'tvdbId'))
+        if edit_sort_titles_upcoming_finale:
+            shows_to_update.extend(dedupe_by_key([r['finale_eps'] for r in instance_results], 'tvdbId'))
+        shows_to_update = dedupe_by_key([shows_to_update], 'tvdbId')
+        update_plex_sort_titles(plex_url, plex_token, tv_libraries, shows_to_update, merged_all_series_for_plex, config)
 
     # ---- Skipped Shows ----
     if process_new_season_soon:

@@ -394,8 +394,16 @@ TSSK settings are stored in a separate config file. Rename `tssk_config.sample.y
 
 - **use_tvdb:** Change to `true` if you prefer TheTVDB statuses for returning and ended. (Note: TheTVDB does not have the 'canceled' status)
 - **skip_unmonitored:** Default `true` will skip a show if the upcoming season/episode is unmonitored.
-- **edit_sort_titles:** Set to `true` to have TSSK edit sort titles directly in Plex. The air date of the new season premiere will be added to the sort title so you can sort shows by air date.
 - **ignore_finales_tags:** Shows with these Sonarr tags will be ignored when checking for finales.
+
+#### TSSK Sort Title Edits:
+
+TSSK can edit sort titles directly in Plex, prepending the relevant air date so you can sort shows by date. The master toggle enables the feature; the sub-options pick which categories receive edits.
+
+- **edit_sort_titles:** Master toggle. Set to `true` to let TSSK edit Plex sort titles. Requires `plex_url`, `plex_token`, and `tv_libraries` to be configured.
+- **edit_sort_titles_new_season_soon:** Default `true`. Edit sort titles for shows in the New Season Soon category.
+- **edit_sort_titles_upcoming_episode:** Default `false`. Edit sort titles for shows in the Upcoming Episode category.
+- **edit_sort_titles_upcoming_finale:** Default `false`. Edit sort titles for shows in the Upcoming Finale category.
 
 > [!NOTE]
 > For some shows, episodes are listed one at a time — usually one week ahead — in TheTVDB/Sonarr. Because of this, TSSK may wrongly think the last episode listed in the season is a finale.

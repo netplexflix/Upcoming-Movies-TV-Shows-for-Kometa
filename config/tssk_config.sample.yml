@@ -25,7 +25,10 @@ process_canceled_shows: true
 # plex_url, plex_token, and tv_libraries are read from UMTK's config.yml.
 # Only TSSK-specific Plex settings go here:
 
-edit_sort_titles: true
+edit_sort_titles: false
+edit_sort_titles_new_season_soon: false
+edit_sort_titles_upcoming_episode: false
+edit_sort_titles_upcoming_finale: false
 
 ################################################################################
 ##########                         NEW SHOW:                         ##########

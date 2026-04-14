@@ -119,7 +119,11 @@ TSSK_OPTIONS = [
     {"key": "use_tvdb", "type": "bool", "default": False, "label": "Use TVDB", "description": "Use TheTVDB instead of TMDB for Tv Show status", "section": "General"},
     {"key": "skip_unmonitored", "type": "bool", "default": True, "label": "Skip Unmonitored", "description": "Skip unmonitored shows/episodes", "section": "General"},
     {"key": "ignore_finales_tags", "type": "string", "default": "ignorefinales", "label": "Ignore Finales Tags", "description": "Comma-separated Sonarr tags to exclude from finale detection", "section": "General"},
-    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles", "description": "Update Plex sort titles for upcoming seasons (Requires Plex Connection)", "section": "General"},
+    # Sort title edits
+    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Sort Titles"},
+    {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Sort Titles"},
+    {"key": "edit_sort_titles_upcoming_episode", "type": "bool", "default": False, "label": "Upcoming Episode", "description": "Edit sort titles for shows in the Upcoming Episode category.", "section": "Sort Titles"},
+    {"key": "edit_sort_titles_upcoming_finale", "type": "bool", "default": False, "label": "Upcoming Finale", "description": "Edit sort titles for shows in the Upcoming Finale category.", "section": "Sort Titles"},
     # Process flags
     {"key": "process_new_shows", "type": "bool", "default": True, "label": "New Shows", "description": "Process recently added new shows", "section": "Process Categories"},
     {"key": "process_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Process shows with upcoming new seasons", "section": "Process Categories"},
