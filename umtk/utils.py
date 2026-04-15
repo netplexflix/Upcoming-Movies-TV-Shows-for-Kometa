@@ -4,12 +4,31 @@ Utility functions for UMTK
 
 import os
 import re
+import time
 import requests
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
+
+
+def request_with_retry(method, url, *, retries=2, backoff=2.0, **kwargs):
+    """requests.request() with retry on transient ConnectionError/Timeout.
+
+    HTTP 4xx/5xx responses are NOT retried — only network-level failures.
+    Default: 2 retries (3 total attempts) with linear backoff (2s, 4s).
+    """
+    for attempt in range(retries + 1):
+        try:
+            return requests.request(method, url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < retries:
+                wait = backoff * (attempt + 1)
+                print(f"{ORANGE}Connection issue ({type(e).__name__}), retrying in {wait:.0f}s (attempt {attempt + 2}/{retries + 1})...{RESET}", flush=True)
+                time.sleep(wait)
+            else:
+                raise
 
 
 def dedupe_by_key(items_lists, key):

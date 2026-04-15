@@ -1259,6 +1259,25 @@ select { min-width: 120px; }
 .unsaved-banner span { display: flex; align-items: center; gap: 6px; }
 .unsaved-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
+/* ── Legacy root migration banner ─────────────────────────────────────── */
+.legacy-banner {
+    position: sticky;
+    top: 56px;
+    z-index: 98;
+    background: #1f3a5f;
+    border-bottom: 1px solid #4a7dbf;
+    color: var(--text-primary);
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    gap: 12px;
+}
+.legacy-banner-text { flex: 1; line-height: 1.4; }
+.legacy-banner-text code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.legacy-banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
 /* ── Auth overlay ──────────────────────────────────────────────────────── */
 .auth-overlay {
     position: fixed; inset: 0; z-index: 9999;
@@ -1337,6 +1356,16 @@ select { min-width: 120px; }
     <div class="unsaved-banner-actions">
         <button class="btn btn-sm" onclick="bannerSave()">Save</button>
         <button class="btn btn-secondary btn-sm" onclick="bannerDiscard()">Discard</button>
+    </div>
+</div>
+
+<!-- ── Legacy root migration banner ───────────────────────────────────── -->
+<div id="legacy-root-banner" class="legacy-banner" style="display:none">
+    <div class="legacy-banner-text">
+        <strong>Settings moved:</strong> <code>umtk_root_movies</code> / <code>umtk_root_tv</code> are now per-instance — set them under each Radarr/Sonarr instance on the Connections tab. Dedicated trending roots live in UMTK Settings → Trending. Your legacy values are still being applied automatically; update the new fields and then remove the old keys from <code>config.yml</code>.
+    </div>
+    <div class="legacy-banner-actions">
+        <button class="btn btn-secondary btn-sm" onclick="dismissLegacyBanner()">Dismiss</button>
     </div>
 </div>
 
@@ -1814,7 +1843,7 @@ function gatherOptionValues(optionsList, scopeEl) {
 }
 
 /* ── Instance editor state ────────────────────────────────────────────── */
-let _instanceData = { radarr_instances: [], sonarr_instances: [], instance_output_mode: 'combined' };
+let _instanceData = { radarr_instances: [], sonarr_instances: [] };
 
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
@@ -1937,6 +1966,32 @@ async function loadInstances() {
         renderInstances('radarr');
         renderInstances('sonarr');
     } catch (e) { /* silent */ }
+    checkLegacyRootBanner();
+}
+
+async function checkLegacyRootBanner() {
+    try {
+        const res = await apiFetch('/api/config/legacy_roots');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.has_legacy_root_keys) return;
+        // Key dismissal on the actual legacy values so if they change the banner re-shows.
+        const dismissKey = 'umtk_legacy_roots_dismissed:' + (data.legacy_root_movies || '') + '|' + (data.legacy_root_tv || '');
+        if (localStorage.getItem(dismissKey) === '1') return;
+        const banner = document.getElementById('legacy-root-banner');
+        if (banner) {
+            banner.dataset.dismissKey = dismissKey;
+            banner.style.display = 'flex';
+        }
+    } catch (e) { /* silent */ }
+}
+
+function dismissLegacyBanner() {
+    const banner = document.getElementById('legacy-root-banner');
+    if (!banner) return;
+    const key = banner.dataset.dismissKey;
+    if (key) localStorage.setItem(key, '1');
+    banner.style.display = 'none';
 }
 
 function renderInstances(type) {
@@ -1955,6 +2010,9 @@ function renderInstanceCard(type, idx, inst) {
     const keyVal = escapeAttr(inst.api_key || '');
     const timeoutVal = inst.timeout != null ? inst.timeout : 90;
     const tagsVal = escapeAttr(inst.exclude_tags || '');
+    const rootVal = escapeAttr(inst.umtk_root || '');
+    const rootPlaceholder = type === 'radarr' ? '/umtkmovies' : '/umtktv';
+    const rootLabel = type === 'radarr' ? 'UMTK Root (Movies)' : 'UMTK Root (TV)';
     return `<div class="instance-card" data-type="${type}" data-idx="${idx}">
         <div class="instance-card-header">
             <span class="instance-card-title">${escapeHtml(inst.name || 'New Instance')}</span>
@@ -1985,6 +2043,10 @@ function renderInstanceCard(type, idx, inst) {
                 <label>Exclude Tags</label>
                 <input type="text" data-inst-field="exclude_tags" value="${tagsVal}" placeholder="Comma-separated tag names to exclude">
             </div>
+            <div class="instance-field full-width">
+                <label>${rootLabel}</label>
+                <input type="text" data-inst-field="umtk_root" value="${rootVal}" placeholder="${rootPlaceholder}">
+            </div>
         </div>
     </div>`;
 }
@@ -1993,7 +2055,7 @@ function addInstance(type) {
     const instances = _instanceData[type + '_instances'];
     const count = instances.length + 1;
     const defaultName = type === 'radarr' ? `Radarr${count > 1 ? count : ''}` : `Sonarr${count > 1 ? count : ''}`;
-    instances.push({ name: defaultName, url: '', api_key: '', timeout: 90, exclude_tags: '' });
+    instances.push({ name: defaultName, url: '', api_key: '', timeout: 90, exclude_tags: '', umtk_root: '' });
     renderInstances(type);
     _checkDirty('connections');
 }
@@ -2548,11 +2610,11 @@ async function fetchLog() {
 
 function classifyLogLine(line) {
     const lower = line.toLowerCase();
-    if (lower.includes('error') || lower.includes('failed') || lower.includes('traceback') || lower.includes('exception')) return 'error';
-    if (lower.includes('warning') || lower.includes('skipped') || lower.includes('not found')) return 'warning';
-    if (lower.includes('success') || lower.includes('completed') || lower.includes('saved') || lower.includes('✓') || /\bok\b/i.test(lower)) return 'success';
+    if (/\b(error|errors|failed|failure|traceback|exception)\b/.test(lower)) return 'error';
+    if (/\b(warning|skipped)\b/.test(lower) || /\bnot found\b/.test(lower)) return 'warning';
+    if (/\b(success|completed|saved|ok)\b/.test(lower) || lower.includes('✓')) return 'success';
     if (/^[*=\-]{4,}/.test(line.trim()) || /^#{4,}/.test(line.trim())) return 'separator';
-    if (lower.includes('starting') || lower.includes('checking') || lower.includes('processing') || lower.includes('web ui')) return 'info';
+    if (/\b(starting|checking|processing)\b/.test(lower) || lower.includes('web ui')) return 'info';
     return '';
 }
 
@@ -2998,6 +3060,7 @@ function initApp() {
     setInterval(fetchStatus, 3000);
     fetchUpdateStatus();
     startLogAutoRefresh();
+    checkLegacyRootBanner();
 }
 
 (async function checkAuth() {

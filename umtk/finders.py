@@ -294,30 +294,42 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
     return future_movies, released_movies
 
 
-def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=False):
+def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
     """
-    Process trending TV shows from MDBList
+    Process trending TV shows from MDBList against ALL Sonarr instances combined.
+
+    sonarr_instances_data: list of dicts, one per instance:
+        {'name', 'url', 'api_key', 'timeout', 'all_series'}
+
     Returns: (monitored_not_available, not_found_or_unmonitored)
+    Each item in monitored_not_available carries an 'owner' key:
+        {'name', 'url', 'api_key', 'timeout'} identifying the instance whose
+        path + Sonarr API to use for placeholder creation.
     """
     monitored_not_available = []
     not_found_or_unmonitored = []
-    
+
     if debug:
-        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending TV shows{RESET}")
-    
-    # Create lookup dictionaries for Sonarr series
-    sonarr_by_tvdb = {}
-    sonarr_by_imdb = {}
-    sonarr_by_tmdb = {}
-    
-    for series in all_series:
-        if series.get('tvdbId'):
-            sonarr_by_tvdb[str(series['tvdbId'])] = series
-        if series.get('imdbId'):
-            sonarr_by_imdb[series['imdbId']] = series
-        if series.get('tmdbId'):
-            sonarr_by_tmdb[str(series['tmdbId'])] = series
-    
+        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending TV shows across {len(sonarr_instances_data)} Sonarr instance(s){RESET}")
+
+    # Per-instance lookup tables
+    per_instance_lookups = []
+    for inst in sonarr_instances_data:
+        by_tvdb, by_imdb, by_tmdb = {}, {}, {}
+        for series in inst.get('all_series', []):
+            if series.get('tvdbId'):
+                by_tvdb[str(series['tvdbId'])] = series
+            if series.get('imdbId'):
+                by_imdb[series['imdbId']] = series
+            if series.get('tmdbId'):
+                by_tmdb[str(series['tmdbId'])] = series
+        per_instance_lookups.append({
+            'instance': inst,
+            'by_tvdb': by_tvdb,
+            'by_imdb': by_imdb,
+            'by_tmdb': by_tmdb,
+        })
+
     for item in mdblist_items:
         tvdb_id = str(item.get('tvdb_id', '')) if item.get('tvdb_id') else None
         tmdb_id = str(item.get('tmdb_id', '')) if item.get('tmdb_id') else None
@@ -325,90 +337,27 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
         title = item.get('title', 'Unknown')
         year = item.get('year')
         rank = item.get('rank')
-        
+
         if debug:
             print(f"{BLUE}[DEBUG] Processing trending show: {title} ({year}) - TVDB: {tvdb_id}, TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
-        
-        # Try to find in Sonarr
-        sonarr_series = None
-        if tvdb_id and tvdb_id in sonarr_by_tvdb:
-            sonarr_series = sonarr_by_tvdb[tvdb_id]
-        elif tmdb_id and tmdb_id in sonarr_by_tmdb:
-            sonarr_series = sonarr_by_tmdb[tmdb_id]
-        elif imdb_id and imdb_id in sonarr_by_imdb:
-            sonarr_series = sonarr_by_imdb[imdb_id]
-        
-        if sonarr_series:
+
+        # Find matches across all instances
+        matches = []  # list of (lookup_entry, series)
+        for lookup in per_instance_lookups:
+            series = None
+            if tvdb_id and tvdb_id in lookup['by_tvdb']:
+                series = lookup['by_tvdb'][tvdb_id]
+            elif tmdb_id and tmdb_id in lookup['by_tmdb']:
+                series = lookup['by_tmdb'][tmdb_id]
+            elif imdb_id and imdb_id in lookup['by_imdb']:
+                series = lookup['by_imdb'][imdb_id]
+            if series:
+                matches.append((lookup, series))
+
+        if not matches:
             if debug:
-                print(f"{BLUE}[DEBUG] Found in Sonarr: {sonarr_series['title']}{RESET}")
-            
-            try:
-                episodes = get_sonarr_episodes(sonarr_url, api_key, sonarr_series['id'])
-            except requests.exceptions.RequestException:
-                raise
-            
-            has_downloaded_episodes = any(ep.get('hasFile', False) for ep in episodes)
-            
-            if has_downloaded_episodes:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Has downloaded episodes, skipping completely{RESET}")
-                continue
-            
-            if not sonarr_series.get('monitored', False):
-                if debug:
-                    print(f"{BLUE}[DEBUG] Not monitored and no downloads - adding to not_found_or_unmonitored{RESET}")
-                
-                show_dict = {
-                    'title': sonarr_series['title'],
-                    'tvdbId': sonarr_series.get('tvdbId'),
-                    'tmdbId': sonarr_series.get('tmdbId'),
-                    'path': sonarr_series.get('path', ''),
-                    'imdbId': sonarr_series.get('imdbId', ''),
-                    'year': sonarr_series.get('year', None),
-                    'airDate': None,
-                    'rank': rank
-                }
-                not_found_or_unmonitored.append(show_dict)
-                continue
-            
-            has_monitored_episodes = any(ep.get('monitored', False) for ep in episodes)
-            
-            if not has_monitored_episodes:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Show is monitored but no episodes are monitored - adding to not_found_or_unmonitored{RESET}")
-                
-                show_dict = {
-                    'title': sonarr_series['title'],
-                    'tvdbId': sonarr_series.get('tvdbId'),
-                    'tmdbId': sonarr_series.get('tmdbId'),
-                    'path': sonarr_series.get('path', ''),
-                    'imdbId': sonarr_series.get('imdbId', ''),
-                    'year': sonarr_series.get('year', None),
-                    'airDate': None,
-                    'rank': rank
-                }
-                not_found_or_unmonitored.append(show_dict)
-                continue
-            
-            if debug:
-                print(f"{BLUE}[DEBUG] Monitored with monitored episodes but no downloads - adding to monitored_not_available{RESET}")
-            
-            show_dict = {
-                'title': sonarr_series['title'],
-                'tvdbId': sonarr_series.get('tvdbId'),
-                'tmdbId': sonarr_series.get('tmdbId'),
-                'path': sonarr_series.get('path', ''),
-                'imdbId': sonarr_series.get('imdbId', ''),
-                'year': sonarr_series.get('year', None),
-                'airDate': None,
-                'rank': rank
-            }
-            monitored_not_available.append(show_dict)
-        else:
-            if debug:
-                print(f"{BLUE}[DEBUG] Not found in Sonarr - adding to not_found_or_unmonitored{RESET}")
-            
-            show_dict = {
+                print(f"{BLUE}[DEBUG] Not found in any Sonarr instance - adding to not_found_or_unmonitored{RESET}")
+            not_found_or_unmonitored.append({
                 'title': title,
                 'tvdbId': int(tvdb_id) if tvdb_id and tvdb_id.isdigit() else None,
                 'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
@@ -417,96 +366,132 @@ def process_trending_tv(mdblist_items, all_series, sonarr_url, api_key, debug=Fa
                 'year': year,
                 'airDate': None,
                 'rank': rank
-            }
-            not_found_or_unmonitored.append(show_dict)
-    
+            })
+            continue
+
+        # Walk matches: short-circuit on first downloaded; otherwise track first monitored owner.
+        downloaded_anywhere = False
+        owner_lookup = None
+        owner_series = None
+
+        for lookup, series in matches:
+            inst = lookup['instance']
+            try:
+                episodes = get_sonarr_episodes(inst['url'], inst['api_key'], series['id'])
+            except requests.exceptions.RequestException:
+                raise
+
+            if any(ep.get('hasFile', False) for ep in episodes):
+                if debug:
+                    print(f"{BLUE}[DEBUG] Downloaded episodes in instance '{inst.get('name')}', skipping completely{RESET}")
+                downloaded_anywhere = True
+                break
+
+            if owner_lookup is None and series.get('monitored', False):
+                if any(ep.get('monitored', False) for ep in episodes):
+                    owner_lookup = lookup
+                    owner_series = series
+
+        if downloaded_anywhere:
+            continue
+
+        if owner_lookup is not None:
+            inst = owner_lookup['instance']
+            if debug:
+                print(f"{BLUE}[DEBUG] Monitored in instance '{inst.get('name')}' - adding to monitored_not_available{RESET}")
+            monitored_not_available.append({
+                'title': owner_series['title'],
+                'tvdbId': owner_series.get('tvdbId'),
+                'tmdbId': owner_series.get('tmdbId'),
+                'path': owner_series.get('path', ''),
+                'imdbId': owner_series.get('imdbId', ''),
+                'year': owner_series.get('year', None),
+                'airDate': None,
+                'rank': rank,
+                'owner': {
+                    'name': inst.get('name'),
+                    'url': inst.get('url'),
+                    'api_key': inst.get('api_key'),
+                    'timeout': inst.get('timeout'),
+                },
+            })
+        else:
+            # Found in at least one instance, but unmonitored everywhere
+            ref_series = matches[0][1]
+            if debug:
+                print(f"{BLUE}[DEBUG] Found but unmonitored everywhere - adding to not_found_or_unmonitored{RESET}")
+            not_found_or_unmonitored.append({
+                'title': ref_series['title'],
+                'tvdbId': ref_series.get('tvdbId'),
+                'tmdbId': ref_series.get('tmdbId'),
+                'path': ref_series.get('path', ''),
+                'imdbId': ref_series.get('imdbId', ''),
+                'year': ref_series.get('year', None),
+                'airDate': None,
+                'rank': rank
+            })
+
     return monitored_not_available, not_found_or_unmonitored
 
 
-def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debug=False):
+def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
     """
-    Process trending movies from MDBList
+    Process trending movies from MDBList against ALL Radarr instances combined.
+
+    radarr_instances_data: list of dicts, one per instance:
+        {'name', 'url', 'api_key', 'timeout', 'all_movies'}
+
     Returns: (monitored_not_available, not_found_or_unmonitored)
+    Each item in monitored_not_available carries an 'owner' key:
+        {'name', 'url', 'api_key', 'timeout'} identifying the instance whose
+        path + Radarr API to use for placeholder creation.
     """
     monitored_not_available = []
     not_found_or_unmonitored = []
-    
+
     if debug:
-        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending movies{RESET}")
-    
-    # Create lookup dictionaries for Radarr movies
-    radarr_by_tmdb = {}
-    radarr_by_imdb = {}
-    
-    for movie in all_movies:
-        if movie.get('tmdbId'):
-            radarr_by_tmdb[str(movie['tmdbId'])] = movie
-        if movie.get('imdbId'):
-            radarr_by_imdb[movie['imdbId']] = movie
-    
+        print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending movies across {len(radarr_instances_data)} Radarr instance(s){RESET}")
+
+    # Per-instance lookup tables
+    per_instance_lookups = []
+    for inst in radarr_instances_data:
+        by_tmdb, by_imdb = {}, {}
+        for movie in inst.get('all_movies', []):
+            if movie.get('tmdbId'):
+                by_tmdb[str(movie['tmdbId'])] = movie
+            if movie.get('imdbId'):
+                by_imdb[movie['imdbId']] = movie
+        per_instance_lookups.append({
+            'instance': inst,
+            'by_tmdb': by_tmdb,
+            'by_imdb': by_imdb,
+        })
+
     for item in mdblist_items:
-        tmdb_id = str(item.get('tmdb_id', ''))
+        tmdb_id = str(item.get('tmdb_id', '')) if item.get('tmdb_id') else None
         imdb_id = item.get('imdb_id', '')
         title = item.get('title', 'Unknown')
         year = item.get('year')
         rank = item.get('rank')
-        
+
         if debug:
             print(f"{BLUE}[DEBUG] Processing trending movie: {title} ({year}) - TMDB: {tmdb_id}, IMDB: {imdb_id}, Rank: {rank}{RESET}")
-        
-        # Try to find in Radarr
-        radarr_movie = None
-        if tmdb_id and tmdb_id in radarr_by_tmdb:
-            radarr_movie = radarr_by_tmdb[tmdb_id]
-        elif imdb_id and imdb_id in radarr_by_imdb:
-            radarr_movie = radarr_by_imdb[imdb_id]
-        
-        if radarr_movie:
+
+        # Find matches across all instances
+        matches = []  # list of (lookup_entry, movie)
+        for lookup in per_instance_lookups:
+            movie = None
+            if tmdb_id and tmdb_id in lookup['by_tmdb']:
+                movie = lookup['by_tmdb'][tmdb_id]
+            elif imdb_id and imdb_id in lookup['by_imdb']:
+                movie = lookup['by_imdb'][imdb_id]
+            if movie:
+                matches.append((lookup, movie))
+
+        if not matches:
             if debug:
-                print(f"{BLUE}[DEBUG] Found in Radarr: {radarr_movie['title']}{RESET}")
-            
-            if radarr_movie.get('hasFile', False):
-                if debug:
-                    print(f"{BLUE}[DEBUG] Already downloaded, skipping completely{RESET}")
-                continue
-            
-            if radarr_movie.get('monitored', False):
-                if debug:
-                    print(f"{BLUE}[DEBUG] Monitored but not available - adding to monitored_not_available{RESET}")
-                
-                movie_dict = {
-                    'title': radarr_movie['title'],
-                    'tmdbId': radarr_movie.get('tmdbId'),
-                    'imdbId': radarr_movie.get('imdbId'),
-                    'path': radarr_movie.get('path', ''),
-                    'folderName': radarr_movie.get('folderName', ''),
-                    'year': radarr_movie.get('year', None),
-                    'releaseDate': None,
-                    'releaseType': 'Trending',
-                    'rank': rank
-                }
-                monitored_not_available.append(movie_dict)
-            else:
-                if debug:
-                    print(f"{BLUE}[DEBUG] Not monitored and not downloaded - adding to not_found_or_unmonitored{RESET}")
-                
-                movie_dict = {
-                    'title': radarr_movie['title'],
-                    'tmdbId': radarr_movie.get('tmdbId'),
-                    'imdbId': radarr_movie.get('imdbId'),
-                    'path': radarr_movie.get('path', ''),
-                    'folderName': radarr_movie.get('folderName', ''),
-                    'year': radarr_movie.get('year', None),
-                    'releaseDate': None,
-                    'releaseType': 'Trending',
-                    'rank': rank
-                }
-                not_found_or_unmonitored.append(movie_dict)
-        else:
-            if debug:
-                print(f"{BLUE}[DEBUG] Not found in Radarr - adding to not_found_or_unmonitored{RESET}")
-            
-            movie_dict = {
+                print(f"{BLUE}[DEBUG] Not found in any Radarr instance - adding to not_found_or_unmonitored{RESET}")
+            not_found_or_unmonitored.append({
                 'title': title,
                 'tmdbId': int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None,
                 'imdbId': imdb_id,
@@ -516,7 +501,62 @@ def process_trending_movies(mdblist_items, all_movies, radarr_url, api_key, debu
                 'releaseDate': None,
                 'releaseType': 'Trending',
                 'rank': rank
-            }
-            not_found_or_unmonitored.append(movie_dict)
-    
+            })
+            continue
+
+        # Short-circuit on first downloaded; track first monitored owner.
+        downloaded_anywhere = False
+        owner_lookup = None
+        owner_movie = None
+
+        for lookup, movie in matches:
+            if movie.get('hasFile', False):
+                if debug:
+                    print(f"{BLUE}[DEBUG] Already downloaded in instance '{lookup['instance'].get('name')}', skipping completely{RESET}")
+                downloaded_anywhere = True
+                break
+            if owner_lookup is None and movie.get('monitored', False):
+                owner_lookup = lookup
+                owner_movie = movie
+
+        if downloaded_anywhere:
+            continue
+
+        if owner_lookup is not None:
+            inst = owner_lookup['instance']
+            if debug:
+                print(f"{BLUE}[DEBUG] Monitored in instance '{inst.get('name')}' - adding to monitored_not_available{RESET}")
+            monitored_not_available.append({
+                'title': owner_movie['title'],
+                'tmdbId': owner_movie.get('tmdbId'),
+                'imdbId': owner_movie.get('imdbId'),
+                'path': owner_movie.get('path', ''),
+                'folderName': owner_movie.get('folderName', ''),
+                'year': owner_movie.get('year', None),
+                'releaseDate': None,
+                'releaseType': 'Trending',
+                'rank': rank,
+                'owner': {
+                    'name': inst.get('name'),
+                    'url': inst.get('url'),
+                    'api_key': inst.get('api_key'),
+                    'timeout': inst.get('timeout'),
+                },
+            })
+        else:
+            ref_movie = matches[0][1]
+            if debug:
+                print(f"{BLUE}[DEBUG] Found but unmonitored everywhere - adding to not_found_or_unmonitored{RESET}")
+            not_found_or_unmonitored.append({
+                'title': ref_movie['title'],
+                'tmdbId': ref_movie.get('tmdbId'),
+                'imdbId': ref_movie.get('imdbId'),
+                'path': ref_movie.get('path', ''),
+                'folderName': ref_movie.get('folderName', ''),
+                'year': ref_movie.get('year', None),
+                'releaseDate': None,
+                'releaseType': 'Trending',
+                'rank': rank
+            })
+
     return monitored_not_available, not_found_or_unmonitored

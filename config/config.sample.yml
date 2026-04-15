@@ -32,11 +32,13 @@ radarr_instances:
     api_key: 'YOUR_RADARR_API_KEY'
     timeout: 90
     exclude_tags: exclude, private
+    umtk_root: /umtkmovies
   # - name: Radarr4K
   #   url: 'http://localhost:7879'
   #   api_key: 'YOUR_RADARR4K_API_KEY'
   #   timeout: 90
   #   exclude_tags: exclude
+  #   umtk_root: /umtkmovies4k
 
 ################################################################################
 ##########                   SONARR INSTANCES:                        ##########
@@ -47,11 +49,13 @@ sonarr_instances:
     api_key: 'YOUR_SONARR_API_KEY'
     timeout: 90
     exclude_tags: exclude, private
+    umtk_root: /umtktv
   # - name: Sonarr4K
   #   url: 'http://localhost:8990'
   #   api_key: 'YOUR_SONARR4K_API_KEY'
   #   timeout: 90
   #   exclude_tags: exclude
+  #   umtk_root: /umtktv4k
 
 ################################################################################
 ##########                    PLEX CONFIGURATION:                     ##########
@@ -72,7 +76,6 @@ future_days_upcoming_movies: 30
 past_days_upcoming_movies: 0 #0=no limit
 include_inCinemas: false
 future_only: false
-umtk_root_movies: /umtkmovies
 
 ################################################################################
 ##########                         TV SHOWS:                          ##########
@@ -80,7 +83,6 @@ umtk_root_movies: /umtkmovies
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
-umtk_root_tv: /umtktv
 
 ################################################################################
 ##########                        TRENDING:                           ##########
@@ -93,6 +95,8 @@ mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
 mdblist_movies_limit: 10
 mdblist_tv: https://mdblist.com/lists/netplexflix/umtk-trending-top20
 mdblist_tv_limit: 10
+trending_root_movies: /umtkmovies   # Root for trending movies not in any Radarr library
+trending_root_tv: /umtktv           # Root for trending shows not in any Sonarr library
   
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########

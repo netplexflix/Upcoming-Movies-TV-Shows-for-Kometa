@@ -92,12 +92,10 @@ UMTK_OPTIONS = [
     {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies"},
     {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies"},
     {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies"},
-    {"key": "umtk_root_movies", "type": "string", "default": "", "label": "UMTK Root Movies", "description": "Custom root path for movie folders. Mount this in your Docker Compose", "section": "Movies"},
     # TV Shows
     {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows"},
     {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days back to look for newly premiered shows", "section": "TV Shows"},
     {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows"},
-    {"key": "umtk_root_tv", "type": "string", "default": "", "label": "UMTK Root TV", "description": "Custom root path for TV folders. Mount this in your Docker Compose", "section": "TV Shows"},
     # Plex Metadata
     {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles", "description": "Add release dates to Plex sort titles", "section": "Plex Metadata"},
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
@@ -112,6 +110,8 @@ UMTK_OPTIONS = [
     {"key": "mdblist_movies_limit", "type": "int", "default": 10, "label": "MDBList Movies Limit", "description": "Number of trending movies to include", "section": "Trending"},
     {"key": "mdblist_tv", "type": "string", "default": "", "label": "MDBList TV URL", "description": "MDBList trending TV list URL", "section": "Trending"},
     {"key": "mdblist_tv_limit", "type": "int", "default": 10, "label": "MDBList TV Limit", "description": "Number of trending TV shows to include", "section": "Trending"},
+    {"key": "trending_root_movies", "type": "string", "default": "", "label": "Trending Root Movies", "description": "Root folder for trending movies not in any Radarr library", "section": "Trending"},
+    {"key": "trending_root_tv", "type": "string", "default": "", "label": "Trending Root TV", "description": "Root folder for trending shows not in any Sonarr library", "section": "Trending"},
 ]
 
 TSSK_OPTIONS = [
@@ -148,7 +148,7 @@ TSSK_OPTIONS = [
 
 # ── Allowed-key whitelists (derived from option metadata above) ───────────
 _ALLOWED_CONNECTION_KEYS = {o["key"] for o in CONNECTION_OPTIONS}
-_ALLOWED_CONNECTION_KEYS.update({'radarr_instances', 'sonarr_instances', 'instance_output_mode'})
+_ALLOWED_CONNECTION_KEYS.update({'radarr_instances', 'sonarr_instances'})
 _ALLOWED_UMTK_KEYS = {o["key"] for o in UMTK_OPTIONS}
 _ALLOWED_TSSK_KEYS = {o["key"] for o in TSSK_OPTIONS}
 _ALLOWED_BLOCK_PREFIXES = ('collection_', 'backdrop_', 'text_')
@@ -552,6 +552,18 @@ def register_routes(app):
         return jsonify({"ok": True})
 
     # ── Config: Instances ─────────────────────────────────────────────
+    @app.route("/api/config/legacy_roots")
+    def api_config_legacy_roots():
+        """Report whether the user's config still uses the pre-per-instance
+        global umtk_root_movies / umtk_root_tv keys. The WebUI uses this to
+        show a one-time migration banner."""
+        config = _load_yaml(webui._config_path) or {}
+        return jsonify({
+            "has_legacy_root_keys": bool(config.get('umtk_root_movies') or config.get('umtk_root_tv')),
+            "legacy_root_movies": config.get('umtk_root_movies') or '',
+            "legacy_root_tv": config.get('umtk_root_tv') or '',
+        })
+
     @app.route("/api/config/instances")
     def api_config_instances():
         config = _load_yaml(webui._config_path)
@@ -566,7 +578,6 @@ def register_routes(app):
         return jsonify({
             "radarr_instances": config.get('radarr_instances', []),
             "sonarr_instances": config.get('sonarr_instances', []),
-            "instance_output_mode": config.get('instance_output_mode', 'combined'),
         })
 
     @app.route("/api/config/instances", methods=["POST"])
@@ -605,8 +616,6 @@ def register_routes(app):
                     inst['timeout'] = 90
 
             config[inst_type] = new_instances
-
-        config['instance_output_mode'] = data.get('instance_output_mode', 'combined')
 
         # Remove legacy flat keys if present (migrated to instances)
         for old_key in ['radarr_url', 'radarr_api_key', 'radarr_timeout',

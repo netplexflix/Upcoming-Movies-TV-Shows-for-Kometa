@@ -173,22 +173,37 @@ chmod -R u+rw /app/logs 2>/dev/null || true
 
 # Pre-create media root directories from config (runs as root)
 # This ensures paths like /data/media/movies exist with proper ownership
-# before switching to the unprivileged user via gosu
+# before switching to the unprivileged user via gosu.
+# Roots can come from per-instance umtk_root:, legacy top-level
+# umtk_root_movies / umtk_root_tv, or trending_root_movies / trending_root_tv.
 CONFIG_FILE="/app/config/config.yml"
+UMTK_ROOTS=""
 if [ -f "$CONFIG_FILE" ]; then
-    UMTK_ROOT_MOVIES=$(get_config_value "umtk_root_movies" "$CONFIG_FILE")
-    UMTK_ROOT_TV=$(get_config_value "umtk_root_tv" "$CONFIG_FILE")
+    # Per-instance roots (indented under radarr_instances / sonarr_instances).
+    # Strip the key prefix, any inline comment, and surrounding whitespace/quotes.
+    INSTANCE_ROOTS=$(awk '/^[[:space:]]+umtk_root:[[:space:]]*/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/[[:space:]]*#.*/, ""); print }' "$CONFIG_FILE" \
+        | tr -d '"' | tr -d "'" \
+        | awk '{$1=$1; print}')
+    LEGACY_ROOT_MOVIES=$(get_config_value "umtk_root_movies" "$CONFIG_FILE")
+    LEGACY_ROOT_TV=$(get_config_value "umtk_root_tv" "$CONFIG_FILE")
+    TRENDING_ROOT_MOVIES=$(get_config_value "trending_root_movies" "$CONFIG_FILE")
+    TRENDING_ROOT_TV=$(get_config_value "trending_root_tv" "$CONFIG_FILE")
 
-    if [ -n "$UMTK_ROOT_MOVIES" ]; then
-        log "${BLUE}Ensuring movie root directory exists: $UMTK_ROOT_MOVIES${NC}"
-        mkdir -p "$UMTK_ROOT_MOVIES" 2>/dev/null && chown $PUID:$PGID "$UMTK_ROOT_MOVIES" 2>/dev/null
-        log "${GREEN}Movie root directory ready${NC}"
-    fi
+    UMTK_ROOTS=$(printf '%s\n%s\n%s\n%s\n%s\n' \
+        "$INSTANCE_ROOTS" \
+        "$LEGACY_ROOT_MOVIES" \
+        "$LEGACY_ROOT_TV" \
+        "$TRENDING_ROOT_MOVIES" \
+        "$TRENDING_ROOT_TV" \
+        | awk 'NF && !seen[$0]++')
 
-    if [ -n "$UMTK_ROOT_TV" ]; then
-        log "${BLUE}Ensuring TV root directory exists: $UMTK_ROOT_TV${NC}"
-        mkdir -p "$UMTK_ROOT_TV" 2>/dev/null && chown $PUID:$PGID "$UMTK_ROOT_TV" 2>/dev/null
-        log "${GREEN}TV root directory ready${NC}"
+    if [ -n "$UMTK_ROOTS" ]; then
+        echo "$UMTK_ROOTS" | while IFS= read -r root; do
+            [ -z "$root" ] && continue
+            log "${BLUE}Ensuring UMTK root directory exists: $root${NC}"
+            mkdir -p "$root" 2>/dev/null && chown $PUID:$PGID "$root" 2>/dev/null
+        done
+        log "${GREEN}UMTK root directories ready${NC}"
     fi
 else
     log "${YELLOW}Config file not found yet, skipping media directory pre-creation${NC}"
@@ -205,25 +220,24 @@ for mount_point in /umtkmovies /umtktv; do
     fi
 done
 
-# Function to fix media directory permissions
+# Function to fix media directory permissions across all configured roots.
+# We apply both the TV-style (Season 00) and movie-style ({edition-...}) find
+# patterns to every root since bash doesn't know which root is TV vs movies —
+# non-matching patterns are simply a no-op.
 fix_media_permissions() {
-    # Fix TV show directories if umtk_root_tv is set
-    if [ -n "$UMTK_ROOT_TV" ] && [ -d "$UMTK_ROOT_TV" ]; then
-        log "${BLUE}Fixing TV directory permissions: $UMTK_ROOT_TV${NC}"
-        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_TV" -type d -name "Season 00" -exec chmod -R 775 {} \; 2>/dev/null || true
-        log "${GREEN}TV directory permissions fixed${NC}"
-    fi
-
-    # Fix movie directories if umtk_root_movies is set
-    if [ -n "$UMTK_ROOT_MOVIES" ] && [ -d "$UMTK_ROOT_MOVIES" ]; then
-        log "${BLUE}Fixing movie directory permissions: $UMTK_ROOT_MOVIES${NC}"
-        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Coming Soon}*" -exec chmod -R 775 {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
-        find "$UMTK_ROOT_MOVIES" -type d -name "*{edition-Trending}*" -exec chmod -R 775 {} \; 2>/dev/null || true
-        log "${GREEN}Movie directory permissions fixed${NC}"
-    fi
+    [ -z "$UMTK_ROOTS" ] && return 0
+    echo "$UMTK_ROOTS" | while IFS= read -r root; do
+        [ -z "$root" ] && continue
+        [ ! -d "$root" ] && continue
+        log "${BLUE}Fixing permissions in UMTK root: $root${NC}"
+        find "$root" -type d -name "Season 00" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$root" -type d -name "Season 00" -exec chmod -R 775 {} \; 2>/dev/null || true
+        find "$root" -type d -name "*{edition-Coming Soon}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$root" -type d -name "*{edition-Coming Soon}*" -exec chmod -R 775 {} \; 2>/dev/null || true
+        find "$root" -type d -name "*{edition-Trending}*" -exec chown -R $PUID:$PGID {} \; 2>/dev/null || true
+        find "$root" -type d -name "*{edition-Trending}*" -exec chmod -R 775 {} \; 2>/dev/null || true
+    done
+    log "${GREEN}UMTK directory permissions fixed${NC}"
 }
 
 # Fix media permissions before running

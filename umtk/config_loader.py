@@ -46,6 +46,28 @@ def normalize_instances(config):
             'exclude_tags': config.pop('exclude_sonarr_tags', ''),
         }]
 
+    # --- Legacy root-path inheritance ---
+    # Historically umtk_root_movies / umtk_root_tv were top-level keys. They
+    # now live per-instance and as dedicated trending_root_* keys. When a
+    # legacy value is present and a destination is unset, copy it in memory
+    # so deployed configs keep working without rewriting the YAML file.
+    legacy_root_movies = config.get('umtk_root_movies')
+    legacy_root_tv = config.get('umtk_root_tv')
+
+    if legacy_root_movies:
+        for inst in config.get('radarr_instances', []) or []:
+            if not inst.get('umtk_root'):
+                inst['umtk_root'] = legacy_root_movies
+        if not config.get('trending_root_movies'):
+            config['trending_root_movies'] = legacy_root_movies
+
+    if legacy_root_tv:
+        for inst in config.get('sonarr_instances', []) or []:
+            if not inst.get('umtk_root'):
+                inst['umtk_root'] = legacy_root_tv
+        if not config.get('trending_root_tv'):
+            config['trending_root_tv'] = legacy_root_tv
+
     config.setdefault('instance_output_mode', 'combined')
     return config
 

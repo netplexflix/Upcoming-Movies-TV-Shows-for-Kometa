@@ -159,12 +159,13 @@ You must update the media paths in the existing `docker-compose.yml` file.
 
 Example:
    - You created `/mnt/media/umtk/movies` and `/mnt/media/umtk/tv`
-   - In your config you used `umtk_root_movies: /umtkmovies` and `umtk_root_tv: /umtktv`
+   - In your config you set `umtk_root: /umtkmovies` on your Radarr instance and `umtk_root: /umtktv` on your Sonarr instance (see the per-instance settings under **Connections**)
    - Then your mounts should look like this:
    ```
          - /mnt/media/umtk/movies:/umtkmovies
          - /mnt/media/umtk/tv:/umtktv
    ```
+   - If you run multiple Radarr/Sonarr instances with different roots (e.g. a 4K instance), add a volume mount for each distinct `umtk_root`.
 
 > [!TIP]
 > By default UMTK will output the yml files in a subfolder named `kometa`.<br>
@@ -321,23 +322,35 @@ radarr_instances:
 - **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
 - **metadata_retry_limit:** How many times to retry metadata edits. This gives Plex some time to pick up the newly created items.
 
+### Radarr / Sonarr Instance Settings:
+
+Each Radarr and Sonarr instance has its own options configured under the **Connections** tab in the WebUI (or directly under `radarr_instances` / `sonarr_instances` in `config.yml`):
+
+- **name:** A friendly label for the instance (e.g. `Radarr`, `Radarr4K`).
+- **url:** The instance URL.
+- **api_key:** The instance API key.
+- **timeout:** Request timeout in seconds (default: `90`).
+- **exclude_tags:** Comma-separated list of Radarr/Sonarr tags whose items should be skipped.
+- **umtk_root:** Where UMTK will output the folders for this instance. Every instance can point at a different root so separate Arrs (e.g. 4K) write to separate folders.
+
+> [!NOTE]
+> If you upgrade from an older UMTK release that used the global `umtk_root_movies` / `umtk_root_tv` keys, those values are still honored — they're automatically inherited by any instance (and the Trending roots below) that doesn't set its own. The WebUI will show a banner reminding you to migrate.
+
 ### Movie Settings:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
 - **past_days_upcoming_movies:** How many days in the past to look for releases (default: `0` means no limit)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** `false` (default) will include already-released but not-downloaded movies. `true` only looks at release dates in the future.
-- **umtk_root_movies**: Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ### TV Show Settings:
 
 - **future_days_upcoming_shows:** How many days ahead to look for premieres (default: `30`)
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
 - **future_only_tv:** Set to `false` (default) to include already-aired but not-downloaded show premieres
-- **umtk_root_tv**: Where UMTK will output the tv folder. Docker users: use `/umtktv`
 
 > [!IMPORTANT]
-> You need to add the `umtk_root` folders to your library folders in Plex (or create separate libraries if you prefer).<br>
+> You need to add your `umtk_root` folders to your library folders in Plex (or create separate libraries if you prefer).<br>
 > Example for TV:<br>
 > <img width="729" height="525" alt="Image" src="https://github.com/user-attachments/assets/8e3e4f4e-b6b7-4ea2-8238-3040a1ff30fe" />
 
@@ -350,6 +363,8 @@ radarr_instances:
 - **mdblist_movies_limit:** How many items to pull from the trending movies list
 - **mdblist_tv:** which trending TV shows list to use. you can create your own.
 - **mdblist_tv_limit:** ow many items to pull from the trending TV shows list
+- **trending_root_movies:** Root folder for trending movies that aren't in any Radarr library (`Request Needed` items). Docker users: use `/umtkmovies`.
+- **trending_root_tv:** Root folder for trending shows that aren't in any Sonarr library (`Request Needed` items). Docker users: use `/umtktv`.
 > [!TIP]
 > With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
 
@@ -607,7 +622,7 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 1. Go to your TV show library
 2. Sort by "Last Episode Date Added"
 3. Click '+' → "Create Smart Collection"
-4. Add filter: `Folder Location` `is not` `your umtk_root_tv folder` 
+4. Add filter: `Folder Location` `is not` your UMTK TV root folder(s) (i.e. the `umtk_root` path(s) you configured on your Sonarr instance(s), plus `trending_root_tv` if used)
 5. Press 'Save As' > 'Save As Smart Collection'
 6. Name it something like "New in TV Shows📺"
 7. In the new collection click the three dots then "Visible on" > "Home"

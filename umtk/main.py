@@ -53,27 +53,21 @@ def main(config=None, localization=None):
         localization = load_localization()
     
     metadata_retry_limit = config.get('metadata_retry_limit', 4)
-    
-    # Get umtk root paths
-    umtk_root_movies = config.get('umtk_root_movies')
-    umtk_root_tv = config.get('umtk_root_tv')
-    
-    if umtk_root_movies:
-        umtk_root_movies = str(umtk_root_movies).strip()
-        umtk_root_movies = umtk_root_movies if umtk_root_movies else None
-    else:
-        umtk_root_movies = None
-        
-    if umtk_root_tv:
-        umtk_root_tv = str(umtk_root_tv).strip()
-        umtk_root_tv = umtk_root_tv if umtk_root_tv else None
-    else:
-        umtk_root_tv = None
-    
-    if umtk_root_movies:
-        print(f"{GREEN}Using custom movie root: {umtk_root_movies}{RESET}")
-    if umtk_root_tv:
-        print(f"{GREEN}Using custom TV root: {umtk_root_tv}{RESET}")
+
+    def _normalize_root(val):
+        if not val:
+            return None
+        val = str(val).strip()
+        return val or None
+
+    # Trending roots fall back to legacy globals via normalize_instances().
+    trending_root_movies = _normalize_root(config.get('trending_root_movies'))
+    trending_root_tv = _normalize_root(config.get('trending_root_tv'))
+
+    if trending_root_movies:
+        print(f"{GREEN}Trending movie root: {trending_root_movies}{RESET}")
+    if trending_root_tv:
+        print(f"{GREEN}Trending TV root: {trending_root_tv}{RESET}")
     
     # Get Plex configuration
     plex_url = config.get('plex_url')
@@ -182,6 +176,9 @@ def main(config=None, localization=None):
             else:
                 # Per-instance result accumulators
                 tv_instance_results = []
+                # Snapshot of each successfully-connected Sonarr instance's data for the
+                # global trending pass and cleanup that runs after the per-instance loop.
+                sonarr_instances_data = []
 
                 future_days_upcoming_shows = config.get('future_days_upcoming_shows', 30)
                 recent_days_new_show = config.get('recent_days_new_show', 7)
@@ -213,9 +210,12 @@ def main(config=None, localization=None):
                 for instance in sonarr_instances:
                     instance_name = instance.get('name', 'Sonarr')
                     sonarr_timeout = int(instance.get('timeout', 90))
+                    umtk_root_tv = _normalize_root(instance.get('umtk_root'))
 
                     if len(sonarr_instances) > 1:
                         print(f"{BLUE}--- Sonarr Instance: {instance_name} ---{RESET}")
+                    if umtk_root_tv:
+                        print(f"{GREEN}Using custom TV root: {umtk_root_tv}{RESET}")
 
                     try:
                         sonarr_url = process_sonarr_url(instance['url'], instance['api_key'], sonarr_timeout)
@@ -232,11 +232,20 @@ def main(config=None, localization=None):
                         if exclude_sonarr_tag_names:
                             print(f"exclude_sonarr_tags: {', '.join(exclude_sonarr_tag_names)}")
 
+                        # Register this instance for the global trending pass + cleanup pass.
+                        sonarr_instances_data.append({
+                            'name': instance_name,
+                            'url': sonarr_url,
+                            'api_key': sonarr_api_key,
+                            'timeout': sonarr_timeout,
+                            'all_series': all_series,
+                            'exclude_tag_ids': exclude_sonarr_tag_ids,
+                            'umtk_root_tv': umtk_root_tv,
+                        })
+
                         future_shows = []
                         aired_shows = []
                         new_shows = []
-                        inst_trending_monitored = []
-                        inst_trending_request_needed = []
                         inst_shows_with_content = []
 
                         if tv_method > 0:
@@ -357,135 +366,19 @@ def main(config=None, localization=None):
                                     print(f"Fallback used: {fallback_used}")
                                 print(f"Failed: {failed}")
 
-                        # Process Trending TV Shows (per instance)
-                        if trending_tv_method > 0 and mdblist_tv_items:
-                            print(f"\n{BLUE}Processing Trending TV Shows...{RESET}")
-
-                            inst_trending_monitored, inst_trending_request_needed = process_trending_tv(
-                                mdblist_tv_items, all_series, sonarr_url, sonarr_api_key, debug
-                            )
-
-                            if inst_trending_monitored:
-                                print(f"\n{GREEN}Found {len(inst_trending_monitored)} trending shows that are monitored but not available:{RESET}")
-                                for show in inst_trending_monitored:
-                                    print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
-                            else:
-                                print(f"{ORANGE}No trending shows found that are monitored but not available.{RESET}")
-
-                            if inst_trending_request_needed:
-                                print(f"\n{GREEN}Found {len(inst_trending_request_needed)} trending shows that need to be requested:{RESET}")
-                                for show in inst_trending_request_needed:
-                                    print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else ""))
-                            else:
-                                print(f"{ORANGE}No trending shows found that need to be requested.{RESET}")
-
-                            # Process trending TV content
-                            all_trending_tv = inst_trending_monitored + inst_trending_request_needed
-                            if all_trending_tv:
-                                print(f"\n{BLUE}Processing content for trending TV shows...{RESET}")
-                                successful = 0
-                                failed = 0
-                                skipped_existing = 0
-                                fallback_used = 0
-
-                                for show in all_trending_tv:
-                                    show['is_trending'] = True
-
-                                    print(f"\nProcessing: {show['title']}")
-
-                                    show_path = show.get('path')
-
-                                    if show_path:
-                                        if umtk_root_tv:
-                                            show_name = PureWindowsPath(show_path).name
-                                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
-                                        else:
-                                            season_00_path = Path(show_path) / "Season 00"
-                                    elif umtk_root_tv:
-                                        show_title = show.get('title', 'Unknown')
-                                        show_year = show.get('year', '')
-                                        if show_year:
-                                            show_folder = sanitize_filename(f"{show_title} ({show_year})")
-                                        else:
-                                            show_folder = sanitize_filename(show_title)
-                                        season_00_path = Path(umtk_root_tv) / show_folder / "Season 00"
-                                    else:
-                                        season_00_path = None
-
-                                    if season_00_path:
-                                        clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                                        trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
-                                        coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
-                                        existing_trailers = []
-                                        if season_00_path.exists():
-                                            existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
-
-                                        if existing_trailers:
-                                            existing_file = existing_trailers[0]
-                                            show['used_trailer'] = '.Trailer.' in existing_file.name
-                                            print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
-                                            skipped_existing += 1
-                                            successful += 1
-                                            inst_shows_with_content.append(show)
-                                            continue
-
-                                    success = False
-
-                                    if trending_tv_method == 1:  # Trailer
-                                        trailer_info = search_trailer_on_youtube(
-                                            show['title'],
-                                            show.get('year'),
-                                            show.get('imdbId'),
-                                            debug,
-                                            skip_channels
-                                        )
-
-                                        if trailer_info:
-                                            print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                                            success = download_trailer_tv(show, trailer_info, debug, umtk_root_tv)
-                                        else:
-                                            print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
-
-                                        if not success and method_fallback:
-                                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                                            success = create_placeholder_tv(show, debug, umtk_root_tv)
-                                            if success:
-                                                fallback_used += 1
-                                                print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
-
-                                    elif trending_tv_method == 2:  # Placeholder
-                                        success = create_placeholder_tv(show, debug, umtk_root_tv)
-
-                                    if success:
-                                        successful += 1
-                                        inst_shows_with_content.append(show)
-                                    else:
-                                        failed += 1
-
-                                print(f"\n{GREEN}Trending TV content processing summary:{RESET}")
-                                print(f"Successful: {successful}")
-                                print(f"Skipped (already exist): {skipped_existing}")
-                                if fallback_used > 0:
-                                    print(f"Fallback used: {fallback_used}")
-                                print(f"Failed: {failed}")
-
-                        # Cleanup TV content for this instance
-                        if cleanup:
-                            print(f"\n{BLUE}Checking for TV content to cleanup...{RESET}")
-                            cleanup_tv_content(
-                                all_series, sonarr_url, sonarr_api_key, tv_method, debug,
-                                exclude_sonarr_tag_ids, future_days_upcoming_shows, utc_offset,
-                                future_only_tv, umtk_root_tv, inst_trending_monitored, inst_trending_request_needed
-                            )
-                            print()
+                        # NOTE: Trending processing and cleanup moved out of this loop —
+                        # they run once globally after every instance has been visited so
+                        # that trending decisions consider all instances' libraries combined.
 
                         tv_instance_results.append({
                             'name': instance_name,
                             'future_shows': future_shows,
                             'aired_shows': aired_shows,
                             'new_shows': new_shows,
-                            'trending_tv_monitored': inst_trending_monitored,
-                            'trending_tv_request_needed': inst_trending_request_needed,
+                            # Trending fields are populated after the per-instance loop by the
+                            # global trending pass.
+                            'trending_tv_monitored': [],
+                            'trending_tv_request_needed': [],
                             'all_shows_with_content': inst_shows_with_content,
                         })
 
@@ -500,27 +393,179 @@ def main(config=None, localization=None):
                 if not tv_instance_results:
                     tv_processing_failed = True
 
+                # ====================================================================
+                # GLOBAL TRENDING PASS — runs once across all Sonarr instances combined
+                # ====================================================================
+                trending_shows_with_content = []
+                if (trending_tv_method > 0 and mdblist_tv_items
+                        and sonarr_instances_data):
+                    print(f"\n{BLUE}{'=' * 50}{RESET}")
+                    print(f"{BLUE}Processing Trending TV Shows (across all Sonarr instances)...{RESET}")
+                    print(f"{BLUE}{'=' * 50}{RESET}")
+
+                    trending_tv_monitored, trending_tv_request_needed = process_trending_tv(
+                        mdblist_tv_items, sonarr_instances_data, debug
+                    )
+
+                    if trending_tv_monitored:
+                        print(f"\n{GREEN}Found {len(trending_tv_monitored)} trending shows that are monitored but not available:{RESET}")
+                        for show in trending_tv_monitored:
+                            owner_name = show.get('owner', {}).get('name', '?')
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show.get('year') else "") + f"  [owner: {owner_name}]")
+                    else:
+                        print(f"{ORANGE}No trending shows found that are monitored but not available.{RESET}")
+
+                    if trending_tv_request_needed:
+                        print(f"\n{GREEN}Found {len(trending_tv_request_needed)} trending shows that need to be requested:{RESET}")
+                        for show in trending_tv_request_needed:
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show.get('year') else ""))
+                    else:
+                        print(f"{ORANGE}No trending shows found that need to be requested.{RESET}")
+
+                    # Single global content-creation pass for all trending shows
+                    all_trending_tv = trending_tv_monitored + trending_tv_request_needed
+                    if all_trending_tv:
+                        print(f"\n{BLUE}Processing content for trending TV shows...{RESET}")
+                        successful = 0
+                        failed = 0
+                        skipped_existing = 0
+                        fallback_used = 0
+
+                        sonarr_root_by_name = {inst['name']: inst.get('umtk_root_tv') for inst in sonarr_instances_data}
+
+                        for show in all_trending_tv:
+                            show['is_trending'] = True
+
+                            print(f"\nProcessing: {show['title']}")
+
+                            # Resolve the root for this trending item:
+                            #   - owned items use the owning Sonarr instance's root
+                            #   - request_needed items fall back to trending_root_tv
+                            owner_name = (show.get('owner') or {}).get('name')
+                            if owner_name and sonarr_root_by_name.get(owner_name):
+                                show_root_tv = sonarr_root_by_name[owner_name]
+                            else:
+                                show_root_tv = trending_root_tv
+
+                            show_path = show.get('path')
+
+                            if show_path:
+                                if show_root_tv:
+                                    show_name = PureWindowsPath(show_path).name
+                                    season_00_path = Path(show_root_tv) / show_name / "Season 00"
+                                else:
+                                    season_00_path = Path(show_path) / "Season 00"
+                            elif show_root_tv:
+                                show_title = show.get('title', 'Unknown')
+                                show_year = show.get('year', '')
+                                if show_year:
+                                    show_folder = sanitize_filename(f"{show_title} ({show_year})")
+                                else:
+                                    show_folder = sanitize_filename(show_title)
+                                season_00_path = Path(show_root_tv) / show_folder / "Season 00"
+                            else:
+                                season_00_path = None
+
+                            if season_00_path:
+                                clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                                trailer_pattern = f"{clean_title}.S00E00.Trailer.*"
+                                coming_soon_pattern = f"{clean_title}.S00E00.Coming.Soon.*"
+                                existing_trailers = []
+                                if season_00_path.exists():
+                                    existing_trailers = list(season_00_path.glob(trailer_pattern)) + list(season_00_path.glob(coming_soon_pattern))
+
+                                if existing_trailers:
+                                    existing_file = existing_trailers[0]
+                                    show['used_trailer'] = '.Trailer.' in existing_file.name
+                                    print(f"{GREEN}Content already exists for {show['title']}: {existing_file.name} - skipping{RESET}")
+                                    skipped_existing += 1
+                                    successful += 1
+                                    trending_shows_with_content.append(show)
+                                    continue
+
+                            success = False
+
+                            if trending_tv_method == 1:  # Trailer
+                                trailer_info = search_trailer_on_youtube(
+                                    show['title'],
+                                    show.get('year'),
+                                    show.get('imdbId'),
+                                    debug,
+                                    skip_channels
+                                )
+
+                                if trailer_info:
+                                    print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
+                                    success = download_trailer_tv(show, trailer_info, debug, show_root_tv)
+                                else:
+                                    print(f"{ORANGE}No suitable trailer found for {show['title']}{RESET}")
+
+                                if not success and method_fallback:
+                                    print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                                    success = create_placeholder_tv(show, debug, show_root_tv)
+                                    if success:
+                                        fallback_used += 1
+                                        print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
+
+                            elif trending_tv_method == 2:  # Placeholder
+                                success = create_placeholder_tv(show, debug, show_root_tv)
+
+                            if success:
+                                successful += 1
+                                trending_shows_with_content.append(show)
+                            else:
+                                failed += 1
+
+                        print(f"\n{GREEN}Trending TV content processing summary:{RESET}")
+                        print(f"Successful: {successful}")
+                        print(f"Skipped (already exist): {skipped_existing}")
+                        if fallback_used > 0:
+                            print(f"Fallback used: {fallback_used}")
+                        print(f"Failed: {failed}")
+
+                    # Distribute trending into per-instance results so split-mode YMLs include them.
+                    # Monitored items go to their owner's instance bucket; request_needed items have
+                    # no instance owner so they go into every instance bucket.
+                    inst_results_by_name = {r['name']: r for r in tv_instance_results}
+                    for show in trending_tv_monitored:
+                        owner_name = show.get('owner', {}).get('name')
+                        if owner_name and owner_name in inst_results_by_name:
+                            inst_results_by_name[owner_name]['trending_tv_monitored'].append(show)
+                    for show in trending_tv_request_needed:
+                        for r in tv_instance_results:
+                            r['trending_tv_request_needed'].append(show)
+                else:
+                    trending_tv_monitored = []
+                    trending_tv_request_needed = []
+
+                # ====================================================================
+                # PER-INSTANCE TV CLEANUP — runs after the global trending pass so it
+                # can see the full global trending lists.
+                # ====================================================================
+                if cleanup and sonarr_instances_data:
+                    for inst in sonarr_instances_data:
+                        if len(sonarr_instances_data) > 1:
+                            print(f"\n{BLUE}--- Cleanup for Sonarr Instance: {inst['name']} ---{RESET}")
+                        print(f"\n{BLUE}Checking for TV content to cleanup...{RESET}")
+                        try:
+                            cleanup_tv_content(
+                                inst['all_series'], inst['url'], inst['api_key'], tv_method, debug,
+                                inst['exclude_tag_ids'], future_days_upcoming_shows, utc_offset,
+                                future_only_tv, inst.get('umtk_root_tv'),
+                                trending_tv_monitored, trending_tv_request_needed
+                            )
+                        except (ConnectionError, requests.exceptions.RequestException) as e:
+                            print(f"{RED}Cleanup error for Sonarr instance '{inst['name']}': {str(e)}{RESET}")
+                        print()
+
                 # Merge instance results for YML generation and Plex updates
                 if tv_instance_results:
-                    # Merge trending results: monitored wins over request_needed across instances
-                    monitored_ids = set()
-                    for r in tv_instance_results:
-                        for show in r['trending_tv_monitored']:
-                            mid = show.get('tvdbId') or show.get('tmdbId')
-                            if mid:
-                                monitored_ids.add(mid)
-
-                    trending_tv_monitored = dedupe_by_key(
-                        [r['trending_tv_monitored'] for r in tv_instance_results], 'tvdbId')
-                    trending_tv_request_needed = [
-                        show for show in dedupe_by_key(
-                            [r['trending_tv_request_needed'] for r in tv_instance_results], 'tvdbId')
-                        if (show.get('tvdbId') or show.get('tmdbId')) not in monitored_ids
-                    ]
-
-                    # Merge shows_with_content for Plex metadata
+                    # Merge shows_with_content for Plex metadata: per-instance buckets +
+                    # the global trending content bucket.
                     all_shows_with_content = dedupe_by_key(
-                        [r['all_shows_with_content'] for r in tv_instance_results], 'tvdbId')
+                        [r['all_shows_with_content'] for r in tv_instance_results] + [trending_shows_with_content],
+                        'tvdbId'
+                    )
 
                     # Generate TV YML files
                     if tv_method > 0 or trending_tv_method > 0:
@@ -618,6 +663,9 @@ def main(config=None, localization=None):
                 print(f"{ORANGE}No Radarr instances configured. Skipping movie processing.{RESET}")
             else:
                 movie_instance_results = []
+                # Snapshot of each successfully-connected Radarr instance's data for the
+                # global trending pass and cleanup that runs after the per-instance loop.
+                radarr_instances_data = []
 
                 future_days_upcoming_movies = config.get('future_days_upcoming_movies', 30)
                 past_days_upcoming_movies = config.get('past_days_upcoming_movies', 0)
@@ -652,9 +700,12 @@ def main(config=None, localization=None):
                 for instance in radarr_instances:
                     instance_name = instance.get('name', 'Radarr')
                     radarr_timeout = int(instance.get('timeout', 90))
+                    umtk_root_movies = _normalize_root(instance.get('umtk_root'))
 
                     if len(radarr_instances) > 1:
                         print(f"{BLUE}--- Radarr Instance: {instance_name} ---{RESET}")
+                    if umtk_root_movies:
+                        print(f"{GREEN}Using custom movie root: {umtk_root_movies}{RESET}")
 
                     try:
                         radarr_url = process_radarr_url(instance['url'], instance['api_key'], radarr_timeout)
@@ -673,10 +724,19 @@ def main(config=None, localization=None):
                         if exclude_radarr_tag_names:
                             print(f"exclude_radarr_tags: {', '.join(exclude_radarr_tag_names)}")
 
+                        # Register this instance for the global trending pass + cleanup pass.
+                        radarr_instances_data.append({
+                            'name': instance_name,
+                            'url': radarr_url,
+                            'api_key': radarr_api_key,
+                            'timeout': radarr_timeout,
+                            'all_movies': all_movies,
+                            'exclude_tag_ids': exclude_radarr_tag_ids,
+                            'umtk_root_movies': umtk_root_movies,
+                        })
+
                         future_movies = []
                         released_movies = []
-                        inst_trending_monitored = []
-                        inst_trending_request_needed = []
                         inst_movies_with_content = []
 
                         if movie_method > 0:
@@ -786,130 +846,18 @@ def main(config=None, localization=None):
                                     print(f"Fallback used: {fallback_used}")
                                 print(f"Failed: {failed}")
 
-                        # Process Trending Movies (per instance)
-                        if trending_movies_method > 0 and mdblist_movies_items:
-                            print(f"\n{BLUE}Processing Trending Movies...{RESET}")
-
-                            inst_trending_monitored, inst_trending_request_needed = process_trending_movies(
-                                mdblist_movies_items, all_movies, radarr_url, radarr_api_key, debug
-                            )
-
-                            if inst_trending_monitored:
-                                print(f"\n{GREEN}Found {len(inst_trending_monitored)} trending movies that are monitored but not available:{RESET}")
-                                for movie in inst_trending_monitored:
-                                    print(f"- {movie['title']}" + (f" ({movie['year']})" if movie['year'] else ""))
-                            else:
-                                print(f"{ORANGE}No trending movies found that are monitored but not available.{RESET}")
-
-                            if inst_trending_request_needed:
-                                print(f"\n{GREEN}Found {len(inst_trending_request_needed)} trending movies that need to be requested:{RESET}")
-                                for movie in inst_trending_request_needed:
-                                    print(f"- {movie['title']}" + (f" ({movie['year']})" if movie['year'] else ""))
-                            else:
-                                print(f"{ORANGE}No trending movies found that need to be requested.{RESET}")
-
-                            # Process trending movie content
-                            all_trending_movies = inst_trending_monitored + inst_trending_request_needed
-                            if all_trending_movies:
-                                print(f"\n{BLUE}Processing content for trending movies...{RESET}")
-                                successful = 0
-                                failed = 0
-                                skipped_existing = 0
-                                fallback_used = 0
-
-                                for movie in all_trending_movies:
-                                    print(f"\nProcessing: {movie['title']}")
-
-                                    is_request_needed = movie in inst_trending_request_needed
-
-                                    movie_path = movie.get('path')
-                                    content_exists = False
-
-                                    if movie_path or umtk_root_movies:
-                                        movie_title = movie.get('title', 'Unknown')
-                                        movie_year = movie.get('year', '')
-
-                                        for check_edition in ["Coming Soon", "Trending"]:
-                                            check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
-
-                                            if umtk_root_movies:
-                                                check_path = Path(umtk_root_movies) / check_folder
-                                            elif movie_path:
-                                                base_path = Path(movie_path)
-                                                parent_dir = base_path.parent
-                                                check_path = parent_dir / check_folder
-                                            else:
-                                                check_path = None
-
-                                            if check_path and check_path.exists():
-                                                existing_files = list(check_path.glob(f"*{{edition-{check_edition}}}.*"))
-                                                if existing_files:
-                                                    existing_file = existing_files[0]
-                                                    print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
-                                                    skipped_existing += 1
-                                                    successful += 1
-                                                    inst_movies_with_content.append(movie)
-                                                    content_exists = True
-                                                    break
-
-                                    if content_exists:
-                                        continue
-
-                                    success = False
-
-                                    if trending_movies_method == 1:  # Trailer
-                                        trailer_info = search_trailer_on_youtube(
-                                            movie['title'],
-                                            movie.get('year'),
-                                            movie.get('imdbId'),
-                                            debug,
-                                            skip_channels
-                                        )
-
-                                        if trailer_info:
-                                            print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
-                                            success = download_trailer_movie(movie, trailer_info, debug, umtk_root_movies, is_trending=is_request_needed)
-                                        else:
-                                            print(f"{ORANGE}No suitable trailer found for {movie['title']}{RESET}")
-
-                                        if not success and method_fallback:
-                                            print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
-                                            success = create_placeholder_movie(movie, debug, umtk_root_movies, is_trending=is_request_needed)
-                                            if success:
-                                                fallback_used += 1
-                                                print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
-
-                                    elif trending_movies_method == 2:  # Placeholder
-                                        success = create_placeholder_movie(movie, debug, umtk_root_movies, is_trending=is_request_needed)
-
-                                    if success:
-                                        successful += 1
-                                        inst_movies_with_content.append(movie)
-                                    else:
-                                        failed += 1
-
-                                print(f"\n{GREEN}Trending movie content processing summary:{RESET}")
-                                print(f"Successful: {successful}")
-                                print(f"Skipped (already exist): {skipped_existing}")
-                                if fallback_used > 0:
-                                    print(f"Fallback used: {fallback_used}")
-                                print(f"Failed: {failed}")
-
-                        # Cleanup movie content for this instance
-                        if cleanup:
-                            print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
-                            cleanup_movie_content(
-                                all_movies, radarr_url, radarr_api_key, future_movies, released_movies,
-                                inst_trending_monitored, inst_trending_request_needed,
-                                movie_method, debug, exclude_radarr_tag_ids, umtk_root_movies
-                            )
+                        # NOTE: Trending processing and cleanup moved out of this loop —
+                        # they run once globally after every instance has been visited so
+                        # that trending decisions consider all instances' libraries combined.
 
                         movie_instance_results.append({
                             'name': instance_name,
                             'future_movies': future_movies,
                             'released_movies': released_movies,
-                            'trending_movies_monitored': inst_trending_monitored,
-                            'trending_movies_request_needed': inst_trending_request_needed,
+                            # Trending fields are populated after the per-instance loop by the
+                            # global trending pass.
+                            'trending_movies_monitored': [],
+                            'trending_movies_request_needed': [],
                             'all_movies_with_content': inst_movies_with_content,
                         })
 
@@ -918,26 +866,174 @@ def main(config=None, localization=None):
                         if len(radarr_instances) > 1:
                             print(f"{ORANGE}Continuing with next instance...{RESET}")
 
+                # ====================================================================
+                # GLOBAL TRENDING PASS — runs once across all Radarr instances combined
+                # ====================================================================
+                trending_movies_with_content = []
+                if (trending_movies_method > 0 and mdblist_movies_items
+                        and radarr_instances_data):
+                    print(f"\n{BLUE}{'=' * 50}{RESET}")
+                    print(f"{BLUE}Processing Trending Movies (across all Radarr instances)...{RESET}")
+                    print(f"{BLUE}{'=' * 50}{RESET}")
+
+                    trending_movies_monitored, trending_movies_request_needed = process_trending_movies(
+                        mdblist_movies_items, radarr_instances_data, debug
+                    )
+
+                    if trending_movies_monitored:
+                        print(f"\n{GREEN}Found {len(trending_movies_monitored)} trending movies that are monitored but not available:{RESET}")
+                        for movie in trending_movies_monitored:
+                            owner_name = movie.get('owner', {}).get('name', '?')
+                            print(f"- {movie['title']}" + (f" ({movie['year']})" if movie.get('year') else "") + f"  [owner: {owner_name}]")
+                    else:
+                        print(f"{ORANGE}No trending movies found that are monitored but not available.{RESET}")
+
+                    if trending_movies_request_needed:
+                        print(f"\n{GREEN}Found {len(trending_movies_request_needed)} trending movies that need to be requested:{RESET}")
+                        for movie in trending_movies_request_needed:
+                            print(f"- {movie['title']}" + (f" ({movie['year']})" if movie.get('year') else ""))
+                    else:
+                        print(f"{ORANGE}No trending movies found that need to be requested.{RESET}")
+
+                    all_trending_movies = trending_movies_monitored + trending_movies_request_needed
+                    if all_trending_movies:
+                        print(f"\n{BLUE}Processing content for trending movies...{RESET}")
+                        successful = 0
+                        failed = 0
+                        skipped_existing = 0
+                        fallback_used = 0
+
+                        request_needed_ids = {id(m) for m in trending_movies_request_needed}
+                        radarr_root_by_name = {inst['name']: inst.get('umtk_root_movies') for inst in radarr_instances_data}
+
+                        for movie in all_trending_movies:
+                            print(f"\nProcessing: {movie['title']}")
+
+                            is_request_needed = id(movie) in request_needed_ids
+
+                            # Resolve the root for this trending movie:
+                            #   - owned movies use the owning Radarr instance's root
+                            #   - request_needed movies fall back to trending_root_movies
+                            owner_name = (movie.get('owner') or {}).get('name')
+                            if owner_name and radarr_root_by_name.get(owner_name):
+                                movie_root = radarr_root_by_name[owner_name]
+                            else:
+                                movie_root = trending_root_movies
+
+                            movie_path = movie.get('path')
+                            content_exists = False
+
+                            if movie_path or movie_root:
+                                movie_title = movie.get('title', 'Unknown')
+                                movie_year = movie.get('year', '')
+
+                                for check_edition in ["Coming Soon", "Trending"]:
+                                    check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
+
+                                    if movie_root:
+                                        check_path = Path(movie_root) / check_folder
+                                    elif movie_path:
+                                        base_path = Path(movie_path)
+                                        parent_dir = base_path.parent
+                                        check_path = parent_dir / check_folder
+                                    else:
+                                        check_path = None
+
+                                    if check_path and check_path.exists():
+                                        existing_files = list(check_path.glob(f"*{{edition-{check_edition}}}.*"))
+                                        if existing_files:
+                                            existing_file = existing_files[0]
+                                            print(f"{GREEN}Content already exists for {movie['title']}: {existing_file.name} - skipping{RESET}")
+                                            skipped_existing += 1
+                                            successful += 1
+                                            trending_movies_with_content.append(movie)
+                                            content_exists = True
+                                            break
+
+                            if content_exists:
+                                continue
+
+                            success = False
+
+                            if trending_movies_method == 1:  # Trailer
+                                trailer_info = search_trailer_on_youtube(
+                                    movie['title'],
+                                    movie.get('year'),
+                                    movie.get('imdbId'),
+                                    debug,
+                                    skip_channels
+                                )
+
+                                if trailer_info:
+                                    print(f"Found trailer: {trailer_info['video_title']} ({trailer_info['duration']}) by {trailer_info['uploader']}")
+                                    success = download_trailer_movie(movie, trailer_info, debug, movie_root, is_trending=is_request_needed)
+                                else:
+                                    print(f"{ORANGE}No suitable trailer found for {movie['title']}{RESET}")
+
+                                if not success and method_fallback:
+                                    print(f"{ORANGE}Trailer method failed, attempting fallback to placeholder method...{RESET}")
+                                    success = create_placeholder_movie(movie, debug, movie_root, is_trending=is_request_needed)
+                                    if success:
+                                        fallback_used += 1
+                                        print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
+
+                            elif trending_movies_method == 2:  # Placeholder
+                                success = create_placeholder_movie(movie, debug, movie_root, is_trending=is_request_needed)
+
+                            if success:
+                                successful += 1
+                                trending_movies_with_content.append(movie)
+                            else:
+                                failed += 1
+
+                        print(f"\n{GREEN}Trending movie content processing summary:{RESET}")
+                        print(f"Successful: {successful}")
+                        print(f"Skipped (already exist): {skipped_existing}")
+                        if fallback_used > 0:
+                            print(f"Fallback used: {fallback_used}")
+                        print(f"Failed: {failed}")
+
+                    # Distribute trending into per-instance results so split-mode YMLs include them.
+                    inst_results_by_name = {r['name']: r for r in movie_instance_results}
+                    for movie in trending_movies_monitored:
+                        owner_name = movie.get('owner', {}).get('name')
+                        if owner_name and owner_name in inst_results_by_name:
+                            inst_results_by_name[owner_name]['trending_movies_monitored'].append(movie)
+                    for movie in trending_movies_request_needed:
+                        for r in movie_instance_results:
+                            r['trending_movies_request_needed'].append(movie)
+                else:
+                    trending_movies_monitored = []
+                    trending_movies_request_needed = []
+
+                # ====================================================================
+                # PER-INSTANCE MOVIE CLEANUP — runs after the global trending pass so
+                # it can see the full global trending lists.
+                # ====================================================================
+                if cleanup and radarr_instances_data:
+                    for inst in radarr_instances_data:
+                        if len(radarr_instances_data) > 1:
+                            print(f"\n{BLUE}--- Cleanup for Radarr Instance: {inst['name']} ---{RESET}")
+                        # Re-derive the per-instance future/released used by cleanup.
+                        inst_result = next((r for r in movie_instance_results if r['name'] == inst['name']), None)
+                        inst_future = inst_result['future_movies'] if inst_result else []
+                        inst_released = inst_result['released_movies'] if inst_result else []
+                        print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
+                        try:
+                            cleanup_movie_content(
+                                inst['all_movies'], inst['url'], inst['api_key'], inst_future, inst_released,
+                                trending_movies_monitored, trending_movies_request_needed,
+                                movie_method, debug, inst['exclude_tag_ids'], inst.get('umtk_root_movies')
+                            )
+                        except (ConnectionError, requests.exceptions.RequestException) as e:
+                            print(f"{RED}Cleanup error for Radarr instance '{inst['name']}': {str(e)}{RESET}")
+
                 # Merge instance results for YML generation and Plex updates
                 if movie_instance_results:
-                    # Merge trending results: monitored wins over request_needed
-                    monitored_ids = set()
-                    for r in movie_instance_results:
-                        for movie in r['trending_movies_monitored']:
-                            mid = movie.get('tmdbId') or movie.get('imdbId')
-                            if mid:
-                                monitored_ids.add(mid)
-
-                    trending_movies_monitored = dedupe_by_key(
-                        [r['trending_movies_monitored'] for r in movie_instance_results], 'tmdbId')
-                    trending_movies_request_needed = [
-                        movie for movie in dedupe_by_key(
-                            [r['trending_movies_request_needed'] for r in movie_instance_results], 'tmdbId')
-                        if (movie.get('tmdbId') or movie.get('imdbId')) not in monitored_ids
-                    ]
-
                     all_movies_with_content = dedupe_by_key(
-                        [r['all_movies_with_content'] for r in movie_instance_results], 'tmdbId')
+                        [r['all_movies_with_content'] for r in movie_instance_results] + [trending_movies_with_content],
+                        'tmdbId'
+                    )
 
                     # Generate Movie YML files
                     if movie_method > 0 or trending_movies_method > 0:

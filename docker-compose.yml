@@ -22,8 +22,14 @@ services:
       # Output directory for generated YAML files (required)
       - ./kometa:/app/kometa
 
-      # UMTK root folders
+      # UMTK root folders — one mount per umtk_root path configured in config.yml.
+      # Each Radarr/Sonarr instance now has its own umtk_root, and the Trending
+      # tile has its own trending_root_movies / trending_root_tv. Add a volume
+      # mount here for every distinct root path you configure.
       - /your/actual/path:/umtkmovies #example: /mnt/media/umtk/movies:/umtkmovies
       - /your/actual/path:/umtktv #example: /mnt/media/umtk/tv:/umtktv
+      # Additional instances (uncomment and adjust to match your config):
+      # - /your/4k/movies/path:/umtkmovies4k
+      # - /your/4k/tv/path:/umtktv4k
 
     restart: unless-stopped
