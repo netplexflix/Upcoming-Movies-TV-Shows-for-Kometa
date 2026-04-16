@@ -6,7 +6,7 @@ Main execution logic, callable from UMTK orchestrator.
 from datetime import datetime
 
 from umtk.constants import VERSION
-from umtk.utils import dedupe_by_key, sanitize_instance_name, cleanup_stale_ymls
+from umtk.utils import dedupe_by_key, sanitize_instance_name
 from .constants import IS_DOCKER, GREEN, ORANGE, BLUE, RED, RESET
 from .config_loader import (
     ensure_output_directory,
@@ -134,10 +134,6 @@ def run_tssk(config, localization=None):
     # Multi-instance support
     sonarr_instances = config.get('sonarr_instances', [])
     output_mode = config.get('instance_output_mode', 'combined')
-
-    # Clean up stale YML files from previous mode/instances
-    instance_names = [i.get('name', '') for i in sonarr_instances]
-    cleanup_stale_ymls(output_dir, output_mode, instance_names, debug=debug)
 
     if not sonarr_instances:
         print(f"{RED}No Sonarr instances configured. TSSK cannot run.{RESET}")

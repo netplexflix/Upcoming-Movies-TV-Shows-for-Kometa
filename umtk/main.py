@@ -14,7 +14,7 @@ from .updater import check_for_updates
 from .utils import (
     check_yt_dlp_installed, check_video_file,
     get_tag_ids_from_names, sanitize_filename,
-    dedupe_by_key, sanitize_instance_name, cleanup_stale_ymls
+    dedupe_by_key, sanitize_instance_name
 )
 from .sonarr import process_sonarr_url, get_sonarr_series
 from .radarr import process_radarr_url, get_radarr_movies
@@ -159,10 +159,6 @@ def main(config=None, localization=None):
         sonarr_instances = config.get('sonarr_instances', [])
         radarr_instances = config.get('radarr_instances', [])
         output_mode = config.get('instance_output_mode', 'combined')
-
-        # Clean up stale YML files from previous mode/instances
-        all_instance_names = [i.get('name', '') for i in sonarr_instances + radarr_instances]
-        cleanup_stale_ymls(kometa_folder, output_mode, all_instance_names, debug=debug)
 
         # Process TV Shows
         if process_tv:
