@@ -10,6 +10,24 @@ It includes:
 - **TV Show Status** (formerly [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)) — Checks your Sonarr for TV show statuses and creates `.yml` files for overlays and collections. Categories include: new shows, new seasons, upcoming episodes, upcoming finales, season finales, final episodes, returning, ended, and canceled shows.
 - **Trending** — Uses MDBList to create "Trending" categories and creates placeholder files for missing items with an overlay indicating that a request is required. Optionally applies a TOP 10 ranking overlay.
 
+<a id="migration"></a>
+> [!NOTE]
+> This version of UMTK implements 2 big changes: TSSK is now integrated and a webUI is available.<br>
+> If you're an existing UMTK and/or TSSK user and want to migrate to this new version: Don't worry, it is easy:<br>
+> #### You only use UMTK:
+> All you have to do is map port 2120 to be able to visit the webUI. (See example docker-compose, or map it in the unRAID template).
+> Everything will continue to work as usual. TSSK is disabled by default.
+> #### You use UMTK and TSSK:
+> - For UMTK; map port 2120 to be able to access the webUI.
+> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
+> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
+> - You can remove your TSSK container as both scripts will now run in this unified UMTK container
+> #### You only use TSSK:
+> - Follow the UMTK install instructions
+> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
+> - Disable UMTK in the webUI, or manually disable the variable in `config.yml`
+
+
 ## Examples:
 ### TV Show Status Overlays:
 
