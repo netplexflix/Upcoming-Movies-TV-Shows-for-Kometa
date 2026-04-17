@@ -21,11 +21,15 @@ It includes:
 > - For UMTK; map port 2120 to be able to access the webUI.
 > - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
 > - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
+> - Note that TSSK ymls will be output in the same directory as your UMTK ymls. So if they were generated elsewhere before, you'll have to adjust the paths in your Kometa config.
 > - You can remove your TSSK container as both scripts will now run in this unified UMTK container
 > #### You only use TSSK:
 > - Follow the UMTK install instructions
 > - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
-> - Disable UMTK in the webUI, or manually disable the variable in `config.yml`
+> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
+> - UMTK is disabled by default
+> - Make sure your Kometa config points to the correct yml output directory
+> - You can remove your TSSK container as TSSK will now run under the UMTK container
 
 
 ## Examples:
