@@ -5,6 +5,7 @@ Radarr API integration for UMTK
 import requests
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
+from .utils import request_with_retry
 
 
 def process_radarr_url(base_url, api_key, timeout=90):
@@ -45,7 +46,7 @@ def get_radarr_movies(radarr_url, api_key, timeout=90):
         print(f"{BLUE}Fetching movies from Radarr...{RESET}", flush=True)
         url = f"{radarr_url}/movie"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=timeout)
+        response = request_with_retry('GET', url, headers=headers, timeout=timeout)
         response.raise_for_status()
         movies_data = response.json()
         print(f"{GREEN}Done ✓ ({len(movies_data)} movies){RESET}")

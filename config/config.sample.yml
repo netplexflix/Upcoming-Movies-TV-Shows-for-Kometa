@@ -1,6 +1,8 @@
 ################################################################################
 ##########                         GENERAL:                           ##########
 ################################################################################
+enable_umtk: false
+enable_tssk: false
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 method_fallback: true
@@ -17,18 +19,43 @@ skip_channels:
   - "New Movie Updates"
 
 ################################################################################
-##########                   RADARR CONFIGURATION:                    ##########
+##########              INSTANCE OUTPUT MODE:                         ##########
 ################################################################################
-radarr_url: 'http://localhost:7878'
-radarr_api_key: 'YOUR_RADARR_API_KEY'
-radarr_timeout: 90
- 
+instance_output_mode: combined  # "combined" = merge into single YML files, "split" = separate YML files per instance
+
 ################################################################################
-##########                   SONARR CONFIGURATION:                    ##########
+##########                   RADARR INSTANCES:                        ##########
 ################################################################################
-sonarr_url: 'http://localhost:8989'
-sonarr_api_key: 'YOUR_SONARR_API_KEY'
-sonarr_timeout: 90
+radarr_instances:
+  - name: Radarr
+    url: 'http://localhost:7878'
+    api_key: 'YOUR_RADARR_API_KEY'
+    timeout: 90
+    exclude_tags: exclude, private
+    umtk_root: /umtkmovies
+  # - name: Radarr4K
+  #   url: 'http://localhost:7879'
+  #   api_key: 'YOUR_RADARR4K_API_KEY'
+  #   timeout: 90
+  #   exclude_tags: exclude
+  #   umtk_root: /umtkmovies4k
+
+################################################################################
+##########                   SONARR INSTANCES:                        ##########
+################################################################################
+sonarr_instances:
+  - name: Sonarr
+    url: 'http://localhost:8989'
+    api_key: 'YOUR_SONARR_API_KEY'
+    timeout: 90
+    exclude_tags: exclude, private
+    umtk_root: /umtktv
+  # - name: Sonarr4K
+  #   url: 'http://localhost:8990'
+  #   api_key: 'YOUR_SONARR4K_API_KEY'
+  #   timeout: 90
+  #   exclude_tags: exclude
+  #   umtk_root: /umtktv4k
 
 ################################################################################
 ##########                    PLEX CONFIGURATION:                     ##########
@@ -49,8 +76,6 @@ future_days_upcoming_movies: 30
 past_days_upcoming_movies: 0 #0=no limit
 include_inCinemas: false
 future_only: false
-exclude_radarr_tags: exclude, private
-umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use `/umtkmovies`
 
 ################################################################################
 ##########                         TV SHOWS:                          ##########
@@ -58,8 +83,6 @@ umtk_root_movies: # Where UMTK will output the movie folders. Docker users: use 
 future_days_upcoming_shows: 30
 recent_days_new_show: 7
 future_only_tv: false
-exclude_sonarr_tags: exclude, private
-umtk_root_tv: # Where UMTK will output the tv folder. Docker users: use `/umtktv`
 
 ################################################################################
 ##########                        TRENDING:                           ##########
@@ -72,6 +95,8 @@ mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
 mdblist_movies_limit: 10
 mdblist_tv: https://mdblist.com/lists/netplexflix/umtk-trending-top20
 mdblist_tv_limit: 10
+trending_root_movies: /umtkmovies   # Root for trending movies not in any Radarr library
+trending_root_tv: /umtktv           # Root for trending shows not in any Sonarr library
   
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########

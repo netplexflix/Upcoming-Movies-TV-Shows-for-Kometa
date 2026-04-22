@@ -6,7 +6,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
-from .utils import convert_utc_to_local
+from .utils import convert_utc_to_local, request_with_retry
 
 
 def process_sonarr_url(base_url, api_key, timeout=90):
@@ -55,7 +55,7 @@ def get_sonarr_series(sonarr_url, api_key, timeout=90):
         print(f"{BLUE}Fetching series from Sonarr...{RESET}", flush=True)
         url = f"{sonarr_url}/series"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=timeout)
+        response = request_with_retry('GET', url, headers=headers, timeout=timeout)
         response.raise_for_status()
         series_data = response.json()
         print(f"{GREEN}Done ✓ ({len(series_data)} series){RESET}")
@@ -79,7 +79,7 @@ def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
     try:
         url = f"{sonarr_url}/episode?seriesId={series_id}"
         headers = {"X-Api-Key": api_key}
-        response = requests.get(url, headers=headers, timeout=timeout)
+        response = request_with_retry('GET', url, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout as e:

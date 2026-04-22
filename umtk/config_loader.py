@@ -4,6 +4,7 @@ Configuration loading and management for UMTK
 
 import os
 import sys
+import shutil
 import yaml
 from pathlib import Path
 from copy import deepcopy
@@ -14,6 +15,63 @@ from .constants import (
 )
 
 
+def normalize_instances(config):
+    """Convert legacy flat radarr_*/sonarr_* keys into radarr_instances/sonarr_instances lists.
+
+    If the new list keys already exist the config is returned as-is.
+    This provides full backward compatibility: users can keep the old flat
+    format in their config.yml forever and it will be transparently converted
+    at load time without rewriting the file on disk.
+    """
+    if config is None:
+        return config
+
+    # --- Radarr ---
+    if 'radarr_instances' not in config and config.get('radarr_url'):
+        config['radarr_instances'] = [{
+            'name': 'Radarr',
+            'url': config.pop('radarr_url'),
+            'api_key': config.pop('radarr_api_key', ''),
+            'timeout': config.pop('radarr_timeout', 90),
+            'exclude_tags': config.pop('exclude_radarr_tags', ''),
+        }]
+
+    # --- Sonarr ---
+    if 'sonarr_instances' not in config and config.get('sonarr_url'):
+        config['sonarr_instances'] = [{
+            'name': 'Sonarr',
+            'url': config.pop('sonarr_url'),
+            'api_key': config.pop('sonarr_api_key', ''),
+            'timeout': config.pop('sonarr_timeout', 90),
+            'exclude_tags': config.pop('exclude_sonarr_tags', ''),
+        }]
+
+    # --- Legacy root-path inheritance ---
+    # Historically umtk_root_movies / umtk_root_tv were top-level keys. They
+    # now live per-instance and as dedicated trending_root_* keys. When a
+    # legacy value is present and a destination is unset, copy it in memory
+    # so deployed configs keep working without rewriting the YAML file.
+    legacy_root_movies = config.get('umtk_root_movies')
+    legacy_root_tv = config.get('umtk_root_tv')
+
+    if legacy_root_movies:
+        for inst in config.get('radarr_instances', []) or []:
+            if not inst.get('umtk_root'):
+                inst['umtk_root'] = legacy_root_movies
+        if not config.get('trending_root_movies'):
+            config['trending_root_movies'] = legacy_root_movies
+
+    if legacy_root_tv:
+        for inst in config.get('sonarr_instances', []) or []:
+            if not inst.get('umtk_root'):
+                inst['umtk_root'] = legacy_root_tv
+        if not config.get('trending_root_tv'):
+            config['trending_root_tv'] = legacy_root_tv
+
+    config.setdefault('instance_output_mode', 'combined')
+    return config
+
+
 def load_config(file_path=None):
     """Load configuration from YAML file"""
     if file_path is None:
@@ -22,13 +80,27 @@ def load_config(file_path=None):
             file_path = Path('/app/config/config.yml')
         else:
             file_path = Path(__file__).parent.parent / 'config' / 'config.yml'
-    
+
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
-            return yaml.safe_load(file)
+            config = yaml.safe_load(file)
+            return normalize_instances(config)
     except FileNotFoundError:
-        print(f"Config file '{file_path}' not found.")
-        sys.exit(1)
+        # Try to auto-copy from sample file
+        sample_path = Path(str(file_path)).parent / 'config.sample.yml'
+        if sample_path.exists():
+            print(f"{ORANGE}Config file '{file_path}' not found. Copying from sample...{RESET}")
+            shutil.copy2(str(sample_path), str(file_path))
+            print(f"{GREEN}Created '{file_path}' from sample. Please edit it with your settings.{RESET}")
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return normalize_instances(yaml.safe_load(f))
+            except Exception as e:
+                print(f"Error reading copied config file: {e}")
+                sys.exit(1)
+        else:
+            print(f"Config file '{file_path}' not found and no sample available.")
+            sys.exit(1)
     except yaml.YAMLError as e:
         print(f"Error parsing YAML config file: {e}")
         sys.exit(1)

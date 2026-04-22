@@ -4,12 +4,62 @@ Utility functions for UMTK
 
 import os
 import re
+import time
 import requests
 import subprocess
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
+
+
+def request_with_retry(method, url, *, retries=2, backoff=2.0, **kwargs):
+    """requests.request() with retry on transient ConnectionError/Timeout.
+
+    HTTP 4xx/5xx responses are NOT retried — only network-level failures.
+    Default: 2 retries (3 total attempts) with linear backoff (2s, 4s).
+    """
+    for attempt in range(retries + 1):
+        try:
+            return requests.request(method, url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt < retries:
+                wait = backoff * (attempt + 1)
+                print(f"{ORANGE}Connection issue ({type(e).__name__}), retrying in {wait:.0f}s (attempt {attempt + 2}/{retries + 1})...{RESET}", flush=True)
+                time.sleep(wait)
+            else:
+                raise
+
+
+def dedupe_by_key(items_lists, key):
+    """Merge multiple lists, keeping first occurrence per key value.
+
+    Args:
+        items_lists: iterable of lists to merge
+        key: dict key to deduplicate on (e.g. 'tvdbId', 'tmdbId')
+
+    Returns:
+        Single merged list with duplicates removed.
+    """
+    seen = set()
+    result = []
+    for items in items_lists:
+        for item in items:
+            id_val = item.get(key)
+            if id_val and id_val not in seen:
+                seen.add(id_val)
+                result.append(item)
+            elif not id_val:
+                result.append(item)
+    return result
+
+
+def sanitize_instance_name(name):
+    """Convert an instance name to a safe filename suffix.
+
+    Replaces spaces with underscores and strips everything else
+    that isn't alphanumeric or underscore.
+    """
+    return re.sub(r'[^a-zA-Z0-9_]', '', name.replace(' ', '_'))
 
 
 def get_user_info():

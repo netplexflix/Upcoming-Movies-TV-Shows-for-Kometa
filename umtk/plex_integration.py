@@ -7,7 +7,7 @@ import time
 import requests
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
-from .utils import sanitize_sort_title
+from .utils import sanitize_sort_title, request_with_retry
 
 
 def get_plex_libraries(plex_url, plex_token, debug=False):
@@ -22,9 +22,9 @@ def get_plex_libraries(plex_url, plex_token, debug=False):
         if debug:
             print(f"{BLUE}[DEBUG] Fetching Plex libraries from: {url}{RESET}")
         
-        response = requests.get(url, headers=headers, timeout=30)
+        response = request_with_retry('GET', url, headers=headers, timeout=30)
         response.raise_for_status()
-        
+
         data = response.json()
         libraries = {}
         
@@ -55,7 +55,7 @@ def get_plex_library_items(plex_url, plex_token, library_key, debug=False):
         if debug:
             print(f"{BLUE}[DEBUG] Fetching Plex library items from: {url}{RESET}")
         
-        response = requests.get(url, headers=headers, timeout=60)
+        response = request_with_retry('GET', url, headers=headers, timeout=60)
         response.raise_for_status()
         
         data = response.json()
@@ -133,9 +133,9 @@ def get_plex_show_episodes(plex_url, plex_token, show_rating_key, season_number=
         if debug:
             print(f"{BLUE}[DEBUG] Fetching seasons for show {show_rating_key}{RESET}")
         
-        response = requests.get(url, headers=headers, timeout=30)
+        response = request_with_retry('GET', url, headers=headers, timeout=30)
         response.raise_for_status()
-        
+
         data = response.json()
         seasons = data.get('MediaContainer', {}).get('Metadata', [])
         
@@ -152,7 +152,7 @@ def get_plex_show_episodes(plex_url, plex_token, show_rating_key, season_number=
                     print(f"{BLUE}[DEBUG] Found season {season_number}, ratingKey: {season_key}{RESET}")
                 
                 episodes_url = f"{plex_url.rstrip('/')}/library/metadata/{season_key}/children"
-                episodes_response = requests.get(episodes_url, headers=headers, timeout=30)
+                episodes_response = request_with_retry('GET', episodes_url, headers=headers, timeout=30)
                 episodes_response.raise_for_status()
                 
                 episodes_data = episodes_response.json()
@@ -197,7 +197,7 @@ def update_plex_sort_title(plex_url, plex_token, rating_key, new_sort_title, deb
         if debug:
             print(f"{BLUE}[DEBUG] Updating sort title - URL: {url}, params: {params}{RESET}")
         
-        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response = request_with_retry('PUT', url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         
         if debug:
@@ -227,7 +227,7 @@ def update_plex_episode_title(plex_url, plex_token, rating_key, new_title, debug
         if debug:
             print(f"{BLUE}[DEBUG] Updating episode title - URL: {url}, params: {params}{RESET}")
         
-        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response = request_with_retry('PUT', url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         
         if debug:
@@ -258,7 +258,7 @@ def reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debu
         if debug:
             print(f"{BLUE}[DEBUG] Resetting sort title - URL: {url}, params: {params}{RESET}")
         
-        response = requests.put(url, headers=headers, params=params, timeout=30)
+        response = request_with_retry('PUT', url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         
         if debug:

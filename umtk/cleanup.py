@@ -239,9 +239,9 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     
                     try:
                         try:
-                            os.chmod(show_dir, 0o777)
+                            os.chmod(show_dir, 0o775)
                             if debug:
-                                print(f"{BLUE}[DEBUG] Set permissions 755 on {show_dir}{RESET}")
+                                print(f"{BLUE}[DEBUG] Set permissions 775 on {show_dir}{RESET}")
                         except Exception as perm_err:
                             if debug:
                                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
@@ -289,9 +289,9 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                     
                     try:
                         try:
-                            os.chmod(season_00_path, 0o777)
+                            os.chmod(season_00_path, 0o775)
                             if debug:
-                                print(f"{BLUE}[DEBUG] Set permissions 755 on {season_00_path}{RESET}")
+                                print(f"{BLUE}[DEBUG] Set permissions 775 on {season_00_path}{RESET}")
                         except Exception as perm_err:
                             if debug:
                                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
@@ -555,10 +555,10 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                     
                     try:
                         try:
-                            os.chmod(folder, 0o777)
-                            os.chmod(parent_dir, 0o777)
+                            os.chmod(folder, 0o775)
+                            os.chmod(parent_dir, 0o775)
                             if debug:
-                                print(f"{BLUE}[DEBUG] Set permissions 755 on {folder} and {parent_dir}{RESET}")
+                                print(f"{BLUE}[DEBUG] Set permissions 775 on {folder} and {parent_dir}{RESET}")
                         except Exception as perm_err:
                             if debug:
                                 print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
