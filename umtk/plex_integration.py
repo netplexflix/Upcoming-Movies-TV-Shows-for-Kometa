@@ -10,6 +10,50 @@ from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import sanitize_sort_title, request_with_retry
 
 
+def trigger_plex_library_scan(plex_url, plex_token, library_names_csv, expected_type, debug=False):
+    """Trigger a Plex scan for each named library of the given type.
+
+    expected_type: 'movie' or 'show' — libraries whose reported type does not
+    match are skipped (mirrors the guard used by metadata update code).
+    """
+    if not plex_url or not plex_token or not library_names_csv:
+        return
+
+    if isinstance(library_names_csv, str):
+        library_names = [n.strip() for n in library_names_csv.split(',') if n.strip()]
+    elif isinstance(library_names_csv, (list, tuple)):
+        library_names = [str(n).strip() for n in library_names_csv if str(n).strip()]
+    else:
+        library_names = []
+
+    if not library_names:
+        return
+
+    libraries = get_plex_libraries(plex_url, plex_token, debug=debug)
+    if not libraries:
+        return
+
+    kind_label = 'TV' if expected_type == 'show' else 'movie'
+    for name in library_names:
+        lib = libraries.get(name)
+        if not lib:
+            print(f"{ORANGE}Plex library '{name}' not found — skipping scan{RESET}")
+            continue
+        if lib.get('type') != expected_type:
+            print(f"{ORANGE}Plex library '{name}' is not a {kind_label} library — skipping scan{RESET}")
+            continue
+        try:
+            url = f"{plex_url.rstrip('/')}/library/sections/{lib['key']}/refresh"
+            headers = {"X-Plex-Token": plex_token, "Accept": "application/json"}
+            if debug:
+                print(f"{BLUE}[DEBUG] Triggering Plex scan: {url}{RESET}")
+            response = request_with_retry('GET', url, headers=headers, timeout=15)
+            response.raise_for_status()
+            print(f"{GREEN}Plex scan triggered for {kind_label} library '{name}'{RESET}")
+        except requests.exceptions.RequestException as e:
+            print(f"{RED}Error triggering Plex scan for '{name}': {str(e)}{RESET}")
+
+
 def get_plex_libraries(plex_url, plex_token, debug=False):
     """Get all libraries from Plex"""
     try:

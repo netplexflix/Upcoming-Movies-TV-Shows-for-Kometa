@@ -35,7 +35,7 @@ from .yaml_generators import (
     create_trending_collection_yaml_movies, create_trending_collection_yaml_tv,
     create_top10_overlay_yaml_movies, create_top10_overlay_yaml_tv
 )
-from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata
+from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata, trigger_plex_library_scan
 
 
 def main(config=None, localization=None):
@@ -151,6 +151,11 @@ def main(config=None, localization=None):
         mdblist_movies_items = None
         all_shows_with_content = []
         all_movies_with_content = []
+
+        # Track files actually written this run so a Plex library scan is only
+        # triggered when something new landed on disk.
+        new_tv_files_written = 0
+        new_movie_files_written = 0
 
         process_tv = (tv_method > 0 or trending_tv_method > 0)
         tv_processing_failed = False
@@ -351,6 +356,7 @@ def main(config=None, localization=None):
 
                                     if success:
                                         successful += 1
+                                        new_tv_files_written += 1
                                         inst_shows_with_content.append(show)
                                     else:
                                         failed += 1
@@ -508,6 +514,7 @@ def main(config=None, localization=None):
 
                             if success:
                                 successful += 1
+                                new_tv_files_written += 1
                                 trending_shows_with_content.append(show)
                             else:
                                 failed += 1
@@ -831,6 +838,7 @@ def main(config=None, localization=None):
 
                                     if success:
                                         successful += 1
+                                        new_movie_files_written += 1
                                         inst_movies_with_content.append(movie)
                                     else:
                                         failed += 1
@@ -978,6 +986,7 @@ def main(config=None, localization=None):
 
                             if success:
                                 successful += 1
+                                new_movie_files_written += 1
                                 trending_movies_with_content.append(movie)
                             else:
                                 failed += 1
@@ -1130,7 +1139,22 @@ def main(config=None, localization=None):
             )
         elif debug and process_movies:
             print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
-        
+
+        # Trigger Plex library scans (only for library types where new files
+        # were actually written this run, and only if the option is enabled).
+        if config.get('plex_library_scan', False) and plex_url and plex_token:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Triggering Plex library scans...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            if new_tv_files_written > 0 and tv_libraries:
+                trigger_plex_library_scan(plex_url, plex_token, tv_libraries, 'show', debug)
+            elif debug and tv_libraries:
+                print(f"{ORANGE}[DEBUG] Skipping TV library scan — no new files written this run{RESET}")
+            if new_movie_files_written > 0 and movie_libraries:
+                trigger_plex_library_scan(plex_url, plex_token, movie_libraries, 'movie', debug)
+            elif debug and movie_libraries:
+                print(f"{ORANGE}[DEBUG] Skipping movie library scan — no new files written this run{RESET}")
+
         # Calculate and display runtime
         end_time = datetime.now()
         runtime = end_time - start_time

@@ -37,6 +37,7 @@ _QuotedDumper.add_representer(str, _quoted_str)
 # These are re-inserted when saving to preserve the visual structure.
 
 UMTK_SECTION_HEADERS = {
+    'webui_auth_enabled': '################################################################################\n##########                           WEBUI:                           ##########\n################################################################################',
     'enable_umtk': '################################################################################\n##########                         GENERAL:                           ##########\n################################################################################',
     'schedule_type': '################################################################################\n##########                         SCHEDULER:                         ##########\n################################################################################',
     'instance_output_mode': '################################################################################\n##########              INSTANCE OUTPUT MODE:                         ##########\n################################################################################',
@@ -65,11 +66,14 @@ UMTK_SECTION_HEADERS = {
 # ── Config option metadata ─────────────────────────────────────────────────
 
 CONNECTION_OPTIONS = [
+    # WebUI (rendered first; toggle & change-password UI handled with custom JS)
+    {"key": "webui_auth_enabled", "type": "bool", "default": True, "label": "Password Protection", "description": "Require a password to access the WebUI.", "section": "WebUI"},
     {"key": "instance_output_mode", "type": "select", "default": "combined", "label": "Instance Output Mode", "description": "Combined: merge all instances into single YML files. Split: separate YML files per instance.", "section": "Instances", "options": [{"value": "combined", "label": "Combined"}, {"value": "split", "label": "Split"}]},
     {"key": "plex_url", "type": "string", "default": "http://localhost:32400", "label": "Plex URL", "description": "URL of your Plex Media Server", "section": "Plex"},
     {"key": "plex_token", "type": "string", "default": "", "label": "Plex Token", "description": "Your Plex authentication token", "section": "Plex", "sensitive": True},
     {"key": "movie_libraries", "type": "string", "default": "Movies", "label": "Movie Libraries", "description": "Comma-separated Plex movie library names", "section": "Plex"},
     {"key": "tv_libraries", "type": "string", "default": "TV Shows", "label": "TV Libraries", "description": "Comma-separated Plex TV library names", "section": "Plex"},
+    {"key": "plex_library_scan", "type": "bool", "default": False, "label": "Trigger Library Scan", "description": "After a run, tell Plex to scan the movie/TV libraries so newly written placeholders or trailers are picked up. Enable if your Plex isn't set to auto-scan.", "section": "Plex"},
     # Scheduler
     {"key": "schedule_type", "type": "select", "default": "cron", "label": "Schedule Type", "description": "", "section": "Scheduler", "options": [{"value": "hours", "label": "Every X hours"}, {"value": "cron", "label": "Cron expression"}]},
     {"key": "schedule_hours", "type": "int", "default": 24, "label": "Hours Interval", "description": "Run every X hours", "section": "Scheduler"},
@@ -431,6 +435,10 @@ def register_routes(app):
         sensitive_keys = {o["key"] for o in CONNECTION_OPTIONS if o.get("sensitive")}
         for key, value in data.items():
             if key not in _ALLOWED_CONNECTION_KEYS:
+                continue
+            # webui_auth_enabled is managed via /api/auth/set-enabled (which
+            # requires password confirmation); ignore any value sent here.
+            if key == "webui_auth_enabled":
                 continue
             # Don't overwrite real credentials with the mask placeholder
             if key in sensitive_keys and value == MASKED_VALUE:

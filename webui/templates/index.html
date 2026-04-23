@@ -1337,6 +1337,20 @@ select { min-width: 120px; }
     </div>
 </div>
 
+<!-- ── Password confirm / change modal ─────────────────────────────────── -->
+<div id="pw-modal" class="auth-overlay hidden">
+    <div class="auth-box">
+        <h2 id="pw-modal-title">Confirm Password</h2>
+        <p id="pw-modal-desc">Enter your current password to continue.</p>
+        <div class="auth-error" id="pw-modal-error"></div>
+        <input type="password" id="pw-modal-current" placeholder="Current password" autocomplete="current-password">
+        <input type="password" id="pw-modal-new" placeholder="New password" autocomplete="new-password" style="display:none;">
+        <input type="password" id="pw-modal-confirm" placeholder="Confirm new password" autocomplete="new-password" style="display:none;">
+        <button class="btn-auth" id="pw-modal-submit">Confirm</button>
+        <button class="btn-auth" id="pw-modal-cancel" style="background:none;border:1px solid var(--border);color:var(--text-secondary);margin-top:8px;">Cancel</button>
+    </div>
+</div>
+
 <!-- ── Navbar ──────────────────────────────────────────────────────────── -->
 <nav class="navbar">
     <div class="navbar-brand">UMTK <a href="https://github.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/" target="_blank" rel="noopener noreferrer" class="github-link"><img src="{{ url_for('static', filename='github_logo.png') }}" alt="GitHub" class="github-logo"></a><span class="version">v{{ version }}</span><span class="version-status"><span class="version-dot" id="version-dot" title="Checking for updates..."></span><span class="version-status-text" id="version-status-text"></span></span></div>
@@ -1909,6 +1923,134 @@ function renderConnections() {
         typeEl.addEventListener('change', updateSchedulerFieldState);
         updateSchedulerFieldState();
     }
+
+    // Wire the WebUI section: password-protection toggle + change-password button
+    const authToggle = container.querySelector('[data-key="webui_auth_enabled"]');
+    if (authToggle) {
+        const webuiSection = authToggle.closest('.settings-section');
+        if (webuiSection && !webuiSection.querySelector('.btn-change-password')) {
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'setting-item';
+            actionsRow.innerHTML = `
+                <div class="setting-info">
+                    <div class="setting-label">Password</div>
+                    <div class="setting-desc">Change the WebUI password.</div>
+                </div>
+                <div class="setting-control">
+                    <button type="button" class="btn btn-secondary btn-change-password" onclick="openChangePasswordModal()">Change Password</button>
+                </div>`;
+            webuiSection.appendChild(actionsRow);
+        }
+        authToggle.addEventListener('change', onAuthToggleChange);
+    }
+}
+
+// ── WebUI password toggle & change-password handlers ─────────────────────
+let _pwModalSubmitHandler = null;
+
+function _openPwModal({title, desc, showNew, submitLabel, onSubmit}) {
+    const modal = document.getElementById('pw-modal');
+    document.getElementById('pw-modal-title').textContent = title;
+    document.getElementById('pw-modal-desc').textContent = desc;
+    document.getElementById('pw-modal-error').textContent = '';
+    const cur = document.getElementById('pw-modal-current');
+    const nw = document.getElementById('pw-modal-new');
+    const cf = document.getElementById('pw-modal-confirm');
+    cur.value = ''; nw.value = ''; cf.value = '';
+    nw.style.display = showNew ? '' : 'none';
+    cf.style.display = showNew ? '' : 'none';
+    document.getElementById('pw-modal-submit').textContent = submitLabel;
+    modal.classList.remove('hidden');
+    setTimeout(() => cur.focus(), 50);
+
+    const submitBtn = document.getElementById('pw-modal-submit');
+    if (_pwModalSubmitHandler) submitBtn.removeEventListener('click', _pwModalSubmitHandler);
+    _pwModalSubmitHandler = onSubmit;
+    submitBtn.addEventListener('click', _pwModalSubmitHandler);
+}
+
+function _closePwModal() {
+    document.getElementById('pw-modal').classList.add('hidden');
+    if (_pwModalSubmitHandler) {
+        document.getElementById('pw-modal-submit').removeEventListener('click', _pwModalSubmitHandler);
+        _pwModalSubmitHandler = null;
+    }
+}
+
+function _setPwModalError(msg) {
+    document.getElementById('pw-modal-error').textContent = msg || '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const cancelBtn = document.getElementById('pw-modal-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', _closePwModal);
+});
+
+function onAuthToggleChange(e) {
+    const checkbox = e.target;
+    const desiredEnabled = checkbox.checked;
+    const currentOpt = (connData || []).find(o => o.key === 'webui_auth_enabled');
+    const previousEnabled = currentOpt ? !!currentOpt.value : true;
+
+    // Revert visually until the user confirms with password.
+    checkbox.checked = previousEnabled;
+
+    _openPwModal({
+        title: desiredEnabled ? 'Enable Password Protection' : 'Disable Password Protection',
+        desc: 'Enter your current password to confirm this change.',
+        showNew: false,
+        submitLabel: desiredEnabled ? 'Enable' : 'Disable',
+        onSubmit: async () => {
+            const current = document.getElementById('pw-modal-current').value;
+            if (!current) { _setPwModalError('Password required'); return; }
+            try {
+                const res = await fetch('/api/auth/set-enabled', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', 'X-Requested-With':'UMTK'},
+                    body: JSON.stringify({enabled: desiredEnabled, current_password: current}),
+                    credentials: 'same-origin',
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) { _setPwModalError(data.error || 'Failed'); return; }
+                checkbox.checked = desiredEnabled;
+                if (currentOpt) currentOpt.value = desiredEnabled;
+                _authEnabled = desiredEnabled;
+                document.getElementById('btn-logout').style.display = desiredEnabled ? '' : 'none';
+                _closePwModal();
+                showToast(desiredEnabled ? 'Password protection enabled' : 'Password protection disabled', 'success');
+                _snapshotPage('connections');
+            } catch(err) { _setPwModalError('Request failed'); }
+        },
+    });
+}
+
+function openChangePasswordModal() {
+    _openPwModal({
+        title: 'Change Password',
+        desc: 'Enter your current password and a new password.',
+        showNew: true,
+        submitLabel: 'Change Password',
+        onSubmit: async () => {
+            const current = document.getElementById('pw-modal-current').value;
+            const nw = document.getElementById('pw-modal-new').value;
+            const cf = document.getElementById('pw-modal-confirm').value;
+            if (!current) { _setPwModalError('Current password required'); return; }
+            if (!nw || nw.length < 4) { _setPwModalError('New password must be at least 4 characters'); return; }
+            if (nw !== cf) { _setPwModalError('New passwords do not match'); return; }
+            try {
+                const res = await fetch('/api/auth/change-password', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', 'X-Requested-With':'UMTK'},
+                    body: JSON.stringify({current_password: current, new_password: nw}),
+                    credentials: 'same-origin',
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) { _setPwModalError(data.error || 'Failed'); return; }
+                _closePwModal();
+                showToast('Password changed', 'success');
+            } catch(err) { _setPwModalError('Request failed'); }
+        },
+    });
 }
 
 function updateSchedulerFieldState() {
@@ -3000,7 +3142,7 @@ function showAuthOverlay(setupMode) {
 
 function hideAuthOverlay() {
     document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('btn-logout').style.display = '';
+    document.getElementById('btn-logout').style.display = _authEnabled ? '' : 'none';
 }
 
 async function doSetup() {
@@ -3063,11 +3205,15 @@ function initApp() {
     checkLegacyRootBanner();
 }
 
+let _authEnabled = true;
+
 (async function checkAuth() {
     try {
         const res = await fetch('/api/auth/status', {credentials: 'same-origin'});
         const data = await res.json();
+        _authEnabled = data.auth_enabled !== false;
         if (data.setup_required) { showAuthOverlay(true); }
+        else if (!_authEnabled) { hideAuthOverlay(); initApp(); }
         else if (!data.authenticated) { showAuthOverlay(false); }
         else { hideAuthOverlay(); initApp(); }
     } catch(e) {
