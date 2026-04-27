@@ -1107,9 +1107,23 @@ def main(config=None, localization=None):
                         print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
         
         # ============================================================
-        # PLEX METADATA UPDATES - MOVED TO END
+        # PLEX LIBRARY SCANS + METADATA UPDATES
         # ============================================================
-        
+
+        # Trigger Plex library scans first
+        if config.get('plex_library_scan', False) and plex_url and plex_token:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Triggering Plex library scans...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            if new_tv_files_written > 0 and tv_libraries:
+                trigger_plex_library_scan(plex_url, plex_token, tv_libraries, 'show', debug)
+            elif debug and tv_libraries:
+                print(f"{ORANGE}[DEBUG] Skipping TV library scan — no new files written this run{RESET}")
+            if new_movie_files_written > 0 and movie_libraries:
+                trigger_plex_library_scan(plex_url, plex_token, movie_libraries, 'movie', debug)
+            elif debug and movie_libraries:
+                print(f"{ORANGE}[DEBUG] Skipping movie library scan — no new files written this run{RESET}")
+
         # Update Plex TV metadata directly - only if TV processing succeeded
         if process_tv and not tv_processing_failed and plex_url and plex_token and tv_libraries:
             print(f"\n{BLUE}{'=' * 50}{RESET}")
@@ -1125,8 +1139,8 @@ def main(config=None, localization=None):
             print(f"{ORANGE}Skipping Plex TV metadata updates due to earlier Sonarr connection failure{RESET}")
         elif debug and process_tv:
             print(f"{ORANGE}[DEBUG] Plex TV metadata updates skipped - missing plex_url, plex_token, or tv_libraries{RESET}")
-        
-        # Update Plex movie metadata directly (moved to end)
+
+        # Update Plex movie metadata directly
         if process_movies and plex_url and plex_token and movie_libraries:
             print(f"\n{BLUE}{'=' * 50}{RESET}")
             print(f"{BLUE}Updating movie metadata in Plex...{RESET}")
@@ -1139,21 +1153,6 @@ def main(config=None, localization=None):
             )
         elif debug and process_movies:
             print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
-
-        # Trigger Plex library scans (only for library types where new files
-        # were actually written this run, and only if the option is enabled).
-        if config.get('plex_library_scan', False) and plex_url and plex_token:
-            print(f"\n{BLUE}{'=' * 50}{RESET}")
-            print(f"{BLUE}Triggering Plex library scans...{RESET}")
-            print(f"{BLUE}{'=' * 50}{RESET}\n")
-            if new_tv_files_written > 0 and tv_libraries:
-                trigger_plex_library_scan(plex_url, plex_token, tv_libraries, 'show', debug)
-            elif debug and tv_libraries:
-                print(f"{ORANGE}[DEBUG] Skipping TV library scan — no new files written this run{RESET}")
-            if new_movie_files_written > 0 and movie_libraries:
-                trigger_plex_library_scan(plex_url, plex_token, movie_libraries, 'movie', debug)
-            elif debug and movie_libraries:
-                print(f"{ORANGE}[DEBUG] Skipping movie library scan — no new files written this run{RESET}")
 
         # Calculate and display runtime
         end_time = datetime.now()
