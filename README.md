@@ -270,7 +270,7 @@ Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_
 
 UMTK includes a built-in web interface for configuration and monitoring, accessible at `http://localhost:2120` (or `http://your-ip:2120`).
 Features:
-- **Configuration**: Edit all UMTK and TSSK settings through the UI. Organized in tabs: Connections (Plex/Radarr/Sonarr), UMTK settings, and TSSK settings.
+- **Configuration**: Edit all UMTK and TSSK settings through the UI. Organized in tabs: Connections (WebUI/Plex/Radarr/Sonarr), UMTK settings, and TSSK settings.
 - **Connection Testing**: Test your Plex, Radarr, and Sonarr connections directly from the UI with response time feedback.
 - **Scheduler Control**: View the current status (idle/running/stopped), trigger a "Run Now", pause or resume the schedule, and see next/last run times. The schedule itself can also be edited live from the Connections tab (switch between hours-interval and cron, and save — changes take effect without a container restart).
 - **Live Logs**: Monitor real-time application logs.
@@ -339,6 +339,7 @@ radarr_instances:
 - **plex_token:** [How to find your Plex Token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
 - **movie_libraries:** names of your movie libraries, comma separated
 - **tv_libraries:** names of your TV show libraries, comma separated
+- **plex_library_scan:** When set to `true`, UMTK asks Plex to scan the configured movie/TV libraries at the end of a run for library types where a new placeholder or trailer was written this run. Useful if your Plex isn't set to auto-scan for changes.
 - **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
 - **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
 - **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used

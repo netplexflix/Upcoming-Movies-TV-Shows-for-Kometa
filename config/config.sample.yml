@@ -64,6 +64,7 @@ plex_url: 'http://localhost:32400'
 plex_token: 'YOUR_PLEX_TOKEN'
 movie_libraries: 'Movies'
 tv_libraries: 'TV Shows'
+plex_library_scan: false
 append_dates_to_sort_titles: true
 add_rank_to_sort_title: true
 edit_S00E00_episode_title: true
