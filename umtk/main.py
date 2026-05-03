@@ -89,6 +89,7 @@ def main(config=None, localization=None):
     trending_tv_method = config.get('trending_tv', 0)
     trending_movies_method = config.get('trending_movies', 0)
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
+    preferred_language = str(config.get('preferred_language', 'original')).lower()
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
@@ -98,6 +99,7 @@ def main(config=None, localization=None):
     print(f"Trending TV method: {trending_tv_method} ({'Disabled' if trending_tv_method == 0 else 'Trailer' if trending_tv_method == 1 else 'Placeholder'})")
     print(f"Trending Movies method: {trending_movies_method} ({'Disabled' if trending_movies_method == 0 else 'Trailer' if trending_movies_method == 1 else 'Placeholder'})")
     print(f"Method fallback: {method_fallback}")
+    print(f"Preferred trailer language: {preferred_language}")
     print(f"Append dates to sort titles: {append_dates_to_sort_titles}")
     print(f"Add rank to sort title: {add_rank_to_sort_title}")
     print(f"Edit S00E00 episode titles: {edit_episode_titles}")
@@ -334,7 +336,8 @@ def main(config=None, localization=None):
                                             show.get('year'),
                                             show.get('imdbId'),
                                             debug,
-                                            skip_channels
+                                            skip_channels,
+                                            preferred_language=preferred_language,
                                         )
 
                                         if trailer_info:
@@ -493,7 +496,8 @@ def main(config=None, localization=None):
                                     show.get('year'),
                                     show.get('imdbId'),
                                     debug,
-                                    skip_channels
+                                    skip_channels,
+                                    preferred_language=preferred_language,
                                 )
 
                                 if trailer_info:
@@ -542,23 +546,40 @@ def main(config=None, localization=None):
                     trending_tv_request_needed = []
 
                 # ====================================================================
-                # PER-INSTANCE TV CLEANUP — runs after the global trending pass so it
-                # can see the full global trending lists.
+                # TV CLEANUP — runs after the global trending pass so it can see the
+                # full global trending lists. Instances that share a umtk_root_tv are
+                # grouped so cleanup considers the union of their libraries; instances
+                # with distinct (or no) custom roots clean up independently.
                 # ====================================================================
                 if cleanup and sonarr_instances_data:
+                    tv_cleanup_groups = {}
+                    tv_cleanup_order = []
                     for inst in sonarr_instances_data:
+                        # None root → falls back to scanning that instance's series
+                        # paths, which won't collide with other instances. Key it
+                        # uniquely so it stays its own group.
+                        key = inst.get('umtk_root_tv') or f"__solo__:{inst['name']}"
+                        if key not in tv_cleanup_groups:
+                            tv_cleanup_groups[key] = []
+                            tv_cleanup_order.append(key)
+                        tv_cleanup_groups[key].append(inst)
+
+                    for key in tv_cleanup_order:
+                        group = tv_cleanup_groups[key]
                         if len(sonarr_instances_data) > 1:
-                            print(f"\n{BLUE}--- Cleanup for Sonarr Instance: {inst['name']} ---{RESET}")
+                            header = ", ".join(i['name'] for i in group)
+                            label = "Instance" if len(group) == 1 else "Instances"
+                            print(f"\n{BLUE}--- Cleanup for Sonarr {label}: {header} ---{RESET}")
                         print(f"\n{BLUE}Checking for TV content to cleanup...{RESET}")
                         try:
                             cleanup_tv_content(
-                                inst['all_series'], inst['url'], inst['api_key'], tv_method, debug,
-                                inst['exclude_tag_ids'], future_days_upcoming_shows, utc_offset,
-                                future_only_tv, inst.get('umtk_root_tv'),
+                                group, tv_method, debug,
+                                future_days_upcoming_shows, utc_offset, future_only_tv,
                                 trending_tv_monitored, trending_tv_request_needed
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
-                            print(f"{RED}Cleanup error for Sonarr instance '{inst['name']}': {str(e)}{RESET}")
+                            names = ", ".join(i['name'] for i in group)
+                            print(f"{RED}Cleanup error for Sonarr instance(s) '{names}': {str(e)}{RESET}")
                         print()
 
                 # Merge instance results for YML generation and Plex updates
@@ -817,7 +838,8 @@ def main(config=None, localization=None):
                                             movie.get('year'),
                                             movie.get('imdbId'),
                                             debug,
-                                            skip_channels
+                                            skip_channels,
+                                            preferred_language=preferred_language,
                                         )
 
                                         if trailer_info:
@@ -965,7 +987,8 @@ def main(config=None, localization=None):
                                     movie.get('year'),
                                     movie.get('imdbId'),
                                     debug,
-                                    skip_channels
+                                    skip_channels,
+                                    preferred_language=preferred_language,
                                 )
 
                                 if trailer_info:
@@ -1012,26 +1035,46 @@ def main(config=None, localization=None):
                     trending_movies_request_needed = []
 
                 # ====================================================================
-                # PER-INSTANCE MOVIE CLEANUP — runs after the global trending pass so
-                # it can see the full global trending lists.
+                # MOVIE CLEANUP — runs after the global trending pass so it can see
+                # the full global trending lists. Instances that share a
+                # umtk_root_movies are grouped so cleanup considers the union of their
+                # libraries; instances with distinct (or no) custom roots clean up
+                # independently.
                 # ====================================================================
                 if cleanup and radarr_instances_data:
+                    future_by_instance = {
+                        r['name']: {
+                            'future': r.get('future_movies', []),
+                            'released': r.get('released_movies', []),
+                        }
+                        for r in movie_instance_results
+                    }
+
+                    movie_cleanup_groups = {}
+                    movie_cleanup_order = []
                     for inst in radarr_instances_data:
+                        key = inst.get('umtk_root_movies') or f"__solo__:{inst['name']}"
+                        if key not in movie_cleanup_groups:
+                            movie_cleanup_groups[key] = []
+                            movie_cleanup_order.append(key)
+                        movie_cleanup_groups[key].append(inst)
+
+                    for key in movie_cleanup_order:
+                        group = movie_cleanup_groups[key]
                         if len(radarr_instances_data) > 1:
-                            print(f"\n{BLUE}--- Cleanup for Radarr Instance: {inst['name']} ---{RESET}")
-                        # Re-derive the per-instance future/released used by cleanup.
-                        inst_result = next((r for r in movie_instance_results if r['name'] == inst['name']), None)
-                        inst_future = inst_result['future_movies'] if inst_result else []
-                        inst_released = inst_result['released_movies'] if inst_result else []
+                            header = ", ".join(i['name'] for i in group)
+                            label = "Instance" if len(group) == 1 else "Instances"
+                            print(f"\n{BLUE}--- Cleanup for Radarr {label}: {header} ---{RESET}")
                         print(f"\n{BLUE}Checking for movie content to cleanup...{RESET}")
                         try:
                             cleanup_movie_content(
-                                inst['all_movies'], inst['url'], inst['api_key'], inst_future, inst_released,
+                                group, future_by_instance,
                                 trending_movies_monitored, trending_movies_request_needed,
-                                movie_method, debug, inst['exclude_tag_ids'], inst.get('umtk_root_movies')
+                                movie_method, debug
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
-                            print(f"{RED}Cleanup error for Radarr instance '{inst['name']}': {str(e)}{RESET}")
+                            names = ", ".join(i['name'] for i in group)
+                            print(f"{RED}Cleanup error for Radarr instance(s) '{names}': {str(e)}{RESET}")
 
                 # Merge instance results for YML generation and Plex updates
                 if movie_instance_results:

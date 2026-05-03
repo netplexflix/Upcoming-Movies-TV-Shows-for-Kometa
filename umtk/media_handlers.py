@@ -15,6 +15,30 @@ from .config_loader import get_cookies_path, get_video_folder
 from .sonarr import get_sonarr_episodes
 
 
+LANGUAGE_KEYWORDS = {
+    'german': ['deutsch', 'german', 'auf deutsch', 'de'],
+    'french': ['français', 'francais', 'french', 'vf', 'vostfr', 'fr'],
+    'spanish': ['español', 'espanol', 'spanish', 'castellano', 'es'],
+    'italian': ['italiano', 'italian', 'it'],
+    'japanese': ['日本語', 'japanese', 'jp', 'ja'],
+    'korean': ['한국어', 'korean', 'ko'],
+    'portuguese': ['português', 'portugues', 'portuguese', 'pt', 'dublado'],
+    'russian': ['русский', 'russian', 'ru'],
+    'chinese': ['中文', 'chinese', 'zh'],
+    'english': ['english', 'en'],
+}
+
+
+def _matches_language_keyword(text, keywords):
+    for kw in keywords:
+        if len(kw) <= 3:
+            if re.search(r'\b' + re.escape(kw) + r'\b', text):
+                return True
+        elif kw in text:
+            return True
+    return False
+
+
 def _normalize(s: str) -> str:
     """Normalize string for comparison"""
     return re.sub(r'[^a-z0-9]+', ' ', (s or '').lower()).strip()
@@ -37,7 +61,7 @@ def _title_matches(video_title: str, content_title: str) -> bool:
     return base in vt
 
 
-def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None):
+def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None, preferred_language='original'):
     """Return the best matching trailer info from YouTube (dict) or None."""
     search_terms = [
         f"{content_title} {year} official trailer" if year else f"{content_title} official trailer",
@@ -47,6 +71,10 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
     ]
     # Deduplicate while preserving order
     search_terms = list(dict.fromkeys(search_terms))
+
+    pref_lang = (preferred_language or 'original').lower()
+    if pref_lang and pref_lang != 'original':
+        search_terms = [f"{t} {pref_lang}" for t in search_terms]
 
     avoid_keywords = [
         'reaction','review','breakdown','analysis','explained','easter eggs','theory',
@@ -146,6 +174,18 @@ def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=Fals
                     found_years = re.findall(r'\b((?:19|20)\d{2})\b', tl)
                     if found_years and str(year) not in found_years:
                         score -= 5
+
+                if pref_lang and pref_lang != 'original':
+                    lang_kws = LANGUAGE_KEYWORDS.get(pref_lang, [pref_lang])
+                    if _matches_language_keyword(tl, lang_kws) or _matches_language_keyword(up_lower, lang_kws):
+                        score += 25
+                    else:
+                        other_lang_kws = []
+                        for lang, kws in LANGUAGE_KEYWORDS.items():
+                            if lang != pref_lang:
+                                other_lang_kws.extend(kw for kw in kws if len(kw) >= 4)
+                        if _matches_language_keyword(tl, other_lang_kws):
+                            score -= 15
 
                 if score > best_score:
                     d = int(dur) if isinstance(dur, (int, float)) else 0

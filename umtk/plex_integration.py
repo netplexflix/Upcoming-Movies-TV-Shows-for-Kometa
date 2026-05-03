@@ -419,7 +419,7 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
         print(f"{ORANGE}The following {len(missing_items)} item(s) are not yet present in Plex:{RESET}")
         for item in missing_items:
             print(f"  - {item['title']} (TVDB: {item['tvdb_id']})")
-        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries + 1})...{RESET}")
+        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries})...{RESET}")
         time.sleep(60)
         return update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content,
                                        mdblist_tv_items, config, debug, retry_count + 1, max_retries)
@@ -640,7 +640,7 @@ def update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies
         print(f"{ORANGE}The following {len(missing_items)} item(s) are not yet present in Plex:{RESET}")
         for item in missing_items:
             print(f"  - {item['title']} (TMDB: {item['tmdb_id']})")
-        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries + 1})...{RESET}")
+        print(f"{ORANGE}Waiting 1 minute before retry ({retry_count + 1}/{max_retries})...{RESET}")
         time.sleep(60)
         return update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies_with_content,
                                           mdblist_movies_items, config, debug, retry_count + 1, max_retries)

@@ -6,6 +6,7 @@ enable_tssk: false
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 method_fallback: true
+preferred_language: original  # original, english, german, french, spanish, italian, japanese, korean, portuguese, russian, chinese
 utc_offset: +1
 debug: false
 cleanup: true
