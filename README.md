@@ -293,6 +293,7 @@ Rename `config.sample.yml` to `config.yml` and update your settings:
 - **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
+- **preferred_language**: Preferred language for trailer downloads. UMTK appends the language name to the YouTube search and boosts videos whose title or channel matches the language. Default: `original` (no preference). Accepted values: `original`, `english`, `german`, `french`, `spanish`, `italian`, `japanese`, `korean`, `portuguese`, `russian`, `chinese`.
 - **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **debug:** Set to `true` to troubleshoot issues

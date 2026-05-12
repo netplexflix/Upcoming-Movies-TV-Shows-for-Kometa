@@ -14,30 +14,44 @@ from .utils import sanitize_filename, get_user_info, get_file_owner, convert_utc
 from .sonarr import get_sonarr_episodes
 
 
-def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, exclude_tags=None, 
-                       future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False, 
-                       umtk_root_tv=None, trending_monitored=None, trending_request_needed=None):
-    """Cleanup TV show trailers or placeholders"""
+def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
+                       future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False,
+                       trending_monitored=None, trending_request_needed=None):
+    """Cleanup TV show trailers or placeholders for a group of Sonarr instances
+    that share a placeholder root.
+
+    sonarr_instances: list of instance dicts with keys
+      name, url, api_key, all_series, exclude_tag_ids, umtk_root_tv.
+    Within a group every instance shares the same umtk_root_tv (or the group
+    has a single instance with umtk_root_tv=None falling back to series paths).
+    """
     from .finders import find_upcoming_shows
-    
+
+    if not sonarr_instances:
+        return
+
+    instance_names = [inst['name'] for inst in sonarr_instances]
+    umtk_root_tv = sonarr_instances[0].get('umtk_root_tv')
+
     if debug:
-        print(f"{BLUE}[DEBUG] Starting TV content cleanup process (method: {tv_method}){RESET}")
+        print(f"{BLUE}[DEBUG] Starting TV content cleanup (method: {tv_method}, instances: {instance_names}){RESET}")
         if umtk_root_tv:
-            print(f"{BLUE}[DEBUG] Using custom umtk_root_tv for cleanup: {umtk_root_tv}{RESET}")
-    
+            print(f"{BLUE}[DEBUG] Using shared umtk_root_tv for cleanup: {umtk_root_tv}{RESET}")
+
     removed_count = 0
     checked_count = 0
-    
-    try:
-        current_future_shows, current_aired_shows = find_upcoming_shows(
-            all_series, sonarr_url, api_key, future_days_upcoming_shows, 
-            utc_offset, debug, exclude_tags, future_only_tv
-        )
-    except requests.exceptions.RequestException:
-        print(f"{RED}Error during TV cleanup - Sonarr connection failed. Skipping cleanup.{RESET}")
-        return
-    
-    current_upcoming_titles = {show['title'] for show in current_future_shows + current_aired_shows}
+
+    current_upcoming_titles = set()
+    for inst in sonarr_instances:
+        try:
+            current_future_shows, current_aired_shows = find_upcoming_shows(
+                inst['all_series'], inst['url'], inst['api_key'], future_days_upcoming_shows,
+                utc_offset, debug, inst.get('exclude_tag_ids'), future_only_tv
+            )
+        except requests.exceptions.RequestException:
+            print(f"{RED}Error during TV cleanup - Sonarr connection failed for instance '{inst['name']}'. Skipping cleanup for this group.{RESET}")
+            return
+        current_upcoming_titles.update(show['title'] for show in current_future_shows + current_aired_shows)
     
     current_trending_shows = []
     if trending_monitored:
@@ -61,37 +75,54 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         if current_trending_titles:
             print(f"{BLUE}[DEBUG] Trending titles: {current_trending_titles}{RESET}")
     
+    # Folder/path lookups across the whole group, retaining the owning instance
+    # so per-series checks (Sonarr API call, exclude tags) hit the right instance.
+    # On collision the first instance wins — any owner is enough to veto removal.
     series_by_folder_name = {}
-    if umtk_root_tv:
-        for series in all_series:
-            show_path = series.get('path')
-            if show_path:
-                folder_name = PureWindowsPath(show_path).name
-                series_by_folder_name[folder_name] = series
-                if debug:
-                    print(f"{BLUE}[DEBUG] Mapped folder '{folder_name}' to series '{series['title']}'{RESET}")
-    
     series_by_path = {}
-    for series in all_series:
-        show_path = series.get('path')
-        if show_path:
-            series_by_path[show_path] = series
-    
+    for inst in sonarr_instances:
+        for series in inst['all_series']:
+            show_path = series.get('path')
+            if not show_path:
+                continue
+            folder_name = PureWindowsPath(show_path).name
+            if folder_name not in series_by_folder_name:
+                series_by_folder_name[folder_name] = (series, inst)
+            if show_path not in series_by_path:
+                series_by_path[show_path] = (series, inst)
+            if debug and umtk_root_tv:
+                print(f"{BLUE}[DEBUG] Mapped folder '{folder_name}' to series '{series['title']}' (instance: {inst['name']}){RESET}")
+
     dirs_to_scan = []
-    
+    seen_dirs = set()
+
     if umtk_root_tv:
         root_path = Path(umtk_root_tv)
         if root_path.exists():
-            dirs_to_scan = [d for d in root_path.iterdir() if d.is_dir()]
+            for d in root_path.iterdir():
+                if not d.is_dir():
+                    continue
+                key = str(d)
+                if key in seen_dirs:
+                    continue
+                seen_dirs.add(key)
+                dirs_to_scan.append(d)
         if debug:
-            print(f"{BLUE}[DEBUG] Scanning custom root directory: {umtk_root_tv} ({len(dirs_to_scan)} show folders){RESET}")
+            print(f"{BLUE}[DEBUG] Scanning shared root directory: {umtk_root_tv} ({len(dirs_to_scan)} show folders){RESET}")
     else:
-        for series in all_series:
-            show_path = series.get('path')
-            if show_path:
+        for inst in sonarr_instances:
+            for series in inst['all_series']:
+                show_path = series.get('path')
+                if not show_path:
+                    continue
                 path_obj = Path(show_path)
-                if path_obj.exists():
-                    dirs_to_scan.append(path_obj)
+                if not path_obj.exists():
+                    continue
+                key = str(path_obj)
+                if key in seen_dirs:
+                    continue
+                seen_dirs.add(key)
+                dirs_to_scan.append(path_obj)
         if debug:
             print(f"{BLUE}[DEBUG] Scanning {len(dirs_to_scan)} show directories from Sonarr{RESET}")
     
@@ -112,16 +143,21 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
             show_title_from_folder = show_folder_name
         
         series = None
+        owning_inst = None
         if umtk_root_tv:
-            series = series_by_folder_name.get(show_folder_name)
+            match = series_by_folder_name.get(show_folder_name)
+            if match:
+                series, owning_inst = match
             if debug:
                 if series:
-                    print(f"{BLUE}[DEBUG] Found series for folder '{show_folder_name}': {series['title']}{RESET}")
+                    print(f"{BLUE}[DEBUG] Found series for folder '{show_folder_name}': {series['title']} (instance: {owning_inst['name']}){RESET}")
                 else:
                     print(f"{BLUE}[DEBUG] No series found for folder '{show_folder_name}'{RESET}")
         else:
-            series = series_by_path.get(str(show_dir))
-        
+            match = series_by_path.get(str(show_dir))
+            if match:
+                series, owning_inst = match
+
         if debug:
             print(f"{BLUE}[DEBUG] Checking show folder: {show_folder_name} (trending: {is_trending}, in Sonarr: {series is not None}){RESET}")
         
@@ -179,17 +215,19 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                 else:
                     if series['title'] not in current_upcoming_titles:
                         try:
-                            episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
+                            episodes = get_sonarr_episodes(owning_inst['url'], owning_inst['api_key'], series['id'])
                         except requests.exceptions.RequestException:
-                            print(f"{RED}Error fetching episodes during cleanup - Sonarr connection failed. Skipping remaining cleanup.{RESET}")
+                            print(f"{RED}Error fetching episodes during cleanup - Sonarr connection failed for instance '{owning_inst['name']}'. Skipping remaining cleanup.{RESET}")
                             return
-                        
+
                         s01e01 = None
                         for ep in episodes:
                             if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
                                 s01e01 = ep
                                 break
-                        
+
+                        owning_exclude_tags = owning_inst.get('exclude_tag_ids')
+
                         if s01e01 and s01e01.get('hasFile', False):
                             should_remove = True
                             removal_reason = "S01E01 now available"
@@ -199,7 +237,7 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
                         elif s01e01 and not s01e01.get('monitored', False):
                             should_remove = True
                             removal_reason = "S01E01 is no longer monitored"
-                        elif exclude_tags and any(tag in series.get('tags', []) for tag in exclude_tags):
+                        elif owning_exclude_tags and any(tag in series.get('tags', []) for tag in owning_exclude_tags):
                             should_remove = True
                             removal_reason = "show has excluded tags"
                         else:
@@ -332,19 +370,36 @@ def cleanup_tv_content(all_series, sonarr_url, api_key, tv_method, debug=False, 
         print(f"{BLUE}[DEBUG] No TV content found to check{RESET}")
 
 
-def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, released_movies, 
-                          trending_monitored, trending_request_needed, movie_method, debug=False, 
-                          exclude_tags=None, umtk_root_movies=None):
-    """Cleanup movie trailers or placeholders"""
+def cleanup_movie_content(radarr_instances, future_by_instance,
+                          trending_monitored, trending_request_needed, movie_method, debug=False):
+    """Cleanup movie trailers or placeholders for a group of Radarr instances
+    that share a placeholder root.
+
+    radarr_instances: list of instance dicts with keys
+      name, url, api_key, all_movies, exclude_tag_ids, umtk_root_movies.
+    future_by_instance: dict[name -> {'future': [...], 'released': [...]}].
+    Within a group every instance shares the same umtk_root_movies (or the
+    group has a single instance with umtk_root_movies=None).
+    """
+    if not radarr_instances:
+        return
+
+    instance_names = [inst['name'] for inst in radarr_instances]
+    umtk_root_movies = radarr_instances[0].get('umtk_root_movies')
+
     if debug:
-        print(f"{BLUE}[DEBUG] Starting movie content cleanup process (method: {movie_method}){RESET}")
+        print(f"{BLUE}[DEBUG] Starting movie content cleanup (method: {movie_method}, instances: {instance_names}){RESET}")
         if umtk_root_movies:
-            print(f"{BLUE}[DEBUG] Using custom umtk_root_movies for cleanup: {umtk_root_movies}{RESET}")
-    
+            print(f"{BLUE}[DEBUG] Using shared umtk_root_movies for cleanup: {umtk_root_movies}{RESET}")
+
     removed_count = 0
     checked_count = 0
-    
-    current_upcoming_titles = {movie['title'] for movie in future_movies + released_movies}
+
+    current_upcoming_titles = set()
+    for inst in radarr_instances:
+        inst_buckets = future_by_instance.get(inst['name'], {})
+        for movie in inst_buckets.get('future', []) + inst_buckets.get('released', []):
+            current_upcoming_titles.add(movie['title'])
     
     current_trending_movies = trending_monitored + trending_request_needed
     current_trending_titles = {movie['title'] for movie in current_trending_movies}
@@ -367,48 +422,56 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
         if current_trending_titles:
             print(f"{BLUE}[DEBUG] Trending titles: {current_trending_titles}{RESET}")
     
+    # Folder lookups across the whole group, retaining the owning instance.
+    # First instance to claim a folder wins on collision.
     radarr_movie_lookup_coming_soon = {}
     radarr_movie_lookup_trending = {}
-    
-    for movie in all_movies:
-        movie_path = movie.get('path')
-        if not movie_path:
-            continue
-        
-        movie_title = movie.get('title', 'Unknown')
-        movie_year = movie.get('year', '')
-        
-        folder_name_coming = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
-        if umtk_root_movies:
-            folder_path_coming = Path(umtk_root_movies) / folder_name_coming
-        else:
-            base_path = Path(movie_path)
-            parent_dir = base_path.parent
-            folder_path_coming = parent_dir / folder_name_coming
-        radarr_movie_lookup_coming_soon[str(folder_path_coming)] = movie
-        
-        folder_name_trending = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Trending}}")
-        if umtk_root_movies:
-            folder_path_trending = Path(umtk_root_movies) / folder_name_trending
-        else:
-            base_path = Path(movie_path)
-            parent_dir = base_path.parent
-            folder_path_trending = parent_dir / folder_name_trending
-        radarr_movie_lookup_trending[str(folder_path_trending)] = movie
-    
+
+    for inst in radarr_instances:
+        for movie in inst['all_movies']:
+            movie_path = movie.get('path')
+            if not movie_path:
+                continue
+
+            movie_title = movie.get('title', 'Unknown')
+            movie_year = movie.get('year', '')
+
+            folder_name_coming = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Coming Soon}}")
+            if umtk_root_movies:
+                folder_path_coming = Path(umtk_root_movies) / folder_name_coming
+            else:
+                base_path = Path(movie_path)
+                parent_dir = base_path.parent
+                folder_path_coming = parent_dir / folder_name_coming
+            key_coming = str(folder_path_coming)
+            if key_coming not in radarr_movie_lookup_coming_soon:
+                radarr_movie_lookup_coming_soon[key_coming] = (movie, inst)
+
+            folder_name_trending = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-Trending}}")
+            if umtk_root_movies:
+                folder_path_trending = Path(umtk_root_movies) / folder_name_trending
+            else:
+                base_path = Path(movie_path)
+                parent_dir = base_path.parent
+                folder_path_trending = parent_dir / folder_name_trending
+            key_trending = str(folder_path_trending)
+            if key_trending not in radarr_movie_lookup_trending:
+                radarr_movie_lookup_trending[key_trending] = (movie, inst)
+
     parent_dirs_to_scan = set()
-    
+
     if umtk_root_movies:
         parent_dirs_to_scan.add(Path(umtk_root_movies))
         if debug:
-            print(f"{BLUE}[DEBUG] Scanning custom root directory: {umtk_root_movies}{RESET}")
+            print(f"{BLUE}[DEBUG] Scanning shared root directory: {umtk_root_movies}{RESET}")
     else:
-        for movie in all_movies:
-            movie_path = movie.get('path')
-            if movie_path:
-                base_path = Path(movie_path)
-                parent_dirs_to_scan.add(base_path.parent)
-        
+        for inst in radarr_instances:
+            for movie in inst['all_movies']:
+                movie_path = movie.get('path')
+                if movie_path:
+                    base_path = Path(movie_path)
+                    parent_dirs_to_scan.add(base_path.parent)
+
         if debug:
             print(f"{BLUE}[DEBUG] Scanning {len(parent_dirs_to_scan)} parent directories for edition folders{RESET}")
     
@@ -495,17 +558,17 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                             print(f"{BLUE}[DEBUG] Keeping trending content for {title_without_year} - still in trending list{RESET}")
                     
                     if folder_path_str in lookup_dict:
-                        movie = lookup_dict[folder_path_str]
+                        movie, _ = lookup_dict[folder_path_str]
                         movie_title = movie.get('title', movie_title)
                 else:
                     lookup_dict = radarr_movie_lookup_coming_soon
-                    
+
                     if folder_path_str in lookup_dict:
-                        movie = lookup_dict[folder_path_str]
+                        movie, owning_inst = lookup_dict[folder_path_str]
                         movie_title = movie.get('title', 'Unknown Movie')
-                        
+
                         in_upcoming = movie_title in current_upcoming_titles
-                        
+
                         in_trending_monitored = False
                         if movie_title in current_trending_monitored_titles:
                             in_trending_monitored = True
@@ -515,10 +578,12 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                                 if normalized_movie == normalize_title(trending_monitored_movie['title']):
                                     in_trending_monitored = True
                                     break
-                        
+
                         if debug:
-                            print(f"{BLUE}[DEBUG] Movie '{movie_title}' - in_upcoming: {in_upcoming}, in_trending_monitored: {in_trending_monitored}{RESET}")
-                        
+                            print(f"{BLUE}[DEBUG] Movie '{movie_title}' (instance: {owning_inst['name']}) - in_upcoming: {in_upcoming}, in_trending_monitored: {in_trending_monitored}{RESET}")
+
+                        owning_exclude_tags = owning_inst.get('exclude_tag_ids')
+
                         if not in_upcoming and not in_trending_monitored:
                             if movie.get('hasFile', False):
                                 should_remove = True
@@ -526,7 +591,7 @@ def cleanup_movie_content(all_movies, radarr_url, api_key, future_movies, releas
                             elif not movie.get('monitored', False):
                                 should_remove = True
                                 reason = "movie is no longer monitored"
-                            elif exclude_tags and any(tag in movie.get('tags', []) for tag in exclude_tags):
+                            elif owning_exclude_tags and any(tag in movie.get('tags', []) for tag in owning_exclude_tags):
                                 should_remove = True
                                 reason = "movie has excluded tags"
                             else:
