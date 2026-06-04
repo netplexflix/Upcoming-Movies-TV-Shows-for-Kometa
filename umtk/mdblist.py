@@ -25,8 +25,10 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
             params["limit"] = limit
         
         if debug:
+            # Redact the API key so logs are safe to share for support
+            safe_params = {**params, "apikey": "***REDACTED***"} if "apikey" in params else params
             print(f"{BLUE}[DEBUG] Fetching from MDBList API: {api_url}{RESET}")
-            print(f"{BLUE}[DEBUG] Params: {params}{RESET}")
+            print(f"{BLUE}[DEBUG] Params: {safe_params}{RESET}")
         
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()

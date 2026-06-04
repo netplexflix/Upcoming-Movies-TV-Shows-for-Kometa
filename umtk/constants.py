@@ -2,7 +2,7 @@
 Constants and configuration values for UMTK
 """
 
-VERSION = "2026.05.12"
+VERSION = "2026.06.04"
 
 # ANSI color codes
 GREEN = '\033[32m'

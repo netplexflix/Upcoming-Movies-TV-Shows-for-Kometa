@@ -309,17 +309,33 @@ def _resolve_arr_api_url(base_url, api_key, service='radarr'):
     if not safe:
         return None
     base = base_url.rstrip('/')
+
+    # Tolerate a pasted .../api/v3 suffix so we don't probe /api/v3/api/v3
+    if base.endswith('/api/v3'):
+        base = base[:-len('/api/v3')]
+
+    # Host = base stripped to scheme+host, used for fallback guesses
+    host = base
     if base.startswith('http'):
         protocol_end = base.find('://') + 3
         next_slash = base.find('/', protocol_end)
         if next_slash != -1:
-            base = base[:next_slash]
-    for path in ['/api/v3', f'/{service}/api/v3']:
+            host = base[:next_slash]
+
+    # Try the full configured URL first (preserves reverse-proxy subpaths like
+    # /radarr2), then fall back to host-stripped guesses. De-duplicate so a bare
+    # host doesn't get probed twice.
+    candidates = []
+    for url in (f"{base}/api/v3", f"{host}/api/v3", f"{host}/{service}/api/v3"):
+        if url not in candidates:
+            candidates.append(url)
+
+    for test_url in candidates:
         try:
-            resp = requests.get(f"{base}{path}/health",
+            resp = requests.get(f"{test_url}/health",
                                 headers={"X-Api-Key": api_key}, timeout=5)
             if resp.status_code == 200:
-                return f"{base}{path}"
+                return test_url
         except Exception:
             continue
     return None
