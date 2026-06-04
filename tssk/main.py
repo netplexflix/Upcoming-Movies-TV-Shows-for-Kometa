@@ -135,9 +135,11 @@ def run_tssk(config, localization=None):
     sonarr_instances = config.get('sonarr_instances', [])
     output_mode = config.get('instance_output_mode', 'combined')
 
+    instance_warnings = []
+
     if not sonarr_instances:
         print(f"{RED}No Sonarr instances configured. TSSK cannot run.{RESET}")
-        return
+        return instance_warnings
 
     # Per-instance result accumulators
     instance_results = []
@@ -154,6 +156,7 @@ def run_tssk(config, localization=None):
             sonarr_api_key = instance['api_key']
         except (ConnectionError, Exception) as e:
             print(f"{RED}Error connecting to Sonarr instance '{instance_name}': {str(e)}{RESET}")
+            instance_warnings.append(f"Sonarr instance '{instance_name}': {str(e)}")
             if len(sonarr_instances) > 1:
                 print(f"{ORANGE}Continuing with next instance...{RESET}")
             continue
@@ -268,7 +271,7 @@ def run_tssk(config, localization=None):
 
     if not instance_results:
         print(f"{RED}No Sonarr instances connected successfully. TSSK cannot generate YMLs.{RESET}")
-        return
+        return instance_warnings
 
     # ---- Generate YML files ----
     # Plex-based generators (don't depend on Sonarr data, always single output)
@@ -417,3 +420,5 @@ def run_tssk(config, localization=None):
     runtime_formatted = f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
 
     print(f"\nTSSK run completed. Runtime: {runtime_formatted}")
+
+    return instance_warnings

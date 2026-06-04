@@ -133,12 +133,14 @@ def _run_inner():
 
     umtk_success = True
     tssk_success = True
+    umtk_warnings = []
+    tssk_warnings = []
 
     # ---- Run UMTK ----
     if enable_umtk:
         try:
             from umtk.main import main as umtk_main
-            umtk_main(config, localization)
+            umtk_warnings = umtk_main(config, localization) or []
         except Exception as e:
             print(f"\n{RED}UMTK failed: {e}{RESET}")
             umtk_success = False
@@ -174,7 +176,7 @@ def _run_inner():
                     tssk_config['sonarr_instances'] = config['sonarr_instances']
                 tssk_config['instance_output_mode'] = config.get('instance_output_mode', 'combined')
 
-                run_tssk(tssk_config, localization)
+                tssk_warnings = run_tssk(tssk_config, localization) or []
         except Exception as e:
             print(f"\n{RED}TSSK failed: {e}{RESET}")
             tssk_success = False
@@ -182,12 +184,31 @@ def _run_inner():
         print(f"\n{ORANGE}TSSK is disabled (enable_tssk: false){RESET}")
 
     # Summary
+    def _module_status(success, warnings):
+        """Render a module's status: FAILED (crash), OK with a WARN count when
+        some instances were skipped, or a clean OK."""
+        if not success:
+            return f"{RED}FAILED{RESET}"
+        if warnings:
+            n = len(warnings)
+            return f"{ORANGE}OK ({n} instance{'s' if n != 1 else ''} failed){RESET}"
+        return f"{GREEN}OK{RESET}"
+
     if enable_umtk and enable_tssk:
         print(f"\n{BLUE}{'=' * 50}{RESET}")
-        umtk_status = f"{GREEN}OK{RESET}" if umtk_success else f"{RED}FAILED{RESET}"
-        tssk_status = f"{GREEN}OK{RESET}" if tssk_success else f"{RED}FAILED{RESET}"
-        print(f"UMTK: {umtk_status}  |  TSSK: {tssk_status}")
+        print(f"UMTK: {_module_status(umtk_success, umtk_warnings)}  |  "
+              f"TSSK: {_module_status(tssk_success, tssk_warnings)}")
         print(f"{BLUE}{'=' * 50}{RESET}")
+    elif enable_umtk:
+        print(f"\nUMTK: {_module_status(umtk_success, umtk_warnings)}")
+    elif enable_tssk:
+        print(f"\nTSSK: {_module_status(tssk_success, tssk_warnings)}")
+
+    # List the instances that were skipped so shared logs make it obvious.
+    all_warnings = umtk_warnings + tssk_warnings
+    if all_warnings:
+        for w in all_warnings:
+            print(f"{ORANGE}  - {w}{RESET}")
 
     if not umtk_success or not tssk_success:
         raise RuntimeError("One or more modules failed")

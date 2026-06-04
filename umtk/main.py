@@ -162,6 +162,8 @@ def main(config=None, localization=None):
         process_tv = (tv_method > 0 or trending_tv_method > 0)
         tv_processing_failed = False
 
+        instance_warnings = []
+
         # Multi-instance support
         sonarr_instances = config.get('sonarr_instances', [])
         radarr_instances = config.get('radarr_instances', [])
@@ -389,6 +391,7 @@ def main(config=None, localization=None):
 
                     except (ConnectionError, requests.exceptions.RequestException) as e:
                         print(f"{RED}Error with Sonarr instance '{instance_name}': {str(e)}{RESET}")
+                        instance_warnings.append(f"Sonarr instance '{instance_name}': {str(e)}")
                         if len(sonarr_instances) > 1:
                             print(f"{ORANGE}Continuing with next instance...{RESET}")
                         else:
@@ -580,6 +583,7 @@ def main(config=None, localization=None):
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
                             print(f"{RED}Cleanup error for Sonarr instance(s) '{names}': {str(e)}{RESET}")
+                            instance_warnings.append(f"Sonarr cleanup '{names}': {str(e)}")
                         print()
 
                 # Merge instance results for YML generation and Plex updates
@@ -889,6 +893,7 @@ def main(config=None, localization=None):
 
                     except (ConnectionError, requests.exceptions.RequestException) as e:
                         print(f"{RED}Error with Radarr instance '{instance_name}': {str(e)}{RESET}")
+                        instance_warnings.append(f"Radarr instance '{instance_name}': {str(e)}")
                         if len(radarr_instances) > 1:
                             print(f"{ORANGE}Continuing with next instance...{RESET}")
 
@@ -1075,6 +1080,7 @@ def main(config=None, localization=None):
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
                             print(f"{RED}Cleanup error for Radarr instance(s) '{names}': {str(e)}{RESET}")
+                            instance_warnings.append(f"Radarr cleanup '{names}': {str(e)}")
 
                 # Merge instance results for YML generation and Plex updates
                 if movie_instance_results:
@@ -1206,7 +1212,9 @@ def main(config=None, localization=None):
         
         print(f"\n{GREEN}All processing complete!{RESET}")
         print(f"Total runtime: {runtime_formatted}")
-        
+
+        return instance_warnings
+
     except ConnectionError as e:
         print(f"{RED}UMTK Error: {str(e)}{RESET}")
         raise
