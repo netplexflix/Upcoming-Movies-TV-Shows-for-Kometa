@@ -25,8 +25,10 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
             params["limit"] = limit
         
         if debug:
+            # Redact the API key so logs are safe to share for support
+            safe_params = {**params, "apikey": "***REDACTED***"} if "apikey" in params else params
             print(f"{BLUE}[DEBUG] Fetching from MDBList API: {api_url}{RESET}")
-            print(f"{BLUE}[DEBUG] Params: {params}{RESET}")
+            print(f"{BLUE}[DEBUG] Params: {safe_params}{RESET}")
         
         response = requests.get(api_url, params=params, timeout=30)
         response.raise_for_status()
@@ -120,10 +122,29 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
                 if debug:
                     print(f"{ORANGE}[DEBUG] Skipping non-dictionary item: {item} (type: {type(item).__name__}){RESET}")
         
+        # Normalize ranks
+        def _original_rank(it):
+            r = it.get('rank')
+            try:
+                return int(r)
+            except (TypeError, ValueError):
+                return None
+
+        with_rank = [it for it in validated_items if _original_rank(it) is not None]
+        without_rank = [it for it in validated_items if _original_rank(it) is None]
+        with_rank.sort(key=_original_rank)
+        ordered_items = with_rank + without_rank
+
+        for position, item in enumerate(ordered_items, start=1):
+            if debug:
+                print(f"{BLUE}[DEBUG] Rank normalize: '{item.get('title')}' "
+                      f"{item.get('rank')} -> {position}{RESET}")
+            item['rank'] = position
+
         if debug:
-            print(f"{BLUE}[DEBUG] Validated {len(validated_items)} items from MDBList{RESET}")
-        
-        return validated_items
+            print(f"{BLUE}[DEBUG] Validated {len(ordered_items)} items from MDBList{RESET}")
+
+        return ordered_items
 
     except requests.exceptions.RequestException as e:
         print(f"{RED}Error fetching from MDBList: {str(e)}{RESET}")
