@@ -2548,16 +2548,32 @@ function groupBlocksByCategory(blocks, prefix) {
         finalOrder = groupOrder;
     }
 
-    /* Return in order, with blocks within each group sorted: collection → backdrop → text */
+    /* Return in order: collection block(s) first, then each sub-category's
+       backdrop+text paired together (sub-categories kept in config order). */
     const ordered = {};
+    const typeOrder = k => k.startsWith('collection_') ? 0 : k.startsWith('backdrop_') ? 1 : 2;
+    const subKey = k => k.replace(/^(collection_|backdrop_|text_)/, '');
     for (const base of finalOrder) {
-        const sorted = {};
         const entries = Object.entries(groups[base]);
-        entries.sort((a, b) => {
-            const order = k => k.startsWith('collection_') ? 0 : k.startsWith('backdrop_') ? 1 : 2;
-            return order(a[0]) - order(b[0]);
-        });
-        for (const [k, v] of entries) sorted[k] = v;
+        const sorted = {};
+        /* collection blocks first, in original order */
+        for (const [k, v] of entries) {
+            if (typeOrder(k) === 0) sorted[k] = v;
+        }
+        /* group backdrop/text by sub-category, preserving first-seen order */
+        const subSeen = [];
+        const bySub = {};
+        for (const [k, v] of entries) {
+            if (typeOrder(k) === 0) continue;
+            const s = subKey(k);
+            if (!bySub[s]) { bySub[s] = {}; subSeen.push(s); }
+            bySub[s][typeOrder(k)] = [k, v];
+        }
+        for (const s of subSeen) {
+            const pair = bySub[s];
+            if (pair[1]) sorted[pair[1][0]] = pair[1][1]; /* backdrop */
+            if (pair[2]) sorted[pair[2][0]] = pair[2][1]; /* text */
+        }
         ordered[base] = sorted;
     }
     return ordered;

@@ -277,6 +277,27 @@ text_trending_movies_request_needed:
   weight: 200
 
 ################################################################################
+##########              TRENDING MOVIES OVERLAY REQUESTED:            ##########
+################################################################################
+backdrop_trending_movies_requested:
+  enable: true
+  name: red_frame
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
+  group: UMTK_backdrop
+  weight: 100
+
+text_trending_movies_requested:
+  use_text: "REQUESTED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: top
+  vertical_offset: 20
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: UMTK_text
+  weight: 100
+
+################################################################################
 ##########                TRENDING SHOWS COLLECTION:                  ##########
 ################################################################################
 collection_trending_shows:
@@ -303,6 +324,27 @@ text_trending_shows_request_needed:
   horizontal_offset: 0
   vertical_align: bottom
   vertical_offset: 10
+  font_size: 70
+  font_color: "#FFFFFF"
+  group: TSSK_text
+  weight: 100
+
+################################################################################
+##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########
+################################################################################
+backdrop_trending_shows_requested:
+  enable: true
+  name: red_frame_bottom
+  url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
+  group: TSSK_backdrop
+  weight: 100
+
+text_trending_shows_requested:
+  use_text: "REQUESTED"
+  horizontal_align: center
+  horizontal_offset: 0
+  vertical_align: bottom
+  vertical_offset: 17
   font_size: 70
   font_color: "#FFFFFF"
   group: TSSK_text

@@ -72,6 +72,61 @@ def normalize_instances(config):
     return config
 
 
+# Backwards-compatible "REQUESTED" trending overlay blocks.
+TRENDING_REQUESTED_SOURCES = {
+    'backdrop_trending_movies_requested': 'backdrop_upcoming_movies_released',
+    'text_trending_movies_requested': 'text_upcoming_movies_released',
+    'backdrop_trending_shows_requested': 'backdrop_upcoming_shows_aired',
+    'text_trending_shows_requested': 'text_upcoming_shows_aired',
+}
+
+TRENDING_REQUESTED_HEADERS = {
+    'backdrop_trending_movies_requested':
+        '################################################################################\n'
+        '##########              TRENDING MOVIES OVERLAY REQUESTED:            ##########\n'
+        '################################################################################',
+    'backdrop_trending_shows_requested':
+        '################################################################################\n'
+        '##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########\n'
+        '################################################################################',
+}
+
+
+def ensure_trending_requested_blocks(config):
+    if config is None:
+        return []
+
+    added = []
+    for new_key, source_key in TRENDING_REQUESTED_SOURCES.items():
+        if new_key in config and config.get(new_key):
+            continue
+        source = config.get(source_key)
+        if isinstance(source, dict) and source:
+            config[new_key] = deepcopy(source)
+            added.append(new_key)
+    return added
+
+
+def _append_blocks_to_config(file_path, config, keys):
+    """Append the given top-level blocks to config.yml as YAML text, preserving
+    all existing comments/formatting. Best-effort: never raises."""
+    try:
+        lines = ['']
+        for key in keys:
+            header = TRENDING_REQUESTED_HEADERS.get(key)
+            if header:
+                lines.append(header)
+            block_yaml = yaml.safe_dump(
+                {key: config[key]}, default_flow_style=False, sort_keys=False, allow_unicode=True
+            )
+            lines.append(block_yaml.rstrip('\n'))
+            lines.append('')
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+    except Exception as e:
+        print(f"{ORANGE}Warning: could not persist new trending overlay blocks to config: {e}{RESET}")
+
+
 def load_config(file_path=None):
     """Load configuration from YAML file"""
     if file_path is None:
@@ -84,7 +139,11 @@ def load_config(file_path=None):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
-            return normalize_instances(config)
+        config = normalize_instances(config)
+        added = ensure_trending_requested_blocks(config)
+        if added:
+            _append_blocks_to_config(file_path, config, added)
+        return config
     except FileNotFoundError:
         # Try to auto-copy from sample file
         sample_path = Path(str(file_path)).parent / 'config.sample.yml'

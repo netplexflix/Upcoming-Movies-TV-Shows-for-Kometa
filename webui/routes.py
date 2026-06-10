@@ -19,6 +19,7 @@ MASKED_VALUE = "********"
 import webui
 from umtk.constants import VERSION
 from umtk.updater import get_update_status
+from umtk.config_loader import ensure_trending_requested_blocks
 
 
 class _QuotedDumper(yaml.SafeDumper):
@@ -57,8 +58,10 @@ UMTK_SECTION_HEADERS = {
     'backdrop_new_show': '################################################################################\n##########                    NEW SHOWS OVERLAY:                      ##########\n################################################################################',
     'collection_trending_movies': '################################################################################\n##########                TRENDING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_trending_movies_request_needed': '################################################################################\n##########           TRENDING MOVIES OVERLAY REQUEST NEEDED:          ##########\n################################################################################',
+    'backdrop_trending_movies_requested': '################################################################################\n##########              TRENDING MOVIES OVERLAY REQUESTED:            ##########\n################################################################################',
     'collection_trending_shows': '################################################################################\n##########                TRENDING SHOWS COLLECTION:                  ##########\n################################################################################',
     'backdrop_trending_shows_request_needed': '################################################################################\n##########           TRENDING SHOWS OVERLAY REQUEST NEEDED:           ##########\n################################################################################',
+    'backdrop_trending_shows_requested': '################################################################################\n##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########\n################################################################################',
     'backdrop_trending_top_10_movies': '################################################################################\n##########               TRENDING MOVIES TOP 10 OVERLAY:              ##########\n################################################################################',
     'backdrop_trending_top_10_tv': '################################################################################\n##########              TRENDING SHOWS TOP 10 OVERLAY:                ##########\n################################################################################',
 }
@@ -510,6 +513,7 @@ def register_routes(app):
     @app.route("/api/config/umtk")
     def api_config_umtk():
         config = _load_yaml(webui._config_path)
+        ensure_trending_requested_blocks(config)
         result = {"options": [], "blocks": {}}
         for opt in UMTK_OPTIONS:
             val = _get_config_value(config, opt["key"], opt["default"])

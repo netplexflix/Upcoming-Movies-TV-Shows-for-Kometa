@@ -614,7 +614,9 @@ def main(config=None, localization=None):
                                  "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
                                  "text_aired": config.get("text_upcoming_shows_aired", {}),
                                  "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                                 "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                                 "text_trending_request_needed": config.get("text_trending_shows_request_needed", {}),
+                                 "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
+                                 "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                 config,
                                 localization
                             )
@@ -646,7 +648,9 @@ def main(config=None, localization=None):
                                      "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
                                      "text_aired": config.get("text_upcoming_shows_aired", {}),
                                      "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {}),
+                                     "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
+                                     "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                     config,
                                     localization
                                 )
@@ -1107,7 +1111,9 @@ def main(config=None, localization=None):
                                  "backdrop_released": config.get("backdrop_upcoming_movies_released", {}),
                                  "text_released": config.get("text_upcoming_movies_released", {}),
                                  "backdrop_trending_request_needed": config.get("backdrop_trending_movies_request_needed", {}),
-                                 "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})},
+                                 "text_trending_request_needed": config.get("text_trending_movies_request_needed", {}),
+                                 "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
+                                 "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                 config,
                                 localization
                             )
@@ -1131,7 +1137,9 @@ def main(config=None, localization=None):
                                      "backdrop_released": config.get("backdrop_upcoming_movies_released", {}),
                                      "text_released": config.get("text_upcoming_movies_released", {}),
                                      "backdrop_trending_request_needed": config.get("backdrop_trending_movies_request_needed", {}),
-                                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})},
+                                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {}),
+                                     "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
+                                     "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                     config,
                                     localization
                                 )

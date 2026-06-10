@@ -149,82 +149,86 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     
     # Process trending monitored shows
     if trending_monitored:
+        regular_tvdb_ids = {s['tvdbId'] for s in (future_shows + aired_shows) if s.get('tvdbId')}
+
         tvdb_monitored = []
         tmdb_monitored = []
-        
+
         for s in trending_monitored:
             if s.get("tvdbId"):
+                if s['tvdbId'] in regular_tvdb_ids:
+                    continue
                 tvdb_monitored.append(s['tvdbId'])
             elif s.get("tmdbId"):
                 tmdb_monitored.append(s['tmdbId'])
-        
+
         if tvdb_monitored:
-            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
             enable_backdrop = backdrop_config.pop("enable", True)
-            
+
             if enable_backdrop:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
-                
+
                 overlays_dict["backdrop_trending_monitored_tvdb"] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
-        
+
         if tmdb_monitored:
-            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
             enable_backdrop = backdrop_config.pop("enable", True)
-            
+
             if enable_backdrop:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
-                
+
                 overlays_dict["backdrop_trending_monitored_tmdb"] = {
                     "overlay": backdrop_config,
                     "tmdb_show": tmdb_ids_str
                 }
-        
+
         if tvdb_monitored:
-            text_config = deepcopy(config_sections.get("text_aired", {}))
+            text_config = deepcopy(config_sections.get("text_trending_requested", {}))
             enable_text = text_config.pop("enable", True)
-            
+
             if enable_text:
-                use_text = text_config.pop("use_text", "Available Now")
+                use_text = text_config.pop("use_text", "Requested")
                 text_config.pop("date_format", None)
                 text_config.pop("capitalize_dates", None)
-                
+
                 sub_overlay_config = deepcopy(text_config)
-                
+
                 if "name" not in sub_overlay_config:
                     sub_overlay_config["name"] = f"text({use_text})"
-                
+
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
-                
+
                 overlays_dict["UMTK_trending_monitored_tvdb"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
-        
+
         if tmdb_monitored:
-            text_config = deepcopy(config_sections.get("text_aired", {}))
+            text_config = deepcopy(config_sections.get("text_trending_requested", {}))
             enable_text = text_config.pop("enable", True)
-            
+
             if enable_text:
-                use_text = text_config.pop("use_text", "Available Now")
+                use_text = text_config.pop("use_text", "Requested")
                 text_config.pop("date_format", None)
                 text_config.pop("capitalize_dates", None)
-                
+
                 sub_overlay_config = deepcopy(text_config)
-                
+
                 if "name" not in sub_overlay_config:
                     sub_overlay_config["name"] = f"text({use_text})"
-                
+
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
-                
+
                 overlays_dict["UMTK_trending_monitored_tmdb"] = {
                     "overlay": sub_overlay_config,
                     "tmdb_show": tmdb_ids_str
@@ -678,31 +682,33 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
     
     # Process trending monitored movies
     if trending_monitored:
+        regular_tmdb_ids = {m['tmdbId'] for m in (future_movies + released_movies) if m.get('tmdbId')}
+
         all_trending_monitored_tmdb_ids = set()
-        
+
         for m in trending_monitored:
-            if m.get("tmdbId"):
+            if m.get("tmdbId") and m['tmdbId'] not in regular_tmdb_ids:
                 all_trending_monitored_tmdb_ids.add(m['tmdbId'])
-        
-        backdrop_config = deepcopy(config_sections.get("backdrop_released", {}))
+
+        backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
         enable_backdrop = backdrop_config.pop("enable", True)
-        
+
         if enable_backdrop and all_trending_monitored_tmdb_ids:
             if "name" not in backdrop_config:
                 backdrop_config["name"] = "backdrop"
-            
+
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tmdb_ids) if i)
-            
+
             overlays_dict["backdrop_trending_monitored"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
-        
-        text_config = deepcopy(config_sections.get("text_released", {}))
+
+        text_config = deepcopy(config_sections.get("text_trending_requested", {}))
         enable_text = text_config.pop("enable", True)
-        
+
         if enable_text and all_trending_monitored_tmdb_ids:
-            use_text = text_config.pop("use_text", "Available Now")
+            use_text = text_config.pop("use_text", "Requested")
             text_config.pop("date_format", None)
             text_config.pop("capitalize_dates", None)
             

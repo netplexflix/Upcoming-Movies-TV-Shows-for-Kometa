@@ -10,28 +10,6 @@ It includes:
 - **TV Show Status** (formerly [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)) — Checks your Sonarr for TV show statuses and creates `.yml` files for overlays and collections. Categories include: new shows, new seasons, upcoming episodes, upcoming finales, season finales, final episodes, returning, ended, and canceled shows.
 - **Trending** — Uses MDBList to create "Trending" categories and creates placeholder files for missing items with an overlay indicating that a request is required. Optionally applies a TOP 10 ranking overlay.
 
-<a id="migration"></a>
-> [!NOTE]
-> This version of UMTK implements 2 big changes: TSSK is now integrated and a webUI is available.<br>
-> If you're an existing UMTK and/or TSSK user and want to migrate to this new version: Don't worry, it is easy:<br>
-> #### You only use UMTK:
-> All you have to do is map port 2120 to be able to visit the webUI. (See example docker-compose, or map it in the unRAID template).
-> Everything will continue to work as usual. TSSK is disabled by default.
-> #### You use UMTK and TSSK:
-> - For UMTK; map port 2120 to be able to access the webUI.
-> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
-> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
-> - Note that TSSK ymls will be output in the same directory as your UMTK ymls. So if they were generated elsewhere before, you'll have to adjust the paths in your Kometa config.
-> - You can remove your TSSK container as both scripts will now run in this unified UMTK container
-> #### You only use TSSK:
-> - Follow the UMTK install instructions
-> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
-> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
-> - UMTK is disabled by default
-> - Make sure your Kometa config points to the correct yml output directory
-> - You can remove your TSSK container as TSSK will now run under the UMTK container
-
-
 ## Examples:
 ### TV Show Status Overlays:
 
@@ -404,6 +382,12 @@ The remaining settings customize the output .yml files for Kometa.
 >
 > - One for movies/shows with a release/air date in the future. This overlay will append the release date.<br>
 > - One for movies/shows that have already been released/aired but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
+
+> [!NOTE]
+> **Trending overlays:** Missing trending items get one of three overlays so users know they aren't actually available yet:
+> - **Request Needed** (`backdrop/text_trending_movies_request_needed`, `backdrop/text_trending_shows_request_needed`) — the item is not in any Radarr/Sonarr library, so a request is required.
+> - **Coming Soon** — the item IS monitored in Radarr/Sonarr *and* releases/airs within your upcoming day range, so it reuses the regular upcoming overlay.
+> - **Requested** (`backdrop/text_trending_movies_requested`, `backdrop/text_trending_shows_requested`) — the item IS monitored but its release/air date is outside the day range or not yet known. 
 
 > [!NOTE] 
 > **Date format options:**
