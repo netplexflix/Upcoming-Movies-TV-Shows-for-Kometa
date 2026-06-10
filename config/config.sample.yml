@@ -23,6 +23,7 @@ skip_channels:
 ##########              INSTANCE OUTPUT MODE:                         ##########
 ################################################################################
 instance_output_mode: combined  # "combined" = merge into single YML files, "split" = separate YML files per instance
+cross_instance_availability: false  # If true, an item already downloaded in ANY instance is treated as available in all instances (no "coming soon" placeholder/overlay where it's still missing). Only affects multi-instance setups.
 
 ################################################################################
 ##########                   RADARR INSTANCES:                        ##########

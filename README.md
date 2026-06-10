@@ -312,6 +312,10 @@ radarr_instances:
   - `combined` (default) — Data from all instances is merged into single YML files. Duplicate items (same TVDB/TMDB ID across instances) are deduplicated.
   - `split` — Each instance gets its own set of YML files with the instance name appended (e.g., `UMTK_TV_UPCOMING_SHOWS_COLLECTION_Radarr4K.yml`).
 
+- **cross_instance_availability:** Controls whether availability is shared across instances. Only relevant when you have 2 or more instances; ignored for single-instance setups.
+  - `false` (default) — Each instance is evaluated independently. Example: if a movie is already downloaded in your 1080p Radarr but the 4K version isn't available yet, the 4K instance still gets a "Coming Soon" placeholder and overlay.
+  - `true` — An item that is already downloaded in **any** instance is treated as available everywhere, so no "Coming Soon" placeholder/overlay is created for instances where it's still missing. In the example above, the 4K instance would *not* get a placeholder because you already own the movie in 1080p.
+
 ### Plex Configuration (for metadata edits):
 
 - **plex_url:** Your Plex URL

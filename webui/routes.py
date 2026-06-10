@@ -72,6 +72,7 @@ CONNECTION_OPTIONS = [
     # WebUI (rendered first; toggle & change-password UI handled with custom JS)
     {"key": "webui_auth_enabled", "type": "bool", "default": True, "label": "Password Protection", "description": "Require a password to access the WebUI.", "section": "WebUI"},
     {"key": "instance_output_mode", "type": "select", "default": "combined", "label": "Instance Output Mode", "description": "Combined: merge all instances into single YML files. Split: separate YML files per instance.", "section": "Instances", "options": [{"value": "combined", "label": "Combined"}, {"value": "split", "label": "Split"}]},
+    {"key": "cross_instance_availability", "type": "bool", "default": False, "label": "Cross-Instance Availability", "description": "If enabled, an item already downloaded in ANY instance is treated as available in all instances, so no 'coming soon' placeholder/overlay is created for instances where it's still missing. Only affects multi-instance setups.", "section": "Instances"},
     {"key": "plex_url", "type": "string", "default": "http://localhost:32400", "label": "Plex URL", "description": "URL of your Plex Media Server", "section": "Plex"},
     {"key": "plex_token", "type": "string", "default": "", "label": "Plex Token", "description": "Your Plex authentication token", "section": "Plex", "sensitive": True},
     {"key": "movie_libraries", "type": "string", "default": "Movies", "label": "Movie Libraries", "description": "Comma-separated Plex movie library names", "section": "Plex"},

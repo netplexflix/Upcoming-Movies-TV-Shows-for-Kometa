@@ -69,6 +69,7 @@ def normalize_instances(config):
             config['trending_root_tv'] = legacy_root_tv
 
     config.setdefault('instance_output_mode', 'combined')
+    config.setdefault('cross_instance_availability', False)
     return config
 
 

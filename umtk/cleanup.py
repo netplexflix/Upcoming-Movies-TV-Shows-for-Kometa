@@ -16,7 +16,8 @@ from .sonarr import get_sonarr_episodes
 
 def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                        future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False,
-                       trending_monitored=None, trending_request_needed=None):
+                       trending_monitored=None, trending_request_needed=None,
+                       globally_available_ids=None):
     """Cleanup TV show trailers or placeholders for a group of Sonarr instances
     that share a placeholder root.
 
@@ -46,7 +47,8 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
         try:
             current_future_shows, current_aired_shows = find_upcoming_shows(
                 inst['all_series'], inst['url'], inst['api_key'], future_days_upcoming_shows,
-                utc_offset, debug, inst.get('exclude_tag_ids'), future_only_tv
+                utc_offset, debug, inst.get('exclude_tag_ids'), future_only_tv,
+                globally_available_ids
             )
         except requests.exceptions.RequestException:
             print(f"{RED}Error during TV cleanup - Sonarr connection failed for instance '{inst['name']}'. Skipping cleanup for this group.{RESET}")

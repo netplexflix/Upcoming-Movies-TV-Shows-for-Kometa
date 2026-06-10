@@ -16,7 +16,7 @@ from .utils import (
     get_tag_ids_from_names, sanitize_filename,
     dedupe_by_key, sanitize_instance_name
 )
-from .sonarr import process_sonarr_url, get_sonarr_series
+from .sonarr import process_sonarr_url, get_sonarr_series, get_sonarr_episodes
 from .radarr import process_radarr_url, get_radarr_movies
 from .mdblist import fetch_mdblist_items
 from .finders import (
@@ -168,6 +168,7 @@ def main(config=None, localization=None):
         sonarr_instances = config.get('sonarr_instances', [])
         radarr_instances = config.get('radarr_instances', [])
         output_mode = config.get('instance_output_mode', 'combined')
+        cross_instance_availability = str(config.get('cross_instance_availability', 'false')).lower() == 'true'
 
         # Process TV Shows
         if process_tv:
@@ -212,6 +213,32 @@ def main(config=None, localization=None):
                         if not mdblist_tv_url:
                             print(f"{RED}Error: mdblist_tv not configured{RESET}")
 
+                globally_available_show_ids = set()
+                series_cache = {}
+                if cross_instance_availability and len(sonarr_instances) > 1 and tv_method > 0:
+                    print(f"{BLUE}Cross-instance availability: scanning Sonarr instances for downloaded premieres...{RESET}")
+                    for instance in sonarr_instances:
+                        try:
+                            pre_timeout = int(instance.get('timeout', 90))
+                            pre_url = process_sonarr_url(instance['url'], instance['api_key'], pre_timeout)
+                            pre_series = get_sonarr_series(pre_url, instance['api_key'], pre_timeout)
+                            series_cache[id(instance)] = pre_series
+                            for series in pre_series:
+                                tvdb_id = series.get('tvdbId')
+                                if not tvdb_id:
+                                    continue
+                                # No files at all -> S01E01 can't have one; skip the episode fetch
+                                if series.get('statistics', {}).get('episodeFileCount', 0) == 0:
+                                    continue
+                                episodes = get_sonarr_episodes(pre_url, instance['api_key'], series['id'], pre_timeout)
+                                s01e01 = next((e for e in episodes if e.get('seasonNumber') == 1 and e.get('episodeNumber') == 1), None)
+                                if s01e01 and s01e01.get('hasFile'):
+                                    globally_available_show_ids.add(tvdb_id)
+                        except (ConnectionError, requests.exceptions.RequestException):
+                            continue
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Cross-instance: {len(globally_available_show_ids)} show(s) already have S01E01 downloaded somewhere{RESET}")
+
                 for instance in sonarr_instances:
                     instance_name = instance.get('name', 'Sonarr')
                     sonarr_timeout = int(instance.get('timeout', 90))
@@ -226,7 +253,7 @@ def main(config=None, localization=None):
                         sonarr_url = process_sonarr_url(instance['url'], instance['api_key'], sonarr_timeout)
                         sonarr_api_key = instance['api_key']
 
-                        all_series = get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
+                        all_series = series_cache.get(id(instance)) or get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
 
                         exclude_sonarr_tag_names = instance.get('exclude_tags', [])
                         if isinstance(exclude_sonarr_tag_names, str):
@@ -256,7 +283,8 @@ def main(config=None, localization=None):
                         if tv_method > 0:
                             future_shows, aired_shows = find_upcoming_shows(
                                 all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows,
-                                utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
+                                utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv,
+                                globally_available_show_ids
                             )
 
                             if future_shows:
@@ -578,7 +606,8 @@ def main(config=None, localization=None):
                             cleanup_tv_content(
                                 group, tv_method, debug,
                                 future_days_upcoming_shows, utc_offset, future_only_tv,
-                                trending_tv_monitored, trending_tv_request_needed
+                                trending_tv_monitored, trending_tv_request_needed,
+                                globally_available_show_ids
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
@@ -729,6 +758,24 @@ def main(config=None, localization=None):
                         if not mdblist_movies_url:
                             print(f"{RED}Error: mdblist_movies not configured{RESET}")
 
+                globally_available_movie_ids = set()
+                movie_cache = {}
+                if cross_instance_availability and len(radarr_instances) > 1 and movie_method > 0:
+                    print(f"{BLUE}Cross-instance availability: scanning Radarr instances for downloaded movies...{RESET}")
+                    for instance in radarr_instances:
+                        try:
+                            pre_timeout = int(instance.get('timeout', 90))
+                            pre_url = process_radarr_url(instance['url'], instance['api_key'], pre_timeout)
+                            pre_movies = get_radarr_movies(pre_url, instance['api_key'], pre_timeout)
+                            movie_cache[id(instance)] = pre_movies
+                            for m in pre_movies:
+                                if m.get('hasFile') and m.get('tmdbId'):
+                                    globally_available_movie_ids.add(m['tmdbId'])
+                        except (ConnectionError, requests.exceptions.RequestException):
+                            continue
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Cross-instance: {len(globally_available_movie_ids)} movie(s) already downloaded somewhere{RESET}")
+
                 for instance in radarr_instances:
                     instance_name = instance.get('name', 'Radarr')
                     radarr_timeout = int(instance.get('timeout', 90))
@@ -743,7 +790,7 @@ def main(config=None, localization=None):
                         radarr_url = process_radarr_url(instance['url'], instance['api_key'], radarr_timeout)
                         radarr_api_key = instance['api_key']
 
-                        all_movies = get_radarr_movies(radarr_url, radarr_api_key, radarr_timeout)
+                        all_movies = movie_cache.get(id(instance)) or get_radarr_movies(radarr_url, radarr_api_key, radarr_timeout)
 
                         exclude_radarr_tag_names = instance.get('exclude_tags', [])
                         if isinstance(exclude_radarr_tag_names, str):
@@ -774,7 +821,7 @@ def main(config=None, localization=None):
                         if movie_method > 0:
                             print(f"{BLUE}Finding upcoming movies...{RESET}")
                             future_movies, released_movies = find_upcoming_movies(
-                                all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies
+                                all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies, globally_available_movie_ids
                             )
 
                             if future_movies:
