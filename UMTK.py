@@ -221,8 +221,19 @@ if __name__ == "__main__":
 
         sched_state = SchedulerState(config_dir="config")
 
+        # Docker always runs as a long-lived server. Manual installs can opt into
+        # the same persistent scheduler + Web UI by setting UMTK_SERVER=true (handy
+        # in a systemd Environment= line) or passing --server (handy in a .bat).
+        # Without either, manual runs stay single-shot for backwards compatibility.
+        docker = os.environ.get('DOCKER') == 'true'
+        server_mode = (
+            docker
+            or os.environ.get('UMTK_SERVER', '').lower() == 'true'
+            or '--server' in sys.argv
+        )
+
         # Resolve the config path the same way webui does
-        if os.environ.get('DOCKER') == 'true':
+        if docker:
             config_path = '/app/config/config.yml'
         else:
             config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'config.yml')
@@ -230,14 +241,14 @@ if __name__ == "__main__":
         # Start web UI if available
         try:
             from webui import start_webui
-            webui_host = "0.0.0.0" if os.environ.get('DOCKER') == 'true' else "127.0.0.1"
+            webui_host = "0.0.0.0" if docker else "127.0.0.1"
             start_webui(scheduler_state=sched_state, host=webui_host)
         except ImportError:
             pass
         except Exception as e:
             print(f"{ORANGE}Web UI not started: {e}{RESET}")
 
-        if os.environ.get('DOCKER') == 'true':
+        if server_mode:
             # Seed schedule from config.yml (or env vars on first launch)
             _load_initial_schedule(sched_state, config_path)
             # Enters the scheduler loop and never returns.

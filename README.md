@@ -49,6 +49,7 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [Step 3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
     - [Step 4: Configure Your Config Settings](#2.4)
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
+    - [Step 6: Keeping the Web UI alive (optional)](#2.6)
 - [🖥️ Web UI](#web-ui)
 - [⚙️ Configuration](#configuration)
   - [General](#general)
@@ -239,6 +240,46 @@ Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_
 > ```
 > Save as a .bat file. You can now double click this batch file to directly launch the script.<br/>
 > You can also use this batch file to [schedule](https://www.windowscentral.com/how-create-automated-task-using-task-scheduler-windows-10) the script to run.
+
+<a id="2.6"></a>
+#### Step 6: Keeping the Web UI alive (optional)
+
+By default a manual run is **single-shot**: UMTK runs once and exits, so the [Web UI](#️-web-ui) is only reachable while that run is in progress. If you'd rather keep UMTK running in the background with the built-in scheduler and a persistent Web UI (the same way the Docker image works), start it in **server mode**:
+
+```sh
+python UMTK.py --server
+```
+
+Or set the `UMTK_SERVER` environment variable to `true` (equivalent — handy for service managers):
+
+```sh
+# Linux/macOS
+UMTK_SERVER=true python UMTK.py
+```
+```powershell
+# Windows PowerShell
+$env:UMTK_SERVER='true'; python UMTK.py
+```
+
+In server mode UMTK performs an initial run, then waits and re-runs on the configured schedule (edit it live from the Web UI), keeping `http://localhost:2120` available the whole time. The schedule is seeded from `config.yml` (or the `CRON` / `SCHEDULE_HOURS` env vars / a 24h default on first launch), exactly like Docker.
+
+> [!TIP]
+> On Linux you can run UMTK as a **systemd service** so it starts on boot and stays alive:
+> ```ini
+> [Unit]
+> Description=UMTK
+> After=network-online.target
+>
+> [Service]
+> WorkingDirectory=/path/to/UMTK
+> ExecStart=/usr/bin/python3 /path/to/UMTK/UMTK.py --server
+> Environment="UMTK_SERVER=true"
+> Restart=on-failure
+>
+> [Install]
+> WantedBy=multi-user.target
+> ```
+> The Web UI binds to `127.0.0.1` (localhost only) for manual installs. To reach it from another machine, put it behind a reverse proxy or use an SSH tunnel.
 
 ---
 
