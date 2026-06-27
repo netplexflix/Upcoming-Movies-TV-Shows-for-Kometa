@@ -61,6 +61,7 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
   - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
+- [🔔 Webhook on Placeholder Creation](#webhook-on-placeholder-creation)
 - [🗂️ Create your Coming Soon Collection](#create-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
@@ -523,6 +524,37 @@ Each category has its own collection and overlay blocks, following the same patt
 
 > [!NOTE]
 > The date format options are the same as listed above in the [Overlay & Collection Settings](#overlay--collection-settings) section.
+
+---
+
+<a id="webhook-on-placeholder-creation"></a>
+## 🔔 Webhook on Placeholder Creation
+
+UMTK can send an HTTP request whenever it creates a new file — a downloaded trailer **or** a copied placeholder video (for both upcoming and trending movies/shows). (e.g. for triggering Autoscan/Autopulse/..)
+
+Enable it in the WebUI under **UMTK Settings → Webhook** (at the bottom of the page), or in `config.yml`. 
+
+The URL and Body support these substitution variables:
+
+| Variable | Value |
+| --- | --- |
+| `{path}` / `{path_enc}` | Full path of the new file (raw / URL-encoded) |
+| `{dir}` / `{dir_enc}` | Parent folder of the file |
+| `{filename}` | File name with extension |
+| `{name_noext}` | File name without extension |
+
+> Use the `_enc` variants whenever the value goes into a URL query string or a form body, since media paths contain spaces and special characters.
+
+**Extra options**
+
+| Key | Description |
+| --- | --- |
+| `webhook_method` | `POST` (default) or `GET` |
+| `webhook_content_type` | `none` (path in the URL — the common case), `form`, or `json` for the request body |
+| `webhook_headers` | Extra request headers, one `Key: Value` per line (e.g. an API token) |
+| `webhook_auth_user` / `webhook_auth_pass` | Optional HTTP Basic Auth credentials (e.g. autopulse) |
+| `webhook_timeout_seconds` | Request timeout (default `10`). The call is fire-and-forget — it never blocks or fails a run |
+| `webhook_path_from` / `webhook_path_to` | Optional path remap, for when UMTK's container mounts differ from your media server's. The leading `from` path is replaced with `to` before the `{path}` variables are built |
 
 ---
 

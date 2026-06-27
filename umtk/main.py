@@ -27,6 +27,7 @@ from .media_handlers import (
     search_trailer_on_youtube, download_trailer_tv, download_trailer_movie,
     create_placeholder_tv, create_placeholder_movie
 )
+from .webhook import send_creation_webhook
 from .cleanup import cleanup_tv_content, cleanup_movie_content
 from .yaml_generators import (
     create_overlay_yaml_tv, create_collection_yaml_tv,
@@ -391,6 +392,9 @@ def main(config=None, localization=None):
                                         successful += 1
                                         new_tv_files_written += 1
                                         inst_shows_with_content.append(show)
+                                        created = show.pop('umtk_created_file', None)
+                                        if created:
+                                            send_creation_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -551,6 +555,9 @@ def main(config=None, localization=None):
                                 successful += 1
                                 new_tv_files_written += 1
                                 trending_shows_with_content.append(show)
+                                created = show.pop('umtk_created_file', None)
+                                if created:
+                                    send_creation_webhook(config, Path(created))
                             else:
                                 failed += 1
 
@@ -917,6 +924,9 @@ def main(config=None, localization=None):
                                         successful += 1
                                         new_movie_files_written += 1
                                         inst_movies_with_content.append(movie)
+                                        created = movie.pop('umtk_created_file', None)
+                                        if created:
+                                            send_creation_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -1067,6 +1077,9 @@ def main(config=None, localization=None):
                                 successful += 1
                                 new_movie_files_written += 1
                                 trending_movies_with_content.append(movie)
+                                created = movie.pop('umtk_created_file', None)
+                                if created:
+                                    send_creation_webhook(config, Path(created))
                             else:
                                 failed += 1
 

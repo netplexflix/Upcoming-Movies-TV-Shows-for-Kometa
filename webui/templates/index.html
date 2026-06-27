@@ -1473,6 +1473,7 @@ select { min-width: 120px; }
     <div id="umtk-sections"></div>
     <h2 style="font-size:18px;font-weight:600;margin:28px 0 16px;color:var(--text-primary)">Collection & Overlay Blocks</h2>
     <div id="umtk-blocks"></div>
+    <div id="umtk-webhook"></div>
     <div class="settings-actions">
         <button class="btn" onclick="saveUmtk()">Save UMTK Settings</button>
     </div>
@@ -2329,6 +2330,76 @@ function renderUmtkSettings() {
         'Trending': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`
     });
     renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
+    renderOptionSections(umtkData.webhook || [], document.getElementById('umtk-webhook'), null);
+    /* Wire the preset dropdown to pre-fill the webhook fields. */
+    const presetSel = document.querySelector('#umtk-webhook [data-key="webhook_preset"]');
+    if (presetSel) presetSel.addEventListener('change', () => applyWebhookPreset(presetSel.value));
+}
+
+/* ── Webhook presets ──────────────────────────────────────────────────── */
+const WEBHOOK_PRESETS = {
+    'autopulse': {
+        requiresAuth: true,
+        fields: {
+            webhook_url: 'http://CHANGE_ME:2875/triggers/manual?path={path_enc}',
+            webhook_method: 'POST',
+            webhook_content_type: 'none',
+            webhook_body: '',
+        },
+    },
+    'autoscan (Cloudbox)': {
+        requiresAuth: true,
+        fields: {
+            webhook_url: 'http://CHANGE_ME:3030/triggers/manual?dir={dir_enc}',
+            webhook_method: 'POST',
+            webhook_content_type: 'none',
+            webhook_body: '',
+        },
+    },
+    'autoscan (NiNiyas)': {
+        requiresAuth: false,
+        fields: {
+            webhook_url: 'http://CHANGE_ME:3468/YOUR_SERVER_PASS',
+            webhook_method: 'POST',
+            webhook_content_type: 'form',
+            webhook_body: 'eventType=Manual&filepath={path_enc}',
+        },
+    },
+};
+
+function setWebhookField(key, value) {
+    const el = document.querySelector(`#umtk-webhook [data-key="${key}"]`);
+    if (el) el.value = value;
+}
+
+function applyWebhookPreset(preset) {
+    const def = WEBHOOK_PRESETS[preset];
+
+    if (!def) {
+        // 'custom': wipe the fields presets manage so the form starts blank
+        // instead of keeping the previously selected preset's values.
+        setWebhookField('webhook_url', '');
+        setWebhookField('webhook_method', 'POST');
+        setWebhookField('webhook_content_type', 'none');
+        setWebhookField('webhook_body', '');
+        setWebhookField('webhook_auth_user', '');
+        setWebhookField('webhook_auth_pass', '');
+        return;
+    }
+
+    Object.entries(def.fields).forEach(([key, value]) => setWebhookField(key, value));
+
+    if (def.requiresAuth) {
+        const userEl = document.querySelector('#umtk-webhook [data-key="webhook_auth_user"]');
+        if (userEl && !userEl.value.trim()) userEl.value = 'admin';
+        const passEl = document.querySelector('#umtk-webhook [data-key="webhook_auth_pass"]');
+        if (passEl && !passEl.value.trim()) passEl.placeholder = 'Password required';
+    } else {
+        // Preset doesn't use Basic Auth — clear any stale credentials a
+        // previously selected preset may have filled in.
+        setWebhookField('webhook_auth_user', '');
+        setWebhookField('webhook_auth_pass', '');
+    }
 }
 
 async function testMdblist() {
@@ -2363,11 +2434,12 @@ async function saveUmtk() {
     const scopeEl = document.getElementById('page-umtk');
     const options = gatherOptionValues(umtkData.options, scopeEl);
     const blocks = gatherBlocks('umtk');
+    const webhook = gatherOptionValues(umtkData.webhook || [], scopeEl);
     try {
         const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ options, blocks }),
+            body: JSON.stringify({ options, blocks, webhook }),
         });
         if (res.ok) { showToast('UMTK settings saved', 'success'); _snapshotPage('umtk'); }
         else showToast('Failed to save', 'error');

@@ -64,6 +64,7 @@ UMTK_SECTION_HEADERS = {
     'backdrop_trending_shows_requested': '################################################################################\n##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########\n################################################################################',
     'backdrop_trending_top_10_movies': '################################################################################\n##########               TRENDING MOVIES TOP 10 OVERLAY:              ##########\n################################################################################',
     'backdrop_trending_top_10_tv': '################################################################################\n##########              TRENDING SHOWS TOP 10 OVERLAY:                ##########\n################################################################################',
+    'webhook_enabled': '################################################################################\n##########                          WEBHOOK:                          ##########\n################################################################################',
 }
 
 # ── Config option metadata ─────────────────────────────────────────────────
@@ -166,12 +167,41 @@ TSSK_OPTIONS = [
     {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "Timeframes"},
 ]
 
+# ── Webhook (fire after a new placeholder/trailer is created) ───────────────
+WEBHOOK_OPTIONS = [
+    {"key": "webhook_enabled", "type": "bool", "default": False, "label": "Enabled", "description": "Send an HTTP request after a new placeholder or trailer is created (e.g. to trigger a targeted Plex/Jellyfin scan via autoscan, autopulse, etc.).", "section": "Webhook"},
+    {"key": "webhook_preset", "type": "select", "default": "custom", "label": "Preset", "description": "Pick a service to pre-fill the fields below, or 'custom' to edit them yourself. The preset only changes the form; the saved values are what get used.", "section": "Webhook", "options": [
+        {"value": "custom", "label": "custom"},
+        {"value": "autopulse", "label": "autopulse"},
+        {"value": "autoscan (Cloudbox)", "label": "autoscan (Cloudbox)"},
+        {"value": "autoscan (NiNiyas)", "label": "autoscan (NiNiyas)"},
+    ]},
+    {"key": "webhook_url", "type": "string", "default": "", "label": "URL", "description": "Target URL. Most scan tools take the file path in the query string here (e.g. ?path={path_enc} or ?dir={dir_enc}). Variables: {path}/{path_enc} (new file), {dir}/{dir_enc} (folder), {filename}, {name_noext}. Use the _enc variants inside a query string.", "section": "Webhook"},
+    {"key": "webhook_method", "type": "select", "default": "POST", "label": "Method", "description": "HTTP method to use.", "section": "Webhook", "options": [
+        {"value": "POST", "label": "POST"},
+        {"value": "GET", "label": "GET"},
+    ]},
+    {"key": "webhook_content_type", "type": "select", "default": "none", "label": "Body Type", "description": "'none' sends no body (the common case — the path goes in the URL query string). 'form' sends the body as form-urlencoded, 'json' as JSON.", "section": "Webhook", "options": [
+        {"value": "none", "label": "none"},
+        {"value": "form", "label": "form"},
+        {"value": "json", "label": "json"},
+    ]},
+    {"key": "webhook_body", "type": "string", "default": "", "label": "Body", "description": "Only needed for targets that read the path from the request body (e.g. NiNiyas/autoscan's form endpoint) or custom JSON webhooks. Leave empty when the path is in the URL. Same substitution variables as the URL. Ignored when Body Type is 'none'.", "section": "Webhook"},
+    {"key": "webhook_headers", "type": "string_list", "default": [], "label": "Headers", "description": "Extra request headers, one per line as 'Key: Value' (e.g. an API token).", "section": "Webhook"},
+    {"key": "webhook_auth_user", "type": "string", "default": "", "label": "Basic Auth User", "description": "Username for HTTP Basic Auth (e.g. autopulse). Leave blank to disable.", "section": "Webhook"},
+    {"key": "webhook_auth_pass", "type": "string", "default": "", "label": "Basic Auth Password", "description": "Password for HTTP Basic Auth.", "section": "Webhook"},
+    {"key": "webhook_timeout_seconds", "type": "int", "default": 10, "label": "Timeout (s)", "description": "Request timeout in seconds. The call is fire-and-forget and never blocks processing.", "section": "Webhook"},
+    {"key": "webhook_path_from", "type": "string", "default": "", "label": "Path Remap From", "description": "Optional. If UMTK writes media under a different path than your media server, replace this leading path...", "section": "Webhook"},
+    {"key": "webhook_path_to", "type": "string", "default": "", "label": "Path Remap To", "description": "...with this one, before building the {path} variables.", "section": "Webhook"},
+]
+
 
 # ── Allowed-key whitelists (derived from option metadata above) ───────────
 _ALLOWED_CONNECTION_KEYS = {o["key"] for o in CONNECTION_OPTIONS}
 _ALLOWED_CONNECTION_KEYS.update({'radarr_instances', 'sonarr_instances'})
 _ALLOWED_UMTK_KEYS = {o["key"] for o in UMTK_OPTIONS}
 _ALLOWED_TSSK_KEYS = {o["key"] for o in TSSK_OPTIONS}
+_ALLOWED_WEBHOOK_KEYS = {o["key"] for o in WEBHOOK_OPTIONS}
 _ALLOWED_BLOCK_PREFIXES = ('collection_', 'backdrop_', 'text_')
 
 # ── Helper functions ───────────────────────────────────────────────────────
@@ -515,12 +545,15 @@ def register_routes(app):
     def api_config_umtk():
         config = _load_yaml(webui._config_path)
         ensure_trending_requested_blocks(config)
-        result = {"options": [], "blocks": {}}
+        result = {"options": [], "blocks": {}, "webhook": []}
         for opt in UMTK_OPTIONS:
             val = _get_config_value(config, opt["key"], opt["default"])
             if opt.get("sensitive") and val:
                 val = MASKED_VALUE
             result["options"].append({**opt, "value": val})
+        for opt in WEBHOOK_OPTIONS:
+            val = _get_config_value(config, opt["key"], opt["default"])
+            result["webhook"].append({**opt, "value": val})
         # Include collection/overlay blocks as raw dicts
         for key, value in config.items():
             if any(key.startswith(p) for p in ['collection_', 'backdrop_', 'text_']):
@@ -533,11 +566,16 @@ def register_routes(app):
         data = request.get_json()
         options = data.get("options", {})
         blocks = data.get("blocks", {})
+        webhook = data.get("webhook", {})
         sensitive_keys = {o["key"] for o in UMTK_OPTIONS if o.get("sensitive")}
         for key, value in options.items():
             if key not in _ALLOWED_UMTK_KEYS:
                 continue
             if key in sensitive_keys and value == MASKED_VALUE:
+                continue
+            config[key] = value
+        for key, value in webhook.items():
+            if key not in _ALLOWED_WEBHOOK_KEYS:
                 continue
             config[key] = value
         for key, value in blocks.items():
