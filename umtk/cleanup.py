@@ -14,6 +14,29 @@ from .utils import sanitize_filename, get_user_info, get_file_owner, convert_utc
 from .sonarr import get_sonarr_episodes
 
 
+def normalize_title(title):
+    normalized = re.sub(r'\s*\(\d{4}\)\s*', '', title)
+    normalized = re.sub(r'[^\w\s]', '', normalized)
+    normalized = ' '.join(normalized.lower().split())
+    return normalized
+
+
+def _title_in_trending(check_title, trending_items, debug=False):
+    """Return True if check_title matches any trending item title,
+    first by exact match, then by normalized comparison."""
+    for item in trending_items:
+        trending_title = item['title']
+        if check_title == trending_title:
+            if debug:
+                print(f"{BLUE}[DEBUG] Exact match found: '{check_title}' == '{trending_title}'{RESET}")
+            return True
+        if normalize_title(check_title) == normalize_title(trending_title):
+            if debug:
+                print(f"{BLUE}[DEBUG] Normalized match found: '{normalize_title(check_title)}' == '{normalize_title(trending_title)}'{RESET}")
+            return True
+    return False
+
+
 def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                        future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False,
                        trending_monitored=None, trending_request_needed=None,
@@ -62,13 +85,7 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
         current_trending_shows.extend(trending_request_needed)
     
     current_trending_titles = {show['title'] for show in current_trending_shows}
-    
-    def normalize_title(title):
-        normalized = re.sub(r'\s*\(\d{4}\)\s*', '', title)
-        normalized = re.sub(r'[^\w\s]', '', normalized)
-        normalized = ' '.join(normalized.lower().split())
-        return normalized
-    
+
     current_trending_normalized = {normalize_title(show['title']): show['title'] for show in current_trending_shows}
     
     if debug:
@@ -405,13 +422,7 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
     
     current_trending_movies = trending_monitored + trending_request_needed
     current_trending_titles = {movie['title'] for movie in current_trending_movies}
-    
-    def normalize_title(title):
-        normalized = re.sub(r'\s*\(\d{4}\)\s*', '', title)
-        normalized = re.sub(r'[^\w\s]', '', normalized)
-        normalized = ' '.join(normalized.lower().split())
-        return normalized
-    
+
     current_trending_normalized = {normalize_title(movie['title']): movie['title'] for movie in current_trending_movies}
     
     current_trending_monitored_titles = {movie['title'] for movie in trending_monitored}
@@ -662,3 +673,204 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
         print(f"{GREEN}Movie cleanup complete: No folders needed removal ({checked_count} checked){RESET}")
     elif debug:
         print(f"{BLUE}[DEBUG] No edition folders found to check{RESET}")
+
+
+def _remove_placeholder_folder(folder, display_title, reason, debug=False):
+    """Remove a placeholder folder with the same permission checks and
+    diagnostics as the instance-root cleanup paths. Returns True on removal."""
+    parent_dir = folder.parent
+
+    if not os.access(folder, os.W_OK):
+        print(f"{RED}Permission denied: Cannot remove folder {folder.name} for {display_title}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
+        return False
+
+    if not os.access(parent_dir, os.W_OK):
+        print(f"{RED}Permission denied: No write access to parent directory {parent_dir}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(parent_dir)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        print(f"{RED}Directory permissions: {oct(parent_dir.stat().st_mode)[-3:]}{RESET}")
+        return False
+
+    try:
+        try:
+            os.chmod(folder, 0o775)
+            if debug:
+                print(f"{BLUE}[DEBUG] Set permissions 775 on {folder}{RESET}")
+        except Exception as perm_err:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Could not set directory permissions: {perm_err}{RESET}")
+
+        total_size = sum(f.stat().st_size for f in folder.rglob('*') if f.is_file())
+        size_mb = total_size / (1024 * 1024)
+
+        shutil.rmtree(folder)
+        print(f"{GREEN}Removed trending content for {display_title} - {reason} ({size_mb:.1f} MB freed){RESET}")
+        if debug:
+            print(f"{BLUE}[DEBUG] Deleted: {folder}{RESET}")
+        return True
+    except PermissionError as e:
+        print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
+        print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+        print(f"{RED}Current user: {get_user_info()}{RESET}")
+        if folder.exists():
+            print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
+    except Exception as e:
+        error_msg = str(e)
+        print(f"{RED}Error removing content for {display_title}: {e}{RESET}")
+        if "Permission denied" in error_msg or "Errno 13" in error_msg:
+            print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
+            print(f"{RED}Current user: {get_user_info()}{RESET}")
+            if folder.exists():
+                print(f"{RED}Directory permissions: {oct(folder.stat().st_mode)[-3:]}{RESET}")
+    return False
+
+
+def cleanup_trending_root_movies(trending_root, trending_monitored,
+                                 trending_request_needed, debug=False):
+    """Remove stale placeholder folders from the dedicated movie trending root.
+
+    Handles folders UMTK creates in trending_root_movies:
+      {edition-Trending}    -> request-needed trending movies
+      {edition-Coming Soon} -> trending movies owned by an instance without umtk_root
+    A folder is stale when its title no longer appears in the combined
+    trending list (monitored + request_needed). Anything without an edition
+    tag is left untouched.
+    """
+    if not trending_root:
+        return
+
+    root = Path(trending_root)
+    if not root.exists():
+        if debug:
+            print(f"{ORANGE}[DEBUG] Trending movie root does not exist: {trending_root}{RESET}")
+        return
+
+    combined = (trending_monitored or []) + (trending_request_needed or [])
+    current_trending_titles = {movie['title'] for movie in combined}
+
+    if debug:
+        print(f"{BLUE}[DEBUG] Scanning trending root for stale movie folders: {trending_root} ({len(current_trending_titles)} trending titles){RESET}")
+
+    removed_count = 0
+    checked_count = 0
+
+    try:
+        folders = [f for f in root.iterdir() if f.is_dir()]
+    except Exception as e:
+        print(f"{RED}Error scanning trending movie root {trending_root}: {e}{RESET}")
+        return
+
+    for folder in folders:
+        is_trending = "{edition-Trending}" in folder.name
+        is_coming_soon = "{edition-Coming Soon}" in folder.name
+
+        if not (is_trending or is_coming_soon):
+            continue
+
+        checked_count += 1
+
+        if debug:
+            edition_type = "Trending" if is_trending else "Coming Soon"
+            print(f"{BLUE}[DEBUG] Found {edition_type} edition folder: {folder.name}{RESET}")
+
+        if is_trending:
+            movie_title = folder.name.replace(" {edition-Trending}", "")
+        else:
+            movie_title = folder.name.replace(" {edition-Coming Soon}", "")
+
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', movie_title)
+        if title_match:
+            title_without_year = title_match.group(1).strip()
+        else:
+            title_without_year = movie_title
+
+        if _title_in_trending(title_without_year, combined, debug):
+            if debug:
+                print(f"{BLUE}[DEBUG] Keeping trending content for {title_without_year} - still in trending list{RESET}")
+            continue
+
+        if debug:
+            print(f"{BLUE}[DEBUG] Not found in trending list. Folder title: '{title_without_year}'{RESET}")
+            print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+
+        if _remove_placeholder_folder(folder, title_without_year, "no longer in trending list", debug):
+            removed_count += 1
+
+    if removed_count > 0:
+        print(f"{GREEN}Trending root cleanup complete: Removed {removed_count} folder(s) from {checked_count} checked{RESET}")
+    elif checked_count > 0:
+        print(f"{GREEN}Trending root cleanup complete: No folders needed removal ({checked_count} checked){RESET}")
+    elif debug:
+        print(f"{BLUE}[DEBUG] No edition folders found in trending root{RESET}")
+
+
+def cleanup_trending_root_tv(trending_root, trending_monitored,
+                             trending_request_needed, debug=False):
+    """Remove stale show folders from the dedicated TV trending root.
+
+    Only touches show folders carrying a Season 00/.trending marker (all
+    trending-root TV content has one); anything else is left untouched.
+    A folder is stale when its title no longer appears in the combined
+    trending list (monitored + request_needed).
+    """
+    if not trending_root:
+        return
+
+    root = Path(trending_root)
+    if not root.exists():
+        if debug:
+            print(f"{ORANGE}[DEBUG] Trending TV root does not exist: {trending_root}{RESET}")
+        return
+
+    combined = (trending_monitored or []) + (trending_request_needed or [])
+    current_trending_titles = {show['title'] for show in combined}
+
+    if debug:
+        print(f"{BLUE}[DEBUG] Scanning trending root for stale show folders: {trending_root} ({len(current_trending_titles)} trending titles){RESET}")
+
+    removed_count = 0
+    checked_count = 0
+
+    try:
+        folders = [f for f in root.iterdir() if f.is_dir()]
+    except Exception as e:
+        print(f"{RED}Error scanning trending TV root {trending_root}: {e}{RESET}")
+        return
+
+    for show_dir in folders:
+        if not (show_dir / "Season 00" / ".trending").exists():
+            continue
+
+        checked_count += 1
+
+        show_folder_name = show_dir.name
+        if debug:
+            print(f"{BLUE}[DEBUG] Found trending show folder: {show_folder_name}{RESET}")
+
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', show_folder_name)
+        if title_match:
+            show_title_from_folder = title_match.group(1).strip()
+        else:
+            show_title_from_folder = show_folder_name
+
+        if _title_in_trending(show_title_from_folder, combined, debug):
+            if debug:
+                print(f"{BLUE}[DEBUG] Keeping trending content for {show_title_from_folder} - still in trending list{RESET}")
+            continue
+
+        if debug:
+            print(f"{BLUE}[DEBUG] Not found in trending list. Check title: '{show_title_from_folder}'{RESET}")
+            print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+
+        if _remove_placeholder_folder(show_dir, show_title_from_folder, "no longer in trending list", debug):
+            removed_count += 1
+
+    if removed_count > 0:
+        print(f"{GREEN}Trending root cleanup complete: Removed {removed_count} show folder(s) from {checked_count} checked{RESET}")
+    elif checked_count > 0:
+        print(f"{GREEN}Trending root cleanup complete: No show folders needed removal ({checked_count} checked){RESET}")
+    elif debug:
+        print(f"{BLUE}[DEBUG] No trending show folders found in trending root{RESET}")

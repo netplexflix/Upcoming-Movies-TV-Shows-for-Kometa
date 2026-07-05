@@ -28,7 +28,10 @@ from .media_handlers import (
     create_placeholder_tv, create_placeholder_movie
 )
 from .webhook import send_creation_webhook
-from .cleanup import cleanup_tv_content, cleanup_movie_content
+from .cleanup import (
+    cleanup_tv_content, cleanup_movie_content,
+    cleanup_trending_root_movies, cleanup_trending_root_tv
+)
 from .yaml_generators import (
     create_overlay_yaml_tv, create_collection_yaml_tv,
     create_new_shows_collection_yaml, create_new_shows_overlay_yaml,
@@ -37,6 +40,11 @@ from .yaml_generators import (
     create_top10_overlay_yaml_movies, create_top10_overlay_yaml_tv
 )
 from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata, trigger_plex_library_scan
+
+
+def _same_root(a, b):
+    """Path equality that tolerates trailing slashes and, on Windows, case."""
+    return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(os.path.normpath(str(b)))
 
 
 def main(config=None, localization=None):
@@ -622,6 +630,18 @@ def main(config=None, localization=None):
                             instance_warnings.append(f"Sonarr cleanup '{names}': {str(e)}")
                         print()
 
+                    if trending_root_tv and not any(
+                            not k.startswith("__solo__:") and _same_root(k, trending_root_tv)
+                            for k in tv_cleanup_groups):
+                        print(f"\n{BLUE}Checking trending TV root for stale content...{RESET}")
+                        try:
+                            cleanup_trending_root_tv(trending_root_tv, trending_tv_monitored,
+                                                     trending_tv_request_needed, debug)
+                        except Exception as e:
+                            print(f"{RED}Trending TV root cleanup error: {str(e)}{RESET}")
+                            instance_warnings.append(f"Trending TV root cleanup: {str(e)}")
+                        print()
+
                 # Merge instance results for YML generation and Plex updates
                 if tv_instance_results:
                     # Merge shows_with_content for Plex metadata: per-instance buckets +
@@ -1145,6 +1165,17 @@ def main(config=None, localization=None):
                             names = ", ".join(i['name'] for i in group)
                             print(f"{RED}Cleanup error for Radarr instance(s) '{names}': {str(e)}{RESET}")
                             instance_warnings.append(f"Radarr cleanup '{names}': {str(e)}")
+
+                    if trending_root_movies and not any(
+                            not k.startswith("__solo__:") and _same_root(k, trending_root_movies)
+                            for k in movie_cleanup_groups):
+                        print(f"\n{BLUE}Checking trending movie root for stale content...{RESET}")
+                        try:
+                            cleanup_trending_root_movies(trending_root_movies, trending_movies_monitored,
+                                                         trending_movies_request_needed, debug)
+                        except Exception as e:
+                            print(f"{RED}Trending movie root cleanup error: {str(e)}{RESET}")
+                            instance_warnings.append(f"Trending movie root cleanup: {str(e)}")
 
                 # Merge instance results for YML generation and Plex updates
                 if movie_instance_results:
