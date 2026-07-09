@@ -533,7 +533,8 @@ select { min-width: 120px; }
     font-weight: 500;
 }
 
-.instance-field input {
+.instance-field input,
+.instance-field select {
     width: 100%;
 }
 
@@ -1376,7 +1377,7 @@ select { min-width: 120px; }
 <!-- ── Legacy root migration banner ───────────────────────────────────── -->
 <div id="legacy-root-banner" class="legacy-banner" style="display:none">
     <div class="legacy-banner-text">
-        <strong>Settings moved:</strong> <code>umtk_root_movies</code> / <code>umtk_root_tv</code> are now per-instance — set them under each Radarr/Sonarr instance on the Connections tab. Dedicated trending roots live in UMTK Settings → Trending. Your legacy values are still being applied automatically; update the new fields and then remove the old keys from <code>config.yml</code>.
+        <strong>Settings moved:</strong> <code>umtk_root_movies</code> / <code>umtk_root_tv</code> are now per-instance — set them under each Radarr/Sonarr instance on the Connections tab. Dedicated trending roots are now set per trending list in UMTK Settings → Trending. Your legacy values are still being applied automatically; update the new fields and then remove the old keys from <code>config.yml</code>.
     </div>
     <div class="legacy-banner-actions">
         <button class="btn btn-secondary btn-sm" onclick="dismissLegacyBanner()">Dismiss</button>
@@ -1860,6 +1861,9 @@ function gatherOptionValues(optionsList, scopeEl) {
 /* ── Instance editor state ────────────────────────────────────────────── */
 let _instanceData = { radarr_instances: [], sonarr_instances: [] };
 
+/* ── Trending list editor state ───────────────────────────────────────── */
+let _trendingListsData = [];
+
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
     try {
@@ -2318,6 +2322,13 @@ async function fetchUmtk() {
         const res = await apiFetch('/api/config/umtk');
         if (!res.ok) return;
         umtkData = await res.json();
+        try {
+            const listsRes = await apiFetch('/api/config/trending_lists');
+            if (listsRes.ok) {
+                const listsData = await listsRes.json();
+                _trendingListsData = listsData.trending_lists || [];
+            }
+        } catch (e) { /* silent */ }
         _umtkLoaded = true;
         renderUmtkSettings();
         _snapshotPage('umtk');
@@ -2329,11 +2340,157 @@ function renderUmtkSettings() {
     renderOptionSections(umtkData.options, document.getElementById('umtk-sections'), 'enable_umtk', {
         'Trending': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`
     });
+    /* Trending list cards live below the universal Trending options */
+    const trendingOpts = document.getElementById('section-opts-trending-enable_umtk');
+    if (trendingOpts) {
+        const wrap = document.createElement('div');
+        wrap.className = 'instance-section';
+        wrap.innerHTML = `<div class="instance-cards" id="trending-list-cards"></div>
+            <button class="btn-add-instance" onclick="addTrendingList()">+ Add Trending List</button>`;
+        trendingOpts.appendChild(wrap);
+        renderTrendingLists();
+    }
     renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
     renderOptionSections(umtkData.webhook || [], document.getElementById('umtk-webhook'), null);
     /* Wire the preset dropdown to pre-fill the webhook fields. */
     const presetSel = document.querySelector('#umtk-webhook [data-key="webhook_preset"]');
     if (presetSel) presetSel.addEventListener('change', () => applyWebhookPreset(presetSel.value));
+}
+
+/* ── Trending list management ─────────────────────────────────────────── */
+function renderTrendingLists() {
+    const container = document.getElementById('trending-list-cards');
+    if (!container) return;
+    let html = '';
+    _trendingListsData.forEach((lst, idx) => {
+        html += renderTrendingListCard(idx, lst);
+    });
+    container.innerHTML = html;
+}
+
+function renderTrendingListCard(idx, lst) {
+    const nameVal = escapeAttr(lst.name || '');
+    const urlVal = escapeAttr(lst.url || '');
+    const limitVal = lst.limit != null ? lst.limit : 10;
+    const rootVal = escapeAttr(lst.root || '');
+    const type = lst.type === 'tv' ? 'tv' : 'movie';
+    const method = [0, 1, 2].includes(Number(lst.method)) ? Number(lst.method) : 0;
+    const rootPlaceholder = type === 'tv' ? '/umtktv' : '/umtkmovies';
+    const legacyBadge = lst.legacy_filenames
+        ? `<span class="setting-desc" style="margin-right:8px" title="This list writes the classic UMTK trending filenames so existing Kometa configs keep working">classic filenames</span>`
+        : '';
+    return `<div class="instance-card" data-trend-idx="${idx}">
+        <div class="instance-card-header">
+            <span class="instance-card-title">${escapeHtml(lst.name || 'New Trending List')}</span>
+            <div class="instance-card-actions">
+                ${legacyBadge}
+                <button class="test-btn" onclick="testTrendingList(${idx})">Test</button>
+                <span class="test-result" id="test-trending-${idx}"></span>
+                <button class="btn-remove-instance" onclick="removeTrendingList(${idx})">Remove</button>
+            </div>
+        </div>
+        <div class="instance-fields">
+            <div class="instance-field">
+                <label>Name</label>
+                <input type="text" data-trend-field="name" value="${nameVal}" placeholder="e.g. Trending Movies" oninput="updateTrendingListField(${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Trending List';">
+            </div>
+            <div class="instance-field">
+                <label>Type</label>
+                <select data-trend-field="type">
+                    <option value="movie"${type === 'movie' ? ' selected' : ''}>Movies</option>
+                    <option value="tv"${type === 'tv' ? ' selected' : ''}>TV</option>
+                </select>
+            </div>
+            <div class="instance-field">
+                <label>Method</label>
+                <select data-trend-field="method">
+                    <option value="0"${method === 0 ? ' selected' : ''}>Disabled</option>
+                    <option value="1"${method === 1 ? ' selected' : ''}>Download trailers</option>
+                    <option value="2"${method === 2 ? ' selected' : ''}>Placeholder</option>
+                </select>
+            </div>
+            <div class="instance-field">
+                <label>Limit</label>
+                <input type="number" data-trend-field="limit" value="${limitVal}" step="1" min="1">
+            </div>
+            <div class="instance-field full-width">
+                <label>MDBList URL</label>
+                <input type="text" data-trend-field="url" value="${urlVal}" placeholder="https://mdblist.com/lists/username/list-name">
+            </div>
+            <div class="instance-field full-width">
+                <label>Root</label>
+                <input type="text" data-trend-field="root" value="${rootVal}" placeholder="${rootPlaceholder}">
+            </div>
+        </div>
+    </div>`;
+}
+
+function addTrendingList() {
+    gatherTrendingListsFromDOM();
+    const count = _trendingListsData.length + 1;
+    _trendingListsData.push({
+        name: `Trending List ${count}`, type: 'movie', method: 0,
+        url: '', limit: 10, root: '', legacy_filenames: false,
+    });
+    renderTrendingLists();
+    _checkDirty('umtk');
+}
+
+function removeTrendingList(idx) {
+    const name = _trendingListsData[idx]?.name || 'this trending list';
+    if (!confirm(`Remove ${name}?`)) return;
+    gatherTrendingListsFromDOM();
+    _trendingListsData.splice(idx, 1);
+    renderTrendingLists();
+    _checkDirty('umtk');
+}
+
+function updateTrendingListField(idx, field, value) {
+    if (_trendingListsData[idx]) {
+        _trendingListsData[idx][field] = value;
+    }
+    _checkDirty('umtk');
+}
+
+function gatherTrendingListsFromDOM() {
+    const cards = document.querySelectorAll('.instance-card[data-trend-idx]');
+    cards.forEach(card => {
+        const idx = parseInt(card.dataset.trendIdx);
+        const lst = _trendingListsData[idx];
+        if (!lst) return;
+        card.querySelectorAll('[data-trend-field]').forEach(input => {
+            const field = input.dataset.trendField;
+            if (field === 'method') lst[field] = parseInt(input.value) || 0;
+            else if (field === 'limit') lst[field] = parseInt(input.value) || 10;
+            else lst[field] = input.value;
+        });
+    });
+}
+
+async function testTrendingList(idx) {
+    gatherTrendingListsFromDOM();
+    const lst = _trendingListsData[idx];
+    if (!lst) return;
+    const resultEl = document.getElementById(`test-trending-${idx}`);
+    resultEl.className = 'test-result';
+    resultEl.textContent = 'Testing...';
+    const apiKeyEl = document.querySelector('#page-umtk [data-key="mdblist_api_key"]');
+    try {
+        const res = await apiFetch('/api/test/mdblist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                mdblist_api_key: apiKeyEl ? apiKeyEl.value : '',
+                lists: [{ name: lst.name, url: lst.url }],
+            }),
+        });
+        const result = await res.json();
+        resultEl.className = 'test-result ' + (result.success ? 'success' : 'fail');
+        resultEl.textContent = result.message;
+    } catch (e) {
+        resultEl.className = 'test-result fail';
+        resultEl.textContent = 'Request failed';
+    }
 }
 
 /* ── Webhook presets ──────────────────────────────────────────────────── */
@@ -2407,13 +2564,12 @@ async function testMdblist() {
     resultEl.className = 'test-result';
     resultEl.textContent = 'Testing...';
 
-    const data = {};
-    umtkData.options.forEach(opt => {
-        if (opt.section === 'Trending') {
-            const el = document.querySelector(`[data-key="${opt.key}"]`);
-            if (el) data[opt.key] = opt.type === 'int' ? parseInt(el.value) : el.value;
-        }
-    });
+    gatherTrendingListsFromDOM();
+    const apiKeyEl = document.querySelector('#page-umtk [data-key="mdblist_api_key"]');
+    const data = {
+        mdblist_api_key: apiKeyEl ? apiKeyEl.value : '',
+        lists: _trendingListsData.map(lst => ({ name: lst.name, url: lst.url })),
+    };
 
     try {
         const res = await apiFetch('/api/test/mdblist', {
@@ -2435,14 +2591,29 @@ async function saveUmtk() {
     const options = gatherOptionValues(umtkData.options, scopeEl);
     const blocks = gatherBlocks('umtk');
     const webhook = gatherOptionValues(umtkData.webhook || [], scopeEl);
+    gatherTrendingListsFromDOM();
     try {
         const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ options, blocks, webhook }),
         });
-        if (res.ok) { showToast('UMTK settings saved', 'success'); _snapshotPage('umtk'); }
-        else showToast('Failed to save', 'error');
+        const listsRes = await apiFetch('/api/config/trending_lists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trending_lists: _trendingListsData }),
+        });
+        if (res.ok && listsRes.ok) {
+            showToast('UMTK settings saved', 'success');
+            _snapshotPage('umtk');
+        } else {
+            let msg = 'Failed to save';
+            try {
+                const err = await (res.ok ? listsRes : res).json();
+                if (err && err.error) msg = err.error;
+            } catch (e) {}
+            showToast(msg, 'error');
+        }
     } catch (e) { showToast('Failed to save', 'error'); }
 }
 

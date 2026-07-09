@@ -48,6 +48,7 @@ UMTK_SECTION_HEADERS = {
     'future_days_upcoming_movies': '################################################################################\n##########                         MOVIES:                            ##########\n################################################################################',
     'future_days_upcoming_shows': '################################################################################\n##########                         TV SHOWS:                          ##########\n################################################################################',
     'trending_movies': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
+    'trending_lists': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
     'collection_upcoming_movies': '################################################################################\n##########                UPCOMING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_upcoming_movies_future': '################################################################################\n##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########\n################################################################################',
     'backdrop_upcoming_movies_released': '################################################################################\n##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########\n################################################################################',
@@ -123,17 +124,10 @@ UMTK_OPTIONS = [
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
-    # Trending
-    {"key": "trending_movies", "type": "select", "default": 0, "label": "Trending Movies Method", "description": "Choose how to handle trending movies", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "Trending"},
-    {"key": "trending_tv", "type": "select", "default": 0, "label": "Trending TV Method", "description": "Choose how to handle trending TV shows", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "Trending"},
+    # Trending (per-list settings live in trending_lists, managed via
+    # /api/config/trending_lists — only the universal options remain here)
     {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
     {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending", "sensitive": True},
-    {"key": "mdblist_movies", "type": "string", "default": "", "label": "MDBList Movies URL", "description": "MDBList trending movies list URL", "section": "Trending"},
-    {"key": "mdblist_movies_limit", "type": "int", "default": 10, "label": "MDBList Movies Limit", "description": "Number of trending movies to include", "section": "Trending"},
-    {"key": "mdblist_tv", "type": "string", "default": "", "label": "MDBList TV URL", "description": "MDBList trending TV list URL", "section": "Trending"},
-    {"key": "mdblist_tv_limit", "type": "int", "default": 10, "label": "MDBList TV Limit", "description": "Number of trending TV shows to include", "section": "Trending"},
-    {"key": "trending_root_movies", "type": "string", "default": "", "label": "Trending Root Movies", "description": "Root folder for trending movies not in any Radarr library", "section": "Trending"},
-    {"key": "trending_root_tv", "type": "string", "default": "", "label": "Trending Root TV", "description": "Root folder for trending shows not in any Sonarr library", "section": "Trending"},
 ]
 
 TSSK_OPTIONS = [
@@ -706,6 +700,89 @@ def register_routes(app):
         _save_yaml(webui._config_path, config)
         return jsonify({"ok": True})
 
+    # ── Config: Trending lists ────────────────────────────────────────
+    @app.route("/api/config/trending_lists")
+    def api_config_trending_lists():
+        config = _load_yaml(webui._config_path)
+        # Apply normalization to handle the legacy flat trending format
+        from umtk.config_loader import normalize_instances, normalize_trending
+        config = normalize_trending(normalize_instances(config))
+        return jsonify({"trending_lists": config.get('trending_lists', [])})
+
+    @app.route("/api/config/trending_lists", methods=["POST"])
+    def api_save_trending_lists():
+        from umtk.config_loader import LEGACY_TRENDING_KEYS
+        from umtk.utils import sanitize_instance_name
+
+        config = _load_yaml(webui._config_path)
+        data = request.get_json() or {}
+        new_lists = data.get('trending_lists', [])
+        if not isinstance(new_lists, list):
+            return jsonify({"ok": False, "error": "trending_lists must be a list"}), 400
+
+        names_seen = set()
+        legacy_seen = set()
+        cleaned = []
+        for lst in new_lists:
+            if not isinstance(lst, dict):
+                return jsonify({"ok": False, "error": "Each trending list must be an object"}), 400
+            name = (lst.get('name') or '').strip()
+            if not name:
+                return jsonify({"ok": False, "error": "All trending lists must have a name"}), 400
+            # Names must be unique after filename sanitization too, otherwise two
+            # lists would write to the same output files.
+            name_key = sanitize_instance_name(name).lower()
+            if name_key in names_seen:
+                return jsonify({"ok": False, "error": f"Duplicate trending list name: {name}"}), 400
+            names_seen.add(name_key)
+
+            list_type = lst.get('type')
+            if list_type not in ('movie', 'tv'):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid type"}), 400
+
+            try:
+                method = int(lst.get('method', 0))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid method"}), 400
+            if method not in (0, 1, 2):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid method"}), 400
+
+            try:
+                limit = int(lst.get('limit', 10))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": f"Trending list '{name}': limit must be a whole number"}), 400
+            if limit < 1:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': limit must be >= 1"}), 400
+
+            url = (lst.get('url') or '').strip()
+            if method > 0 and not url:
+                return jsonify({"ok": False, "error": f"Trending list '{name}' is missing an MDBList URL"}), 400
+
+            legacy = bool(lst.get('legacy_filenames'))
+            if legacy:
+                if list_type in legacy_seen:
+                    return jsonify({"ok": False, "error": "Only one trending list per type can use the classic filenames"}), 400
+                legacy_seen.add(list_type)
+
+            cleaned.append({
+                'name': name,
+                'type': list_type,
+                'method': method,
+                'url': url,
+                'limit': limit,
+                'root': (lst.get('root') or '').strip(),
+                'legacy_filenames': legacy,
+            })
+
+        config['trending_lists'] = cleaned
+
+        # Remove legacy flat keys if present (migrated to trending_lists)
+        for old_key in LEGACY_TRENDING_KEYS:
+            config.pop(old_key, None)
+
+        _save_yaml(webui._config_path, config)
+        return jsonify({"ok": True})
+
     # ── Connection tests ──────────────────────────────────────────────
     def _resolve_masked(data, key):
         """If the value is the mask placeholder, return the real value from config."""
@@ -774,8 +851,9 @@ def register_routes(app):
     def api_test_mdblist():
         data = request.get_json() or {}
         api_key = _resolve_masked(data, "mdblist_api_key").strip()
-        movies_url = data.get("mdblist_movies", "").strip()
-        tv_url = data.get("mdblist_tv", "").strip()
+        lists = data.get("lists", [])
+        if not isinstance(lists, list):
+            lists = []
 
         if not api_key:
             return jsonify({"success": False, "message": "API key required"})
@@ -796,7 +874,11 @@ def register_routes(app):
 
             messages = [f"API key valid ({elapsed}ms)"]
 
-            for label, url in [("Movies list", movies_url), ("TV list", tv_url)]:
+            for lst in lists:
+                if not isinstance(lst, dict):
+                    continue
+                label = (lst.get('name') or 'List').strip() or 'List'
+                url = (lst.get('url') or '').strip()
                 if not url:
                     continue
                 parts = url.rstrip('/').split('/')

@@ -51,14 +51,23 @@ umtk_root_tv: P:/UMTK/TV # Where UMTK will output the tv folder. Docker users: u
 ################################################################################
 ##########                        TRENDING:                           ##########
 ################################################################################
-trending_movies: 2
-trending_tv: 2
 label_request_needed: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
-mdblist_movies: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
-mdblist_movies_limit: 10
-mdblist_tv: https://mdblist.com/lists/netplexflix/umtk-trending-top20
-mdblist_tv_limit: 10
+trending_lists:
+  - name: Trending Movies
+    type: movie
+    method: 2
+    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
+    limit: 10
+    root: P:/UMTK/MOVIES # Docker users: use `/umtkmovies`
+    legacy_filenames: true
+  - name: Trending Shows TOP 10
+    type: tv
+    method: 2
+    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20
+    limit: 10
+    root: P:/UMTK/TV # Docker users: use `/umtktv`
+    legacy_filenames: true
 
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########

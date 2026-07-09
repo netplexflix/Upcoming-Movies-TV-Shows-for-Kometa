@@ -379,7 +379,8 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'imdbId': imdb_id,
                 'year': year,
                 'airDate': None,
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
             continue
 
@@ -422,6 +423,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'year': owner_series.get('year', None),
                 'airDate': None,
                 'rank': rank,
+                'source_list': item.get('source_list'),
                 'owner': {
                     'name': inst.get('name'),
                     'url': inst.get('url'),
@@ -442,7 +444,8 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'imdbId': ref_series.get('imdbId', ''),
                 'year': ref_series.get('year', None),
                 'airDate': None,
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
 
     return monitored_not_available, not_found_or_unmonitored
@@ -514,7 +517,8 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'year': year,
                 'releaseDate': None,
                 'releaseType': 'Trending',
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
             continue
 
@@ -550,6 +554,7 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'releaseDate': None,
                 'releaseType': 'Trending',
                 'rank': rank,
+                'source_list': item.get('source_list'),
                 'owner': {
                     'name': inst.get('name'),
                     'url': inst.get('url'),
@@ -570,7 +575,8 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'year': ref_movie.get('year', None),
                 'releaseDate': None,
                 'releaseType': 'Trending',
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
 
     return monitored_not_available, not_found_or_unmonitored

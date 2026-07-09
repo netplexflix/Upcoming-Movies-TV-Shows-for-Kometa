@@ -403,16 +403,41 @@ Each Radarr and Sonarr instance has its own options configured under the **Conne
 > <img width="729" height="525" alt="Image" src="https://github.com/user-attachments/assets/8e3e4f4e-b6b7-4ea2-8238-3040a1ff30fe" />
 
 ### Trending:
-- **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-- **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
-- **mdblist_movies:** which trending movies list to use. you can create your own.
-- **mdblist_movies_limit:** How many items to pull from the trending movies list
-- **mdblist_tv:** which trending TV shows list to use. you can create your own.
-- **mdblist_tv_limit:** ow many items to pull from the trending TV shows list
-- **trending_root_movies:** Root folder for trending movies that aren't in any Radarr library (`Request Needed` items). Docker users: use `/umtkmovies`.
-- **trending_root_tv:** Root folder for trending shows that aren't in any Sonarr library (`Request Needed` items). Docker users: use `/umtktv`.
+- **trending_lists:** a list of MDBList lists to process — add as many as you want. Each entry has:
+  - **name:** the Plex collection name for this list (also used in the output filenames)
+  - **type:** `movie` or `tv`
+  - **method:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+  - **url:** the MDBList list URL. You can create your own lists.
+  - **limit:** how many items to pull from the list
+  - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
+  - **legacy_filenames:** set to `true` on at most one list per type to keep the classic output filenames (`UMTK_MOVIES_TRENDING_COLLECTION.yml`, `UMTK_MOVIES_TOP10_OVERLAYS.yml` and the TV equivalents). Other lists write files suffixed with the list name, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml`.
+
+  Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
+
+```yaml
+trending_lists:
+  - name: Trending Movies
+    type: movie
+    method: 2
+    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
+    limit: 10
+    root: /umtkmovies
+    legacy_filenames: true
+  - name: Popular Movies
+    type: movie
+    method: 2
+    url: https://mdblist.com/lists/someuser/popular-movies
+    limit: 20
+    root: /umtkmovies
+```
+
+> [!NOTE]
+> **Upgrading from an older version?** The old `trending_movies`, `trending_tv`, `mdblist_movies`, `mdblist_movies_limit`, `mdblist_tv`, `mdblist_tv_limit`, `trending_root_movies` and `trending_root_tv` keys are deprecated but still work: they are automatically converted into two `trending_lists` entries (with `legacy_filenames: true`, so your existing Kometa file references keep working). Saving the Trending settings in the WebUI migrates your config file to the new format.
+
+> [!NOTE]
+> If the same item appears in several lists, it is only processed once: the first list (in config order) that contains it decides its method, root and Top 10 rank. The `RequestNeeded` label collection is written to a single file per type (the `legacy_filenames` list's file if present) and covers all lists.
 > [!TIP]
 > With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
 
@@ -624,6 +649,9 @@ Movies:
 > [!TIP]
 > Only add the files for the categories you have enabled. All are optional and independently generated based on your config settings.
 
+> [!NOTE]
+> Extra trending lists (without `legacy_filenames`) each write their own pair of files, named after the list, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml` and `UMTK_MOVIES_TOP10_OVERLAYS_Popular_Movies.yml` — add those too.
+
 ---
 
 ## 🍪 Using browser cookies for yt-dlp (Method 1)
@@ -707,7 +735,7 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 1. Go to your TV show library
 2. Sort by "Last Episode Date Added"
 3. Click '+' → "Create Smart Collection"
-4. Add filter: `Folder Location` `is not` your UMTK TV root folder(s) (i.e. the `umtk_root` path(s) you configured on your Sonarr instance(s), plus `trending_root_tv` if used)
+4. Add filter: `Folder Location` `is not` your UMTK TV root folder(s) (i.e. the `umtk_root` path(s) you configured on your Sonarr instance(s), plus the `root` of any TV trending list if used)
 5. Press 'Save As' > 'Save As Smart Collection'
 6. Name it something like "New in TV Shows📺"
 7. In the new collection click the three dots then "Visible on" > "Home"
