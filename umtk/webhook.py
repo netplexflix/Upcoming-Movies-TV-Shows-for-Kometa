@@ -80,11 +80,13 @@ def _send(method: str, url: str, *, data, headers, auth, timeout) -> None:
         logger.warning("Webhook error for %s: %s", url, exc)
 
 
-def send_creation_webhook(config, new_path: Path) -> None:
-    """Fire the configured webhook after a new file has been created.
+def send_file_webhook(config, new_path: Path) -> None:
+    """Fire the configured webhook for a placeholder/trailer file event.
 
-    Called once per newly written placeholder or downloaded trailer, so an
-    external scan tool (autoscan, autopulse, ...) can pick the item up in Plex.
+    Called once per newly written placeholder or downloaded trailer, and once
+    per placeholder/trailer removed during cleanup, so an external scan tool
+    (autoscan, autopulse, ...) can pick the change up in Plex. On removal the
+    path passed is the file or folder that was deleted.
 
     Fire-and-forget: the HTTP call runs on a daemon thread so a slow or
     unreachable endpoint never stalls the processing loop, and any error

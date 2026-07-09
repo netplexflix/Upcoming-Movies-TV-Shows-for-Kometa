@@ -61,7 +61,7 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
   - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
-- [🔔 Webhook on Placeholder Creation](#webhook-on-placeholder-creation)
+- [🔔 Webhook on Placeholder Creation & Removal](#webhook-on-placeholder-creation)
 - [🗂️ Create your Coming Soon Collection](#create-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
@@ -412,7 +412,7 @@ Each Radarr and Sonarr instance has its own options configured under the **Conne
   - **url:** the MDBList list URL. You can create your own lists.
   - **limit:** how many items to pull from the list
   - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
-  - **legacy_filenames:** set to `true` on at most one list per type to keep the classic output filenames (`UMTK_MOVIES_TRENDING_COLLECTION.yml`, `UMTK_MOVIES_TOP10_OVERLAYS.yml` and the TV equivalents). Other lists write files suffixed with the list name, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml`.
+  - **legacy_filenames:** used automatically for backwards compatibility. Do not use/change.
 
   Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
 
@@ -553,9 +553,9 @@ Each category has its own collection and overlay blocks, following the same patt
 ---
 
 <a id="webhook-on-placeholder-creation"></a>
-## 🔔 Webhook on Placeholder Creation
+## 🔔 Webhook on Placeholder Creation & Removal
 
-UMTK can send an HTTP request whenever it creates a new file — a downloaded trailer **or** a copied placeholder video (for both upcoming and trending movies/shows). (e.g. for triggering Autoscan/Autopulse/..)
+UMTK can send an HTTP request whenever it creates a new file — a downloaded trailer **or** a copied placeholder video (for both upcoming and trending movies/shows). It **also** fires when the cleanup logic later removes a placeholder/trailer (e.g. the movie was downloaded, the show started airing, or the item dropped off the trending list), so the stale item gets picked up and removed from Plex too. (e.g. for triggering Autoscan/Autopulse/..)
 
 Enable it in the WebUI under **UMTK Settings → Webhook** (at the bottom of the page), or in `config.yml`. 
 
@@ -563,10 +563,10 @@ The URL and Body support these substitution variables:
 
 | Variable | Value |
 | --- | --- |
-| `{path}` / `{path_enc}` | Full path of the new file (raw / URL-encoded) |
-| `{dir}` / `{dir_enc}` | Parent folder of the file |
-| `{filename}` | File name with extension |
-| `{name_noext}` | File name without extension |
+| `{path}` / `{path_enc}` | Full path of the affected file (raw / URL-encoded). On removal this is the file or folder that was deleted |
+| `{dir}` / `{dir_enc}` | Parent folder of the path |
+| `{filename}` | File/folder name with extension |
+| `{name_noext}` | File/folder name without extension |
 
 > Use the `_enc` variants whenever the value goes into a URL query string or a form body, since media paths contain spaces and special characters.
 

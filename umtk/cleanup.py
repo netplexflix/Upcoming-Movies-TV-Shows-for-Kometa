@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local
 from .sonarr import get_sonarr_episodes
+from .webhook import send_file_webhook
 
 
 def normalize_title(title):
@@ -40,7 +41,7 @@ def _title_in_trending(check_title, trending_items, debug=False):
 def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                        future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False,
                        trending_monitored=None, trending_request_needed=None,
-                       globally_available_ids=None):
+                       globally_available_ids=None, webhook_config=None):
     """Cleanup TV show trailers or placeholders for a group of Sonarr instances
     that share a placeholder root.
 
@@ -307,13 +308,15 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                         size_mb = total_size / (1024 * 1024)
                         
                         shutil.rmtree(show_dir)
-                        
+
                         removed_count += 1
                         content_type = "trending content" if is_trending else "content"
                         print(f"{GREEN}Removed show folder for {display_title} - {removal_reason} ({size_mb:.1f} MB freed){RESET}")
                         if debug:
                             print(f"{BLUE}[DEBUG] Deleted entire folder: {show_dir}{RESET}")
-                        
+                        if webhook_config:
+                            send_file_webhook(webhook_config, show_dir)
+
                         break
                         
                     except PermissionError as e:
@@ -355,7 +358,9 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                         
                         file_size_mb = trailer_file.stat().st_size / (1024 * 1024)
                         trailer_file.unlink()
-                        
+                        if webhook_config:
+                            send_file_webhook(webhook_config, trailer_file)
+
                         marker_file = season_00_path / ".trending"
                         if marker_file.exists():
                             marker_file.unlink()
@@ -390,7 +395,8 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
 
 
 def cleanup_movie_content(radarr_instances, future_by_instance,
-                          trending_monitored, trending_request_needed, movie_method, debug=False):
+                          trending_monitored, trending_request_needed, movie_method, debug=False,
+                          webhook_config=None):
     """Cleanup movie trailers or placeholders for a group of Radarr instances
     that share a placeholder root.
 
@@ -650,6 +656,8 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
                         print(f"{GREEN}Removed {content_type} for {movie_title} - {reason} ({size_mb:.1f} MB freed){RESET}")
                         if debug:
                             print(f"{BLUE}[DEBUG] Deleted: {folder}{RESET}")
+                        if webhook_config:
+                            send_file_webhook(webhook_config, folder)
                     except PermissionError as e:
                         print(f"{RED}Permission error removing content for {movie_title}: {e}{RESET}")
                         print(f"{RED}Directory owner: {get_file_owner(folder)}{RESET}")
@@ -675,7 +683,7 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
         print(f"{BLUE}[DEBUG] No edition folders found to check{RESET}")
 
 
-def _remove_placeholder_folder(folder, display_title, reason, debug=False):
+def _remove_placeholder_folder(folder, display_title, reason, debug=False, webhook_config=None):
     """Remove a placeholder folder with the same permission checks and
     diagnostics as the instance-root cleanup paths. Returns True on removal."""
     parent_dir = folder.parent
@@ -710,6 +718,8 @@ def _remove_placeholder_folder(folder, display_title, reason, debug=False):
         print(f"{GREEN}Removed trending content for {display_title} - {reason} ({size_mb:.1f} MB freed){RESET}")
         if debug:
             print(f"{BLUE}[DEBUG] Deleted: {folder}{RESET}")
+        if webhook_config:
+            send_file_webhook(webhook_config, folder)
         return True
     except PermissionError as e:
         print(f"{RED}Permission error removing content for {display_title}: {e}{RESET}")
@@ -729,7 +739,7 @@ def _remove_placeholder_folder(folder, display_title, reason, debug=False):
 
 
 def cleanup_trending_root_movies(trending_root, trending_monitored,
-                                 trending_request_needed, debug=False):
+                                 trending_request_needed, debug=False, webhook_config=None):
     """Remove stale placeholder folders from the dedicated movie trending root.
 
     Handles folders UMTK creates in trending_root_movies:
@@ -796,7 +806,7 @@ def cleanup_trending_root_movies(trending_root, trending_monitored,
             print(f"{BLUE}[DEBUG] Not found in trending list. Folder title: '{title_without_year}'{RESET}")
             print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
 
-        if _remove_placeholder_folder(folder, title_without_year, "no longer in trending list", debug):
+        if _remove_placeholder_folder(folder, title_without_year, "no longer in trending list", debug, webhook_config):
             removed_count += 1
 
     if removed_count > 0:
@@ -808,7 +818,7 @@ def cleanup_trending_root_movies(trending_root, trending_monitored,
 
 
 def cleanup_trending_root_tv(trending_root, trending_monitored,
-                             trending_request_needed, debug=False):
+                             trending_request_needed, debug=False, webhook_config=None):
     """Remove stale show folders from the dedicated TV trending root.
 
     Only touches show folders carrying a Season 00/.trending marker (all
@@ -865,7 +875,7 @@ def cleanup_trending_root_tv(trending_root, trending_monitored,
             print(f"{BLUE}[DEBUG] Not found in trending list. Check title: '{show_title_from_folder}'{RESET}")
             print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
 
-        if _remove_placeholder_folder(show_dir, show_title_from_folder, "no longer in trending list", debug):
+        if _remove_placeholder_folder(show_dir, show_title_from_folder, "no longer in trending list", debug, webhook_config):
             removed_count += 1
 
     if removed_count > 0:

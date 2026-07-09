@@ -28,7 +28,7 @@ from .media_handlers import (
     search_trailer_on_youtube, download_trailer_tv, download_trailer_movie,
     create_placeholder_tv, create_placeholder_movie
 )
-from .webhook import send_creation_webhook
+from .webhook import send_file_webhook
 from .cleanup import (
     cleanup_tv_content, cleanup_movie_content,
     cleanup_trending_root_movies, cleanup_trending_root_tv
@@ -465,7 +465,7 @@ def main(config=None, localization=None):
                                         inst_shows_with_content.append(show)
                                         created = show.pop('umtk_created_file', None)
                                         if created:
-                                            send_creation_webhook(config, Path(created))
+                                            send_file_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -634,7 +634,7 @@ def main(config=None, localization=None):
                                 trending_shows_with_content.append(show)
                                 created = show.pop('umtk_created_file', None)
                                 if created:
-                                    send_creation_webhook(config, Path(created))
+                                    send_file_webhook(config, Path(created))
                             else:
                                 failed += 1
 
@@ -691,7 +691,8 @@ def main(config=None, localization=None):
                                 group, tv_method, debug,
                                 future_days_upcoming_shows, utc_offset, future_only_tv,
                                 trending_tv_monitored, trending_tv_request_needed,
-                                globally_available_show_ids
+                                globally_available_show_ids,
+                                webhook_config=config
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
@@ -714,7 +715,8 @@ def main(config=None, localization=None):
                         print(f"\n{BLUE}Checking trending TV root for stale content...{RESET}")
                         try:
                             cleanup_trending_root_tv(lst_root, trending_tv_monitored,
-                                                     trending_tv_request_needed, debug)
+                                                     trending_tv_request_needed, debug,
+                                                     webhook_config=config)
                         except Exception as e:
                             print(f"{RED}Trending TV root cleanup error: {str(e)}{RESET}")
                             instance_warnings.append(f"Trending TV root cleanup: {str(e)}")
@@ -1054,7 +1056,7 @@ def main(config=None, localization=None):
                                         inst_movies_with_content.append(movie)
                                         created = movie.pop('umtk_created_file', None)
                                         if created:
-                                            send_creation_webhook(config, Path(created))
+                                            send_file_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -1213,7 +1215,7 @@ def main(config=None, localization=None):
                                 trending_movies_with_content.append(movie)
                                 created = movie.pop('umtk_created_file', None)
                                 if created:
-                                    send_creation_webhook(config, Path(created))
+                                    send_file_webhook(config, Path(created))
                             else:
                                 failed += 1
 
@@ -1273,7 +1275,8 @@ def main(config=None, localization=None):
                             cleanup_movie_content(
                                 group, future_by_instance,
                                 trending_movies_monitored, trending_movies_request_needed,
-                                movie_method, debug
+                                movie_method, debug,
+                                webhook_config=config
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
@@ -1295,7 +1298,8 @@ def main(config=None, localization=None):
                         print(f"\n{BLUE}Checking trending movie root for stale content...{RESET}")
                         try:
                             cleanup_trending_root_movies(lst_root, trending_movies_monitored,
-                                                         trending_movies_request_needed, debug)
+                                                         trending_movies_request_needed, debug,
+                                                         webhook_config=config)
                         except Exception as e:
                             print(f"{RED}Trending movie root cleanup error: {str(e)}{RESET}")
                             instance_warnings.append(f"Trending movie root cleanup: {str(e)}")

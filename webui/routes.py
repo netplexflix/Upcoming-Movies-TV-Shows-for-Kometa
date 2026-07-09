@@ -163,7 +163,7 @@ TSSK_OPTIONS = [
 
 # ── Webhook (fire after a new placeholder/trailer is created) ───────────────
 WEBHOOK_OPTIONS = [
-    {"key": "webhook_enabled", "type": "bool", "default": False, "label": "Enabled", "description": "Send an HTTP request after a new placeholder or trailer is created (e.g. to trigger a targeted Plex/Jellyfin scan via autoscan, autopulse, etc.).", "section": "Webhook"},
+    {"key": "webhook_enabled", "type": "bool", "default": False, "label": "Enabled", "description": "Send an HTTP request when UMTK creates a new placeholder/trailer or removes one during cleanup (e.g. to trigger a targeted Plex/Jellyfin scan via autoscan, autopulse, etc.).", "section": "Webhook"},
     {"key": "webhook_preset", "type": "select", "default": "custom", "label": "Preset", "description": "Pick a service to pre-fill the fields below, or 'custom' to edit them yourself. The preset only changes the form; the saved values are what get used.", "section": "Webhook", "options": [
         {"value": "custom", "label": "custom"},
         {"value": "autopulse", "label": "autopulse"},
