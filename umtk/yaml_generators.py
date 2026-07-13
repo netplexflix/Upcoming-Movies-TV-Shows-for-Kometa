@@ -149,82 +149,86 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     
     # Process trending monitored shows
     if trending_monitored:
+        regular_tvdb_ids = {s['tvdbId'] for s in (future_shows + aired_shows) if s.get('tvdbId')}
+
         tvdb_monitored = []
         tmdb_monitored = []
-        
+
         for s in trending_monitored:
             if s.get("tvdbId"):
+                if s['tvdbId'] in regular_tvdb_ids:
+                    continue
                 tvdb_monitored.append(s['tvdbId'])
             elif s.get("tmdbId"):
                 tmdb_monitored.append(s['tmdbId'])
-        
+
         if tvdb_monitored:
-            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
             enable_backdrop = backdrop_config.pop("enable", True)
-            
+
             if enable_backdrop:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
-                
+
                 overlays_dict["backdrop_trending_monitored_tvdb"] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
-        
+
         if tmdb_monitored:
-            backdrop_config = deepcopy(config_sections.get("backdrop_aired", {}))
+            backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
             enable_backdrop = backdrop_config.pop("enable", True)
-            
+
             if enable_backdrop:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
-                
+
                 overlays_dict["backdrop_trending_monitored_tmdb"] = {
                     "overlay": backdrop_config,
                     "tmdb_show": tmdb_ids_str
                 }
-        
+
         if tvdb_monitored:
-            text_config = deepcopy(config_sections.get("text_aired", {}))
+            text_config = deepcopy(config_sections.get("text_trending_requested", {}))
             enable_text = text_config.pop("enable", True)
-            
+
             if enable_text:
-                use_text = text_config.pop("use_text", "Available Now")
+                use_text = text_config.pop("use_text", "Requested")
                 text_config.pop("date_format", None)
                 text_config.pop("capitalize_dates", None)
-                
+
                 sub_overlay_config = deepcopy(text_config)
-                
+
                 if "name" not in sub_overlay_config:
                     sub_overlay_config["name"] = f"text({use_text})"
-                
+
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
-                
+
                 overlays_dict["UMTK_trending_monitored_tvdb"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
-        
+
         if tmdb_monitored:
-            text_config = deepcopy(config_sections.get("text_aired", {}))
+            text_config = deepcopy(config_sections.get("text_trending_requested", {}))
             enable_text = text_config.pop("enable", True)
-            
+
             if enable_text:
-                use_text = text_config.pop("use_text", "Available Now")
+                use_text = text_config.pop("use_text", "Requested")
                 text_config.pop("date_format", None)
                 text_config.pop("capitalize_dates", None)
-                
+
                 sub_overlay_config = deepcopy(text_config)
-                
+
                 if "name" not in sub_overlay_config:
                     sub_overlay_config["name"] = f"text({use_text})"
-                
+
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
-                
+
                 overlays_dict["UMTK_trending_monitored_tmdb"] = {
                     "overlay": sub_overlay_config,
                     "tmdb_show": tmdb_ids_str
@@ -678,31 +682,33 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
     
     # Process trending monitored movies
     if trending_monitored:
+        regular_tmdb_ids = {m['tmdbId'] for m in (future_movies + released_movies) if m.get('tmdbId')}
+
         all_trending_monitored_tmdb_ids = set()
-        
+
         for m in trending_monitored:
-            if m.get("tmdbId"):
+            if m.get("tmdbId") and m['tmdbId'] not in regular_tmdb_ids:
                 all_trending_monitored_tmdb_ids.add(m['tmdbId'])
-        
-        backdrop_config = deepcopy(config_sections.get("backdrop_released", {}))
+
+        backdrop_config = deepcopy(config_sections.get("backdrop_trending_requested", {}))
         enable_backdrop = backdrop_config.pop("enable", True)
-        
+
         if enable_backdrop and all_trending_monitored_tmdb_ids:
             if "name" not in backdrop_config:
                 backdrop_config["name"] = "backdrop"
-            
+
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tmdb_ids) if i)
-            
+
             overlays_dict["backdrop_trending_monitored"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
-        
-        text_config = deepcopy(config_sections.get("text_released", {}))
+
+        text_config = deepcopy(config_sections.get("text_trending_requested", {}))
         enable_text = text_config.pop("enable", True)
-        
+
         if enable_text and all_trending_monitored_tmdb_ids:
-            use_text = text_config.pop("use_text", "Available Now")
+            use_text = text_config.pop("use_text", "Requested")
             text_config.pop("date_format", None)
             text_config.pop("capitalize_dates", None)
             
@@ -863,15 +869,25 @@ def create_collection_yaml_movies(output_file, future_movies, released_movies, c
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_trending_collection_yaml_movies(output_file, mdblist_items, config, trending_request_needed=None):
-    """Create trending collection YAML file for movies using TMDB IDs from all MDBList items"""
-    config_key = "collection_trending_movies"
-    collection_config = {}
-    collection_name = "Trending Movies"
-    
-    if config_key in config:
-        collection_config = deepcopy(config[config_key])
-        collection_name = collection_config.pop("collection_name", "Trending Movies")
+def create_trending_collection_yaml_movies(output_file, mdblist_items, config, trending_request_needed=None,
+                                           collection_name=None, collection_config=None):
+    """Create trending collection YAML file for movies using TMDB IDs from all MDBList items.
+
+    When collection_name/collection_config are omitted, the legacy
+    collection_trending_movies block from config is used (classic behavior).
+    """
+    if collection_name is None and collection_config is None:
+        config_key = "collection_trending_movies"
+        collection_config = {}
+        collection_name = "Trending Movies"
+
+        if config_key in config:
+            collection_config = deepcopy(config[config_key])
+            collection_name = collection_config.pop("collection_name", "Trending Movies")
+    else:
+        collection_config = deepcopy(collection_config) if collection_config else {}
+        popped_name = collection_config.pop("collection_name", None)
+        collection_name = collection_name or popped_name or "Trending Movies"
 
     if not mdblist_items:
         # Get item_label from config, default to collection_name
@@ -956,15 +972,25 @@ def create_trending_collection_yaml_movies(output_file, mdblist_items, config, t
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trending_request_needed=None):
-    """Create trending collection YAML file for TV shows using TVDB/TMDB IDs from all MDBList items"""
-    config_key = "collection_trending_shows"
-    collection_config = {}
-    collection_name = "Trending Shows"
-    
-    if config_key in config:
-        collection_config = deepcopy(config[config_key])
-        collection_name = collection_config.pop("collection_name", "Trending Shows")
+def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trending_request_needed=None,
+                                       collection_name=None, collection_config=None):
+    """Create trending collection YAML file for TV shows using TVDB/TMDB IDs from all MDBList items.
+
+    When collection_name/collection_config are omitted, the legacy
+    collection_trending_shows block from config is used (classic behavior).
+    """
+    if collection_name is None and collection_config is None:
+        config_key = "collection_trending_shows"
+        collection_config = {}
+        collection_name = "Trending Shows"
+
+        if config_key in config:
+            collection_config = deepcopy(config[config_key])
+            collection_name = collection_config.pop("collection_name", "Trending Shows")
+    else:
+        collection_config = deepcopy(collection_config) if collection_config else {}
+        popped_name = collection_config.pop("collection_name", None)
+        collection_name = collection_name or popped_name or "Trending Shows"
 
     if not mdblist_items:
         # Get item_label from config, default to collection_name
@@ -1073,8 +1099,12 @@ def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trend
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections, limit=10):
-    """Create Top N overlay YAML file for movies based on MDBList ranking"""
+def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections, limit=10, overlay_suffix=''):
+    """Create Top N overlay YAML file for movies based on MDBList ranking.
+
+    overlay_suffix is appended to overlay keys and backdrop names so multiple
+    trending lists don't produce colliding Kometa overlay names ('' = legacy output).
+    """
     if not mdblist_items:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No trending movies found for Top 10")
@@ -1183,27 +1213,27 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
             
             if tmdb_up:
                 up_config = deepcopy(backdrop_config)
-                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_up"] = {
+                overlays_dict["backdrop_trending_top_10_up" + overlay_suffix] = {
                     "overlay": up_config,
                     "tmdb_movie": ", ".join(tmdb_up)
                 }
-            
+
             if tmdb_equal:
                 equal_config = deepcopy(backdrop_config)
-                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_equal"] = {
+                overlays_dict["backdrop_trending_top_10_equal" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tmdb_movie": ", ".join(tmdb_equal)
                 }
-            
+
             if tmdb_down:
                 down_config = deepcopy(backdrop_config)
-                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_down"] = {
+                overlays_dict["backdrop_trending_top_10_down" + overlay_suffix] = {
                     "overlay": down_config,
                     "tmdb_movie": ", ".join(tmdb_down)
                 }
@@ -1218,10 +1248,12 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
             if all_tmdb_ids:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+                if overlay_suffix:
+                    backdrop_config["name"] = backdrop_config["name"] + overlay_suffix
+
                 tmdb_ids_str = ", ".join(all_tmdb_ids)
-                
-                overlays_dict["backdrop_trending_top_10"] = {
+
+                overlays_dict["backdrop_trending_top_10" + overlay_suffix] = {
                     "overlay": backdrop_config,
                     "tmdb_movie": tmdb_ids_str
                 }
@@ -1243,8 +1275,8 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
             
             rank_text_config = deepcopy(text_config)
             rank_text_config["name"] = f"text({rank})"
-            
-            block_key = f"trending_top10_{rank}"
+
+            block_key = f"trending_top10_{rank}{overlay_suffix}"
             overlays_dict[block_key] = {
                 "overlay": rank_text_config,
                 "tmdb_movie": str(tmdb_id)
@@ -1258,8 +1290,12 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
         yaml.dump(final_output, f, sort_keys=False)
 
 
-def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, limit=10):
-    """Create Top N overlay YAML file for TV shows based on MDBList ranking"""
+def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, limit=10, overlay_suffix=''):
+    """Create Top N overlay YAML file for TV shows based on MDBList ranking.
+
+    overlay_suffix is appended to overlay keys and backdrop names so multiple
+    trending lists don't produce colliding Kometa overlay names ('' = legacy output).
+    """
     if not mdblist_items:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No trending shows found for Top 10")
@@ -1418,54 +1454,54 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
             
             if tvdb_up:
                 up_config = deepcopy(backdrop_config)
-                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_tvdb_up"] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_up" + overlay_suffix] = {
                     "overlay": up_config,
                     "tvdb_show": ", ".join(tvdb_up)
                 }
-            
+
             if tvdb_equal:
                 equal_config = deepcopy(backdrop_config)
-                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_tvdb_equal"] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_equal" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tvdb_show": ", ".join(tvdb_equal)
                 }
-            
+
             if tvdb_down:
                 down_config = deepcopy(backdrop_config)
-                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_tvdb_down"] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_down" + overlay_suffix] = {
                     "overlay": down_config,
                     "tvdb_show": ", ".join(tvdb_down)
                 }
-            
+
             if tmdb_up:
                 up_config = deepcopy(backdrop_config)
-                up_config["name"] = backdrop_config.get("name", "backdrop") + "up"
+                up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_tmdb_up"] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_up" + overlay_suffix] = {
                     "overlay": up_config,
                     "tmdb_show": ", ".join(tmdb_up)
                 }
-            
+
             if tmdb_equal:
                 equal_config = deepcopy(backdrop_config)
-                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal"
+                equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_tmdb_equal"] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_equal" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tmdb_show": ", ".join(tmdb_equal)
                 }
-            
+
             if tmdb_down:
                 down_config = deepcopy(backdrop_config)
-                down_config["name"] = backdrop_config.get("name", "backdrop") + "down"
+                down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_tmdb_down"] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_down" + overlay_suffix] = {
                     "overlay": down_config,
                     "tmdb_show": ", ".join(tmdb_down)
                 }
@@ -1483,22 +1519,26 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
             if tvdb_ids:
                 if "name" not in backdrop_config:
                     backdrop_config["name"] = "backdrop"
-                
+                if overlay_suffix:
+                    backdrop_config["name"] = backdrop_config["name"] + overlay_suffix
+
                 tvdb_ids_str = ", ".join(tvdb_ids)
-                
-                overlays_dict["backdrop_trending_top_10_tvdb"] = {
+
+                overlays_dict["backdrop_trending_top_10_tvdb" + overlay_suffix] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
-            
+
             if tmdb_ids:
                 tmdb_config = deepcopy(backdrop_config)
                 if "name" not in tmdb_config:
                     tmdb_config["name"] = "backdrop"
-                
+                if overlay_suffix and not tmdb_config["name"].endswith(overlay_suffix):
+                    tmdb_config["name"] = tmdb_config["name"] + overlay_suffix
+
                 tmdb_ids_str = ", ".join(tmdb_ids)
-                
-                overlays_dict["backdrop_trending_top_10_tmdb"] = {
+
+                overlays_dict["backdrop_trending_top_10_tmdb" + overlay_suffix] = {
                     "overlay": tmdb_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -1523,13 +1563,13 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
             rank_text_config["name"] = f"text({rank})"
             
             if tvdb_id:
-                block_key = f"trending_top10_{rank}_tvdb"
+                block_key = f"trending_top10_{rank}_tvdb{overlay_suffix}"
                 overlays_dict[block_key] = {
                     "overlay": rank_text_config,
                     "tvdb_show": str(tvdb_id)
                 }
             elif tmdb_id:
-                block_key = f"trending_top10_{rank}_tmdb"
+                block_key = f"trending_top10_{rank}_tmdb{overlay_suffix}"
                 overlays_dict[block_key] = {
                     "overlay": rank_text_config,
                     "tmdb_show": str(tmdb_id)

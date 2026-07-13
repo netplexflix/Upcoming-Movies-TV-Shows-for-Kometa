@@ -69,7 +69,138 @@ def normalize_instances(config):
             config['trending_root_tv'] = legacy_root_tv
 
     config.setdefault('instance_output_mode', 'combined')
+    config.setdefault('cross_instance_availability', False)
     return config
+
+
+# Legacy flat trending keys, superseded by the trending_lists list-of-dicts.
+LEGACY_TRENDING_KEYS = (
+    'trending_movies', 'trending_tv',
+    'mdblist_movies', 'mdblist_movies_limit',
+    'mdblist_tv', 'mdblist_tv_limit',
+    'trending_root_movies', 'trending_root_tv',
+)
+
+
+def normalize_trending(config):
+    """Convert legacy flat trending/mdblist keys into a trending_lists list.
+
+    Mirrors normalize_instances(): in-memory only, the YAML file on disk is
+    never rewritten here. Must run AFTER normalize_instances() so legacy
+    umtk_root_movies/tv have already been inherited into trending_root_*.
+
+    If trending_lists already exists (even empty) the new format wins and the
+    legacy flat keys are ignored, except that lists without a root inherit
+    trending_root_movies/trending_root_tv by type.
+    """
+    if config is None:
+        return config
+
+    if 'trending_lists' in config:
+        lists = config.get('trending_lists') or []
+    elif any(key in config for key in LEGACY_TRENDING_KEYS):
+        # Synthesize the two classic lists (even when method is 0, so the
+        # saved URL/limit/root are preserved and shown in the WebUI).
+        movies_name = (config.get('collection_trending_movies') or {}).get(
+            'collection_name') or 'Trending Movies'
+        shows_name = (config.get('collection_trending_shows') or {}).get(
+            'collection_name') or 'Trending Shows'
+        if shows_name == movies_name:
+            shows_name = f"{shows_name} (TV)"
+        lists = [
+            {
+                'name': movies_name,
+                'type': 'movie',
+                'method': config.get('trending_movies', 0),
+                'url': config.get('mdblist_movies', ''),
+                'limit': config.get('mdblist_movies_limit', 10),
+                'root': config.get('trending_root_movies', ''),
+                'legacy_filenames': True,
+            },
+            {
+                'name': shows_name,
+                'type': 'tv',
+                'method': config.get('trending_tv', 0),
+                'url': config.get('mdblist_tv', ''),
+                'limit': config.get('mdblist_tv_limit', 10),
+                'root': config.get('trending_root_tv', ''),
+                'legacy_filenames': True,
+            },
+        ]
+        config['trending_lists'] = lists
+    else:
+        lists = []
+
+    for lst in lists:
+        if not isinstance(lst, dict):
+            continue
+        lst.setdefault('name', '')
+        lst.setdefault('type', 'movie')
+        lst.setdefault('method', 0)
+        lst.setdefault('url', '')
+        lst.setdefault('limit', 10)
+        lst.setdefault('legacy_filenames', False)
+        if not lst.get('root'):
+            fallback = ('trending_root_movies' if lst.get('type') == 'movie'
+                        else 'trending_root_tv')
+            lst['root'] = config.get(fallback, '') or ''
+
+    return config
+
+
+# Backwards-compatible "REQUESTED" trending overlay blocks.
+TRENDING_REQUESTED_SOURCES = {
+    'backdrop_trending_movies_requested': 'backdrop_upcoming_movies_released',
+    'text_trending_movies_requested': 'text_upcoming_movies_released',
+    'backdrop_trending_shows_requested': 'backdrop_upcoming_shows_aired',
+    'text_trending_shows_requested': 'text_upcoming_shows_aired',
+}
+
+TRENDING_REQUESTED_HEADERS = {
+    'backdrop_trending_movies_requested':
+        '################################################################################\n'
+        '##########              TRENDING MOVIES OVERLAY REQUESTED:            ##########\n'
+        '################################################################################',
+    'backdrop_trending_shows_requested':
+        '################################################################################\n'
+        '##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########\n'
+        '################################################################################',
+}
+
+
+def ensure_trending_requested_blocks(config):
+    if config is None:
+        return []
+
+    added = []
+    for new_key, source_key in TRENDING_REQUESTED_SOURCES.items():
+        if new_key in config and config.get(new_key):
+            continue
+        source = config.get(source_key)
+        if isinstance(source, dict) and source:
+            config[new_key] = deepcopy(source)
+            added.append(new_key)
+    return added
+
+
+def _append_blocks_to_config(file_path, config, keys):
+    """Append the given top-level blocks to config.yml as YAML text, preserving
+    all existing comments/formatting. Best-effort: never raises."""
+    try:
+        lines = ['']
+        for key in keys:
+            header = TRENDING_REQUESTED_HEADERS.get(key)
+            if header:
+                lines.append(header)
+            block_yaml = yaml.safe_dump(
+                {key: config[key]}, default_flow_style=False, sort_keys=False, allow_unicode=True
+            )
+            lines.append(block_yaml.rstrip('\n'))
+            lines.append('')
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+    except Exception as e:
+        print(f"{ORANGE}Warning: could not persist new trending overlay blocks to config: {e}{RESET}")
 
 
 def load_config(file_path=None):
@@ -84,7 +215,12 @@ def load_config(file_path=None):
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
-            return normalize_instances(config)
+        config = normalize_instances(config)
+        config = normalize_trending(config)
+        added = ensure_trending_requested_blocks(config)
+        if added:
+            _append_blocks_to_config(file_path, config, added)
+        return config
     except FileNotFoundError:
         # Try to auto-copy from sample file
         sample_path = Path(str(file_path)).parent / 'config.sample.yml'
@@ -94,7 +230,7 @@ def load_config(file_path=None):
             print(f"{GREEN}Created '{file_path}' from sample. Please edit it with your settings.{RESET}")
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    return normalize_instances(yaml.safe_load(f))
+                    return normalize_trending(normalize_instances(yaml.safe_load(f)))
             except Exception as e:
                 print(f"Error reading copied config file: {e}")
                 sys.exit(1)

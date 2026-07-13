@@ -10,28 +10,6 @@ It includes:
 - **TV Show Status** (formerly [TSSK](https://github.com/netplexflix/TV-show-status-for-Kometa)) — Checks your Sonarr for TV show statuses and creates `.yml` files for overlays and collections. Categories include: new shows, new seasons, upcoming episodes, upcoming finales, season finales, final episodes, returning, ended, and canceled shows.
 - **Trending** — Uses MDBList to create "Trending" categories and creates placeholder files for missing items with an overlay indicating that a request is required. Optionally applies a TOP 10 ranking overlay.
 
-<a id="migration"></a>
-> [!NOTE]
-> This version of UMTK implements 2 big changes: TSSK is now integrated and a webUI is available.<br>
-> If you're an existing UMTK and/or TSSK user and want to migrate to this new version: Don't worry, it is easy:<br>
-> #### You only use UMTK:
-> All you have to do is map port 2120 to be able to visit the webUI. (See example docker-compose, or map it in the unRAID template).
-> Everything will continue to work as usual. TSSK is disabled by default.
-> #### You use UMTK and TSSK:
-> - For UMTK; map port 2120 to be able to access the webUI.
-> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
-> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
-> - Note that TSSK ymls will be output in the same directory as your UMTK ymls. So if they were generated elsewhere before, you'll have to adjust the paths in your Kometa config.
-> - You can remove your TSSK container as both scripts will now run in this unified UMTK container
-> #### You only use TSSK:
-> - Follow the UMTK install instructions
-> - Rename your TSSK config to `tssk_config.yml` and move it to your UMTK's config folder.
-> - Enable TSSK in UMTK's webUI, or by manually enabling the variable in `config.yml`.
-> - UMTK is disabled by default
-> - Make sure your Kometa config points to the correct yml output directory
-> - You can remove your TSSK container as TSSK will now run under the UMTK container
-
-
 ## Examples:
 ### TV Show Status Overlays:
 
@@ -71,6 +49,7 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [Step 3: Install ffmpeg (for trailer downloads)](#step-3-install-ffmpeg-for-trailer-downloads)
     - [Step 4: Configure Your Config Settings](#2.4)
     - [Step 5: Add the yml files to your Kometa config](#step-5-add-the-yml-files-to-your-kometa-config)
+    - [Step 6: Keeping the Web UI alive (optional)](#2.6)
 - [🖥️ Web UI](#web-ui)
 - [⚙️ Configuration](#configuration)
   - [General](#general)
@@ -82,6 +61,7 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [Trending](#trending)
   - [Overlay & Collection Settings](#overlay--collection-settings)
   - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
+- [🔔 Webhook on Placeholder Creation & Removal](#webhook-on-placeholder-creation)
 - [🗂️ Create your Coming Soon Collection](#create-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#add-to-kometa-configuration)
 - [🍪 Using browser cookies for yt-dlp (Method 1)](#-using-browser-cookies-for-yt-dlp-method-1)
@@ -262,6 +242,46 @@ Check [THIS WIKI](https://www.reddit.com/r/youtubedl/wiki/ffmpeg/#wiki_where_do_
 > Save as a .bat file. You can now double click this batch file to directly launch the script.<br/>
 > You can also use this batch file to [schedule](https://www.windowscentral.com/how-create-automated-task-using-task-scheduler-windows-10) the script to run.
 
+<a id="2.6"></a>
+#### Step 6: Keeping the Web UI alive (optional)
+
+By default a manual run is **single-shot**: UMTK runs once and exits, so the [Web UI](#️-web-ui) is only reachable while that run is in progress. If you'd rather keep UMTK running in the background with the built-in scheduler and a persistent Web UI (the same way the Docker image works), start it in **server mode**:
+
+```sh
+python UMTK.py --server
+```
+
+Or set the `UMTK_SERVER` environment variable to `true` (equivalent — handy for service managers):
+
+```sh
+# Linux/macOS
+UMTK_SERVER=true python UMTK.py
+```
+```powershell
+# Windows PowerShell
+$env:UMTK_SERVER='true'; python UMTK.py
+```
+
+In server mode UMTK performs an initial run, then waits and re-runs on the configured schedule (edit it live from the Web UI), keeping `http://localhost:2120` available the whole time. The schedule is seeded from `config.yml` (or the `CRON` / `SCHEDULE_HOURS` env vars / a 24h default on first launch), exactly like Docker.
+
+> [!TIP]
+> On Linux you can run UMTK as a **systemd service** so it starts on boot and stays alive:
+> ```ini
+> [Unit]
+> Description=UMTK
+> After=network-online.target
+>
+> [Service]
+> WorkingDirectory=/path/to/UMTK
+> ExecStart=/usr/bin/python3 /path/to/UMTK/UMTK.py --server
+> Environment="UMTK_SERVER=true"
+> Restart=on-failure
+>
+> [Install]
+> WantedBy=multi-user.target
+> ```
+> The Web UI binds to `127.0.0.1` (localhost only) for manual installs. To reach it from another machine, put it behind a reverse proxy or use an SSH tunnel.
+
 ---
 
 <a id="web-ui"></a>
@@ -334,6 +354,10 @@ radarr_instances:
   - `combined` (default) — Data from all instances is merged into single YML files. Duplicate items (same TVDB/TMDB ID across instances) are deduplicated.
   - `split` — Each instance gets its own set of YML files with the instance name appended (e.g., `UMTK_TV_UPCOMING_SHOWS_COLLECTION_Radarr4K.yml`).
 
+- **cross_instance_availability:** Controls whether availability is shared across instances. Only relevant when you have 2 or more instances; ignored for single-instance setups.
+  - `false` (default) — Each instance is evaluated independently. Example: if a movie is already downloaded in your 1080p Radarr but the 4K version isn't available yet, the 4K instance still gets a "Coming Soon" placeholder and overlay.
+  - `true` — An item that is already downloaded in **any** instance is treated as available everywhere, so no "Coming Soon" placeholder/overlay is created for instances where it's still missing. In the example above, the 4K instance would *not* get a placeholder because you already own the movie in 1080p.
+
 ### Plex Configuration (for metadata edits):
 
 - **plex_url:** Your Plex URL
@@ -379,16 +403,41 @@ Each Radarr and Sonarr instance has its own options configured under the **Conne
 > <img width="729" height="525" alt="Image" src="https://github.com/user-attachments/assets/8e3e4f4e-b6b7-4ea2-8238-3040a1ff30fe" />
 
 ### Trending:
-- **trending_movies:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-- **trending_tv:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
-- **mdblist_movies:** which trending movies list to use. you can create your own.
-- **mdblist_movies_limit:** How many items to pull from the trending movies list
-- **mdblist_tv:** which trending TV shows list to use. you can create your own.
-- **mdblist_tv_limit:** ow many items to pull from the trending TV shows list
-- **trending_root_movies:** Root folder for trending movies that aren't in any Radarr library (`Request Needed` items). Docker users: use `/umtkmovies`.
-- **trending_root_tv:** Root folder for trending shows that aren't in any Sonarr library (`Request Needed` items). Docker users: use `/umtktv`.
+- **trending_lists:** a list of MDBList lists to process — add as many as you want. Each entry has:
+  - **name:** the Plex collection name for this list (also used in the output filenames)
+  - **type:** `movie` or `tv`
+  - **method:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+  - **url:** the MDBList list URL. You can create your own lists.
+  - **limit:** how many items to pull from the list
+  - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
+  - **legacy_filenames:** used automatically for backwards compatibility. Do not use/change.
+
+  Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
+
+```yaml
+trending_lists:
+  - name: Trending Movies
+    type: movie
+    method: 2
+    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
+    limit: 10
+    root: /umtkmovies
+    legacy_filenames: true
+  - name: Popular Movies
+    type: movie
+    method: 2
+    url: https://mdblist.com/lists/someuser/popular-movies
+    limit: 20
+    root: /umtkmovies
+```
+
+> [!NOTE]
+> **Upgrading from an older version?** The old `trending_movies`, `trending_tv`, `mdblist_movies`, `mdblist_movies_limit`, `mdblist_tv`, `mdblist_tv_limit`, `trending_root_movies` and `trending_root_tv` keys are deprecated but still work: they are automatically converted into two `trending_lists` entries (with `legacy_filenames: true`, so your existing Kometa file references keep working). Saving the Trending settings in the WebUI migrates your config file to the new format.
+
+> [!NOTE]
+> If the same item appears in several lists, it is only processed once: the first list (in config order) that contains it decides its method, root and Top 10 rank. The `RequestNeeded` label collection is written to a single file per type (the `legacy_filenames` list's file if present) and covers all lists.
 > [!TIP]
 > With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
 
@@ -404,6 +453,12 @@ The remaining settings customize the output .yml files for Kometa.
 >
 > - One for movies/shows with a release/air date in the future. This overlay will append the release date.<br>
 > - One for movies/shows that have already been released/aired but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
+
+> [!NOTE]
+> **Trending overlays:** Missing trending items get one of three overlays so users know they aren't actually available yet:
+> - **Request Needed** (`backdrop/text_trending_movies_request_needed`, `backdrop/text_trending_shows_request_needed`) — the item is not in any Radarr/Sonarr library, so a request is required.
+> - **Coming Soon** — the item IS monitored in Radarr/Sonarr *and* releases/airs within your upcoming day range, so it reuses the regular upcoming overlay.
+> - **Requested** (`backdrop/text_trending_movies_requested`, `backdrop/text_trending_shows_requested`) — the item IS monitored but its release/air date is outside the day range or not yet known. 
 
 > [!NOTE] 
 > **Date format options:**
@@ -497,6 +552,37 @@ Each category has its own collection and overlay blocks, following the same patt
 
 ---
 
+<a id="webhook-on-placeholder-creation"></a>
+## 🔔 Webhook on Placeholder Creation & Removal
+
+UMTK can send an HTTP request whenever it creates a new file — a downloaded trailer **or** a copied placeholder video (for both upcoming and trending movies/shows). It **also** fires when the cleanup logic later removes a placeholder/trailer (e.g. the movie was downloaded, the show started airing, or the item dropped off the trending list), so the stale item gets picked up and removed from Plex too. (e.g. for triggering Autoscan/Autopulse/..)
+
+Enable it in the WebUI under **UMTK Settings → Webhook** (at the bottom of the page), or in `config.yml`. 
+
+The URL and Body support these substitution variables:
+
+| Variable | Value |
+| --- | --- |
+| `{path}` / `{path_enc}` | Full path of the affected file (raw / URL-encoded). On removal this is the file or folder that was deleted |
+| `{dir}` / `{dir_enc}` | Parent folder of the path |
+| `{filename}` | File/folder name with extension |
+| `{name_noext}` | File/folder name without extension |
+
+> Use the `_enc` variants whenever the value goes into a URL query string or a form body, since media paths contain spaces and special characters.
+
+**Extra options**
+
+| Key | Description |
+| --- | --- |
+| `webhook_method` | `POST` (default) or `GET` |
+| `webhook_content_type` | `none` (path in the URL — the common case), `form`, or `json` for the request body |
+| `webhook_headers` | Extra request headers, one `Key: Value` per line (e.g. an API token) |
+| `webhook_auth_user` / `webhook_auth_pass` | Optional HTTP Basic Auth credentials (e.g. autopulse) |
+| `webhook_timeout_seconds` | Request timeout (default `10`). The call is fire-and-forget — it never blocks or fails a run |
+| `webhook_path_from` / `webhook_path_to` | Optional path remap, for when UMTK's container mounts differ from your media server's. The leading `from` path is replaced with `to` before the `{path}` variables are built |
+
+---
+
 <a id="create-coming-soon-collection"></a>
 ## 🗂️ Create your Coming Soon Collection
 
@@ -562,6 +648,9 @@ Movies:
 
 > [!TIP]
 > Only add the files for the categories you have enabled. All are optional and independently generated based on your config settings.
+
+> [!NOTE]
+> Extra trending lists (without `legacy_filenames`) each write their own pair of files, named after the list, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml` and `UMTK_MOVIES_TOP10_OVERLAYS_Popular_Movies.yml` — add those too.
 
 ---
 
@@ -646,7 +735,7 @@ Since UMTK adds content before it's actually available, you'll want to exclude i
 1. Go to your TV show library
 2. Sort by "Last Episode Date Added"
 3. Click '+' → "Create Smart Collection"
-4. Add filter: `Folder Location` `is not` your UMTK TV root folder(s) (i.e. the `umtk_root` path(s) you configured on your Sonarr instance(s), plus `trending_root_tv` if used)
+4. Add filter: `Folder Location` `is not` your UMTK TV root folder(s) (i.e. the `umtk_root` path(s) you configured on your Sonarr instance(s), plus the `root` of any TV trending list if used)
 5. Press 'Save As' > 'Save As Smart Collection'
 6. Name it something like "New in TV Shows📺"
 7. In the new collection click the three dots then "Visible on" > "Home"

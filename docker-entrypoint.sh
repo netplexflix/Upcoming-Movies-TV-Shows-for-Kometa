@@ -174,8 +174,9 @@ chmod -R u+rw /app/logs 2>/dev/null || true
 # Pre-create media root directories from config (runs as root)
 # This ensures paths like /data/media/movies exist with proper ownership
 # before switching to the unprivileged user via gosu.
-# Roots can come from per-instance umtk_root:, legacy top-level
-# umtk_root_movies / umtk_root_tv, or trending_root_movies / trending_root_tv.
+# Roots can come from per-instance umtk_root:, per-trending-list root:
+# (indented under trending_lists), legacy top-level umtk_root_movies /
+# umtk_root_tv, or legacy trending_root_movies / trending_root_tv.
 CONFIG_FILE="/app/config/config.yml"
 UMTK_ROOTS=""
 if [ -f "$CONFIG_FILE" ]; then
@@ -184,13 +185,18 @@ if [ -f "$CONFIG_FILE" ]; then
     INSTANCE_ROOTS=$(awk '/^[[:space:]]+umtk_root:[[:space:]]*/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/[[:space:]]*#.*/, ""); print }' "$CONFIG_FILE" \
         | tr -d '"' | tr -d "'" \
         | awk '{$1=$1; print}')
+    # Per-trending-list roots (indented root: keys only occur under trending_lists).
+    TRENDING_LIST_ROOTS=$(awk '/^[[:space:]]+(- )?root:[[:space:]]*/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/[[:space:]]*#.*/, ""); print }' "$CONFIG_FILE" \
+        | tr -d '"' | tr -d "'" \
+        | awk '{$1=$1; print}')
     LEGACY_ROOT_MOVIES=$(get_config_value "umtk_root_movies" "$CONFIG_FILE")
     LEGACY_ROOT_TV=$(get_config_value "umtk_root_tv" "$CONFIG_FILE")
     TRENDING_ROOT_MOVIES=$(get_config_value "trending_root_movies" "$CONFIG_FILE")
     TRENDING_ROOT_TV=$(get_config_value "trending_root_tv" "$CONFIG_FILE")
 
-    UMTK_ROOTS=$(printf '%s\n%s\n%s\n%s\n%s\n' \
+    UMTK_ROOTS=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
         "$INSTANCE_ROOTS" \
+        "$TRENDING_LIST_ROOTS" \
         "$LEGACY_ROOT_MOVIES" \
         "$LEGACY_ROOT_TV" \
         "$TRENDING_ROOT_MOVIES" \

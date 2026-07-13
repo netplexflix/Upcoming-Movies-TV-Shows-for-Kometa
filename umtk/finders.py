@@ -10,8 +10,9 @@ from .utils import convert_utc_to_local
 from .sonarr import get_sonarr_episodes
 
 
-def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows, 
-                        utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False):
+def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows,
+                        utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False,
+                        globally_available_ids=None):
     """Find shows with upcoming episodes that have their first episode airing within specified days"""
     future_shows = []
     aired_shows = []
@@ -41,7 +42,13 @@ def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_sh
                 if debug:
                     print(f"{ORANGE}[DEBUG] Skipping show with excluded tags: {series['title']}{RESET}")
                 continue
-        
+
+        # Cross-instance availability: S01E01 already downloaded in another instance -> treat as available
+        if globally_available_ids and series.get('tvdbId') in globally_available_ids:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping {series['title']} - S01E01 already downloaded in another instance{RESET}")
+            continue
+
         try:
             episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
         except requests.exceptions.RequestException:
@@ -189,9 +196,10 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
     return new_shows
 
 
-def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies, 
-                         utc_offset=0, future_only=False, include_inCinemas=False, 
-                         debug=False, exclude_tags=None, past_days_upcoming_movies=0):
+def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_movies,
+                         utc_offset=0, future_only=False, include_inCinemas=False,
+                         debug=False, exclude_tags=None, past_days_upcoming_movies=0,
+                         globally_available_ids=None):
     """Find movies that are monitored and meet release date criteria"""
     future_movies = []
     released_movies = []
@@ -222,7 +230,13 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
             if debug:
                 print(f"{ORANGE}[DEBUG] Skipping downloaded movie: {movie['title']}{RESET}")
             continue
-        
+
+        # Cross-instance availability: already downloaded in another instance -> treat as available
+        if globally_available_ids and movie.get('tmdbId') in globally_available_ids:
+            if debug:
+                print(f"{ORANGE}[DEBUG] Skipping {movie['title']} - already downloaded in another instance{RESET}")
+            continue
+
         # Check for excluded tags
         if exclude_tags:
             movie_tags = movie.get('tags', [])
@@ -365,7 +379,8 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'imdbId': imdb_id,
                 'year': year,
                 'airDate': None,
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
             continue
 
@@ -408,6 +423,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'year': owner_series.get('year', None),
                 'airDate': None,
                 'rank': rank,
+                'source_list': item.get('source_list'),
                 'owner': {
                     'name': inst.get('name'),
                     'url': inst.get('url'),
@@ -428,7 +444,8 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'imdbId': ref_series.get('imdbId', ''),
                 'year': ref_series.get('year', None),
                 'airDate': None,
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
 
     return monitored_not_available, not_found_or_unmonitored
@@ -500,7 +517,8 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'year': year,
                 'releaseDate': None,
                 'releaseType': 'Trending',
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
             continue
 
@@ -536,6 +554,7 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'releaseDate': None,
                 'releaseType': 'Trending',
                 'rank': rank,
+                'source_list': item.get('source_list'),
                 'owner': {
                     'name': inst.get('name'),
                     'url': inst.get('url'),
@@ -556,7 +575,8 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'year': ref_movie.get('year', None),
                 'releaseDate': None,
                 'releaseType': 'Trending',
-                'rank': rank
+                'rank': rank,
+                'source_list': item.get('source_list')
             })
 
     return monitored_not_available, not_found_or_unmonitored

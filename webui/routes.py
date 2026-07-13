@@ -19,6 +19,7 @@ MASKED_VALUE = "********"
 import webui
 from umtk.constants import VERSION
 from umtk.updater import get_update_status
+from umtk.config_loader import ensure_trending_requested_blocks
 
 
 class _QuotedDumper(yaml.SafeDumper):
@@ -47,6 +48,7 @@ UMTK_SECTION_HEADERS = {
     'future_days_upcoming_movies': '################################################################################\n##########                         MOVIES:                            ##########\n################################################################################',
     'future_days_upcoming_shows': '################################################################################\n##########                         TV SHOWS:                          ##########\n################################################################################',
     'trending_movies': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
+    'trending_lists': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
     'collection_upcoming_movies': '################################################################################\n##########                UPCOMING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_upcoming_movies_future': '################################################################################\n##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########\n################################################################################',
     'backdrop_upcoming_movies_released': '################################################################################\n##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########\n################################################################################',
@@ -57,10 +59,13 @@ UMTK_SECTION_HEADERS = {
     'backdrop_new_show': '################################################################################\n##########                    NEW SHOWS OVERLAY:                      ##########\n################################################################################',
     'collection_trending_movies': '################################################################################\n##########                TRENDING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_trending_movies_request_needed': '################################################################################\n##########           TRENDING MOVIES OVERLAY REQUEST NEEDED:          ##########\n################################################################################',
+    'backdrop_trending_movies_requested': '################################################################################\n##########              TRENDING MOVIES OVERLAY REQUESTED:            ##########\n################################################################################',
     'collection_trending_shows': '################################################################################\n##########                TRENDING SHOWS COLLECTION:                  ##########\n################################################################################',
     'backdrop_trending_shows_request_needed': '################################################################################\n##########           TRENDING SHOWS OVERLAY REQUEST NEEDED:           ##########\n################################################################################',
+    'backdrop_trending_shows_requested': '################################################################################\n##########              TRENDING SHOWS OVERLAY REQUESTED:             ##########\n################################################################################',
     'backdrop_trending_top_10_movies': '################################################################################\n##########               TRENDING MOVIES TOP 10 OVERLAY:              ##########\n################################################################################',
     'backdrop_trending_top_10_tv': '################################################################################\n##########              TRENDING SHOWS TOP 10 OVERLAY:                ##########\n################################################################################',
+    'webhook_enabled': '################################################################################\n##########                          WEBHOOK:                          ##########\n################################################################################',
 }
 
 # ── Config option metadata ─────────────────────────────────────────────────
@@ -69,6 +74,7 @@ CONNECTION_OPTIONS = [
     # WebUI (rendered first; toggle & change-password UI handled with custom JS)
     {"key": "webui_auth_enabled", "type": "bool", "default": True, "label": "Password Protection", "description": "Require a password to access the WebUI.", "section": "WebUI"},
     {"key": "instance_output_mode", "type": "select", "default": "combined", "label": "Instance Output Mode", "description": "Combined: merge all instances into single YML files. Split: separate YML files per instance.", "section": "Instances", "options": [{"value": "combined", "label": "Combined"}, {"value": "split", "label": "Split"}]},
+    {"key": "cross_instance_availability", "type": "bool", "default": False, "label": "Cross-Instance Availability", "description": "If enabled, an item already downloaded in ANY instance is treated as available in all instances, so no 'coming soon' placeholder/overlay is created for instances where it's still missing. Only affects multi-instance setups.", "section": "Instances"},
     {"key": "plex_url", "type": "string", "default": "http://localhost:32400", "label": "Plex URL", "description": "URL of your Plex Media Server", "section": "Plex"},
     {"key": "plex_token", "type": "string", "default": "", "label": "Plex Token", "description": "Your Plex authentication token", "section": "Plex", "sensitive": True},
     {"key": "movie_libraries", "type": "string", "default": "Movies", "label": "Movie Libraries", "description": "Comma-separated Plex movie library names", "section": "Plex"},
@@ -118,17 +124,10 @@ UMTK_OPTIONS = [
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
-    # Trending
-    {"key": "trending_movies", "type": "select", "default": 0, "label": "Trending Movies Method", "description": "Choose how to handle trending movies", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "Trending"},
-    {"key": "trending_tv", "type": "select", "default": 0, "label": "Trending TV Method", "description": "Choose how to handle trending TV shows", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "Trending"},
+    # Trending (per-list settings live in trending_lists, managed via
+    # /api/config/trending_lists — only the universal options remain here)
     {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
     {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending", "sensitive": True},
-    {"key": "mdblist_movies", "type": "string", "default": "", "label": "MDBList Movies URL", "description": "MDBList trending movies list URL", "section": "Trending"},
-    {"key": "mdblist_movies_limit", "type": "int", "default": 10, "label": "MDBList Movies Limit", "description": "Number of trending movies to include", "section": "Trending"},
-    {"key": "mdblist_tv", "type": "string", "default": "", "label": "MDBList TV URL", "description": "MDBList trending TV list URL", "section": "Trending"},
-    {"key": "mdblist_tv_limit", "type": "int", "default": 10, "label": "MDBList TV Limit", "description": "Number of trending TV shows to include", "section": "Trending"},
-    {"key": "trending_root_movies", "type": "string", "default": "", "label": "Trending Root Movies", "description": "Root folder for trending movies not in any Radarr library", "section": "Trending"},
-    {"key": "trending_root_tv", "type": "string", "default": "", "label": "Trending Root TV", "description": "Root folder for trending shows not in any Sonarr library", "section": "Trending"},
 ]
 
 TSSK_OPTIONS = [
@@ -162,12 +161,41 @@ TSSK_OPTIONS = [
     {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "Timeframes"},
 ]
 
+# ── Webhook (fire after a new placeholder/trailer is created) ───────────────
+WEBHOOK_OPTIONS = [
+    {"key": "webhook_enabled", "type": "bool", "default": False, "label": "Enabled", "description": "Send an HTTP request when UMTK creates a new placeholder/trailer or removes one during cleanup (e.g. to trigger a targeted Plex/Jellyfin scan via autoscan, autopulse, etc.).", "section": "Webhook"},
+    {"key": "webhook_preset", "type": "select", "default": "custom", "label": "Preset", "description": "Pick a service to pre-fill the fields below, or 'custom' to edit them yourself. The preset only changes the form; the saved values are what get used.", "section": "Webhook", "options": [
+        {"value": "custom", "label": "custom"},
+        {"value": "autopulse", "label": "autopulse"},
+        {"value": "autoscan (Cloudbox)", "label": "autoscan (Cloudbox)"},
+        {"value": "autoscan (NiNiyas)", "label": "autoscan (NiNiyas)"},
+    ]},
+    {"key": "webhook_url", "type": "string", "default": "", "label": "URL", "description": "Target URL. Most scan tools take the file path in the query string here (e.g. ?path={path_enc} or ?dir={dir_enc}). Variables: {path}/{path_enc} (new file), {dir}/{dir_enc} (folder), {filename}, {name_noext}. Use the _enc variants inside a query string.", "section": "Webhook"},
+    {"key": "webhook_method", "type": "select", "default": "POST", "label": "Method", "description": "HTTP method to use.", "section": "Webhook", "options": [
+        {"value": "POST", "label": "POST"},
+        {"value": "GET", "label": "GET"},
+    ]},
+    {"key": "webhook_content_type", "type": "select", "default": "none", "label": "Body Type", "description": "'none' sends no body (the common case — the path goes in the URL query string). 'form' sends the body as form-urlencoded, 'json' as JSON.", "section": "Webhook", "options": [
+        {"value": "none", "label": "none"},
+        {"value": "form", "label": "form"},
+        {"value": "json", "label": "json"},
+    ]},
+    {"key": "webhook_body", "type": "string", "default": "", "label": "Body", "description": "Only needed for targets that read the path from the request body (e.g. NiNiyas/autoscan's form endpoint) or custom JSON webhooks. Leave empty when the path is in the URL. Same substitution variables as the URL. Ignored when Body Type is 'none'.", "section": "Webhook"},
+    {"key": "webhook_headers", "type": "string_list", "default": [], "label": "Headers", "description": "Extra request headers, one per line as 'Key: Value' (e.g. an API token).", "section": "Webhook"},
+    {"key": "webhook_auth_user", "type": "string", "default": "", "label": "Basic Auth User", "description": "Username for HTTP Basic Auth (e.g. autopulse). Leave blank to disable.", "section": "Webhook"},
+    {"key": "webhook_auth_pass", "type": "string", "default": "", "label": "Basic Auth Password", "description": "Password for HTTP Basic Auth.", "section": "Webhook"},
+    {"key": "webhook_timeout_seconds", "type": "int", "default": 10, "label": "Timeout (s)", "description": "Request timeout in seconds. The call is fire-and-forget and never blocks processing.", "section": "Webhook"},
+    {"key": "webhook_path_from", "type": "string", "default": "", "label": "Path Remap From", "description": "Optional. If UMTK writes media under a different path than your media server, replace this leading path...", "section": "Webhook"},
+    {"key": "webhook_path_to", "type": "string", "default": "", "label": "Path Remap To", "description": "...with this one, before building the {path} variables.", "section": "Webhook"},
+]
+
 
 # ── Allowed-key whitelists (derived from option metadata above) ───────────
 _ALLOWED_CONNECTION_KEYS = {o["key"] for o in CONNECTION_OPTIONS}
 _ALLOWED_CONNECTION_KEYS.update({'radarr_instances', 'sonarr_instances'})
 _ALLOWED_UMTK_KEYS = {o["key"] for o in UMTK_OPTIONS}
 _ALLOWED_TSSK_KEYS = {o["key"] for o in TSSK_OPTIONS}
+_ALLOWED_WEBHOOK_KEYS = {o["key"] for o in WEBHOOK_OPTIONS}
 _ALLOWED_BLOCK_PREFIXES = ('collection_', 'backdrop_', 'text_')
 
 # ── Helper functions ───────────────────────────────────────────────────────
@@ -510,12 +538,16 @@ def register_routes(app):
     @app.route("/api/config/umtk")
     def api_config_umtk():
         config = _load_yaml(webui._config_path)
-        result = {"options": [], "blocks": {}}
+        ensure_trending_requested_blocks(config)
+        result = {"options": [], "blocks": {}, "webhook": []}
         for opt in UMTK_OPTIONS:
             val = _get_config_value(config, opt["key"], opt["default"])
             if opt.get("sensitive") and val:
                 val = MASKED_VALUE
             result["options"].append({**opt, "value": val})
+        for opt in WEBHOOK_OPTIONS:
+            val = _get_config_value(config, opt["key"], opt["default"])
+            result["webhook"].append({**opt, "value": val})
         # Include collection/overlay blocks as raw dicts
         for key, value in config.items():
             if any(key.startswith(p) for p in ['collection_', 'backdrop_', 'text_']):
@@ -528,11 +560,16 @@ def register_routes(app):
         data = request.get_json()
         options = data.get("options", {})
         blocks = data.get("blocks", {})
+        webhook = data.get("webhook", {})
         sensitive_keys = {o["key"] for o in UMTK_OPTIONS if o.get("sensitive")}
         for key, value in options.items():
             if key not in _ALLOWED_UMTK_KEYS:
                 continue
             if key in sensitive_keys and value == MASKED_VALUE:
+                continue
+            config[key] = value
+        for key, value in webhook.items():
+            if key not in _ALLOWED_WEBHOOK_KEYS:
                 continue
             config[key] = value
         for key, value in blocks.items():
@@ -663,6 +700,89 @@ def register_routes(app):
         _save_yaml(webui._config_path, config)
         return jsonify({"ok": True})
 
+    # ── Config: Trending lists ────────────────────────────────────────
+    @app.route("/api/config/trending_lists")
+    def api_config_trending_lists():
+        config = _load_yaml(webui._config_path)
+        # Apply normalization to handle the legacy flat trending format
+        from umtk.config_loader import normalize_instances, normalize_trending
+        config = normalize_trending(normalize_instances(config))
+        return jsonify({"trending_lists": config.get('trending_lists', [])})
+
+    @app.route("/api/config/trending_lists", methods=["POST"])
+    def api_save_trending_lists():
+        from umtk.config_loader import LEGACY_TRENDING_KEYS
+        from umtk.utils import sanitize_instance_name
+
+        config = _load_yaml(webui._config_path)
+        data = request.get_json() or {}
+        new_lists = data.get('trending_lists', [])
+        if not isinstance(new_lists, list):
+            return jsonify({"ok": False, "error": "trending_lists must be a list"}), 400
+
+        names_seen = set()
+        legacy_seen = set()
+        cleaned = []
+        for lst in new_lists:
+            if not isinstance(lst, dict):
+                return jsonify({"ok": False, "error": "Each trending list must be an object"}), 400
+            name = (lst.get('name') or '').strip()
+            if not name:
+                return jsonify({"ok": False, "error": "All trending lists must have a name"}), 400
+            # Names must be unique after filename sanitization too, otherwise two
+            # lists would write to the same output files.
+            name_key = sanitize_instance_name(name).lower()
+            if name_key in names_seen:
+                return jsonify({"ok": False, "error": f"Duplicate trending list name: {name}"}), 400
+            names_seen.add(name_key)
+
+            list_type = lst.get('type')
+            if list_type not in ('movie', 'tv'):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid type"}), 400
+
+            try:
+                method = int(lst.get('method', 0))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid method"}), 400
+            if method not in (0, 1, 2):
+                return jsonify({"ok": False, "error": f"Trending list '{name}' has an invalid method"}), 400
+
+            try:
+                limit = int(lst.get('limit', 10))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": f"Trending list '{name}': limit must be a whole number"}), 400
+            if limit < 1:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': limit must be >= 1"}), 400
+
+            url = (lst.get('url') or '').strip()
+            if method > 0 and not url:
+                return jsonify({"ok": False, "error": f"Trending list '{name}' is missing an MDBList URL"}), 400
+
+            legacy = bool(lst.get('legacy_filenames'))
+            if legacy:
+                if list_type in legacy_seen:
+                    return jsonify({"ok": False, "error": "Only one trending list per type can use the classic filenames"}), 400
+                legacy_seen.add(list_type)
+
+            cleaned.append({
+                'name': name,
+                'type': list_type,
+                'method': method,
+                'url': url,
+                'limit': limit,
+                'root': (lst.get('root') or '').strip(),
+                'legacy_filenames': legacy,
+            })
+
+        config['trending_lists'] = cleaned
+
+        # Remove legacy flat keys if present (migrated to trending_lists)
+        for old_key in LEGACY_TRENDING_KEYS:
+            config.pop(old_key, None)
+
+        _save_yaml(webui._config_path, config)
+        return jsonify({"ok": True})
+
     # ── Connection tests ──────────────────────────────────────────────
     def _resolve_masked(data, key):
         """If the value is the mask placeholder, return the real value from config."""
@@ -731,8 +851,9 @@ def register_routes(app):
     def api_test_mdblist():
         data = request.get_json() or {}
         api_key = _resolve_masked(data, "mdblist_api_key").strip()
-        movies_url = data.get("mdblist_movies", "").strip()
-        tv_url = data.get("mdblist_tv", "").strip()
+        lists = data.get("lists", [])
+        if not isinstance(lists, list):
+            lists = []
 
         if not api_key:
             return jsonify({"success": False, "message": "API key required"})
@@ -753,7 +874,11 @@ def register_routes(app):
 
             messages = [f"API key valid ({elapsed}ms)"]
 
-            for label, url in [("Movies list", movies_url), ("TV list", tv_url)]:
+            for lst in lists:
+                if not isinstance(lst, dict):
+                    continue
+                label = (lst.get('name') or 'List').strip() or 'List'
+                url = (lst.get('url') or '').strip()
                 if not url:
                     continue
                 parts = url.rstrip('/').split('/')

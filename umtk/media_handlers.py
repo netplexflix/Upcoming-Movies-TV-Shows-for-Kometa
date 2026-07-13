@@ -348,7 +348,8 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
             
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {show['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
-            
+            show['umtk_created_file'] = str(downloaded_file)
+
             if show.get('is_trending', False):
                 marker_file = season_00_path / ".trending"
                 try:
@@ -503,6 +504,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
             
             size_mb = downloaded_file.stat().st_size / (1024 * 1024)
             print(f"{GREEN}Successfully downloaded trailer for {movie['title']}: {downloaded_file.name} ({size_mb:.1f} MB){RESET}")
+            movie['umtk_created_file'] = str(downloaded_file)
             return True
 
         print(f"{RED}Trailer file not found after download for {movie['title']}{RESET}")
@@ -618,7 +620,8 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
         
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {show['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
-        
+        show['umtk_created_file'] = str(dest_file)
+
         if show.get('is_trending', False):
             marker_file = season_00_path / ".trending"
             try:
@@ -746,6 +749,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
         
         size_mb = dest_file.stat().st_size / (1024 * 1024)
         print(f"{GREEN}Created placeholder for {movie['title']}: {dest_file.name} ({size_mb:.1f} MB){RESET}")
+        movie['umtk_created_file'] = str(dest_file)
         return True
         
     except Exception as e:

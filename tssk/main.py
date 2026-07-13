@@ -164,9 +164,6 @@ def run_tssk(config, localization=None):
         # Get series and tags from Sonarr in one call
         all_series, tag_mapping = get_sonarr_series_and_tags(sonarr_url, sonarr_api_key, sonarr_timeout)
 
-        # Track all tvdbIds to exclude from other categories
-        all_excluded_tvdb_ids = set()
-
         matched_shows = []
         skipped_shows = []
         new_season_started_shows = []
@@ -194,10 +191,6 @@ def run_tssk(config, localization=None):
                 sonarr_url, sonarr_api_key, all_series, recent_days_new_season_started, utc_offset, skip_unmonitored
             )
 
-            for show in new_season_started_shows:
-                if show.get('tvdbId'):
-                    all_excluded_tvdb_ids.add(show['tvdbId'])
-
             if new_season_started_shows:
                 print(f"\n{GREEN}Shows with a new season that started within the past {recent_days_new_season_started} days:{RESET}")
                 for show in new_season_started_shows:
@@ -208,8 +201,6 @@ def run_tssk(config, localization=None):
             upcoming_eps, skipped_eps = find_upcoming_regular_episodes(
                 sonarr_url, sonarr_api_key, all_series, future_days_upcoming_episode, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping
             )
-
-            upcoming_eps = [show for show in upcoming_eps if show.get('tvdbId') not in all_excluded_tvdb_ids]
 
             if upcoming_eps:
                 print(f"\n{GREEN}Shows with upcoming non-finale episodes within {future_days_upcoming_episode} days:{RESET}")
@@ -233,10 +224,6 @@ def run_tssk(config, localization=None):
                 sonarr_url, sonarr_api_key, all_series, recent_days_season_finale, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping
             )
 
-            for show in season_finale_shows:
-                if show.get('tvdbId'):
-                    all_excluded_tvdb_ids.add(show['tvdbId'])
-
             if season_finale_shows:
                 print(f"\n{GREEN}Shows with a season finale that aired within the past {recent_days_season_finale} days:{RESET}")
                 for show in season_finale_shows:
@@ -247,10 +234,6 @@ def run_tssk(config, localization=None):
             final_episode_shows = find_recent_final_episodes(
                 sonarr_url, sonarr_api_key, all_series, recent_days_final_episode, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping
             )
-
-            for show in final_episode_shows:
-                if show.get('tvdbId'):
-                    all_excluded_tvdb_ids.add(show['tvdbId'])
 
             if final_episode_shows:
                 print(f"\n{GREEN}Shows with a final episode that aired within the past {recent_days_final_episode} days:{RESET}")

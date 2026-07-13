@@ -5,6 +5,7 @@ Main execution logic for UMTK
 import os
 import sys
 import requests
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 
@@ -16,7 +17,7 @@ from .utils import (
     get_tag_ids_from_names, sanitize_filename,
     dedupe_by_key, sanitize_instance_name
 )
-from .sonarr import process_sonarr_url, get_sonarr_series
+from .sonarr import process_sonarr_url, get_sonarr_series, get_sonarr_episodes
 from .radarr import process_radarr_url, get_radarr_movies
 from .mdblist import fetch_mdblist_items
 from .finders import (
@@ -27,7 +28,11 @@ from .media_handlers import (
     search_trailer_on_youtube, download_trailer_tv, download_trailer_movie,
     create_placeholder_tv, create_placeholder_movie
 )
-from .cleanup import cleanup_tv_content, cleanup_movie_content
+from .webhook import send_file_webhook
+from .cleanup import (
+    cleanup_tv_content, cleanup_movie_content,
+    cleanup_trending_root_movies, cleanup_trending_root_tv
+)
 from .yaml_generators import (
     create_overlay_yaml_tv, create_collection_yaml_tv,
     create_new_shows_collection_yaml, create_new_shows_overlay_yaml,
@@ -36,6 +41,65 @@ from .yaml_generators import (
     create_top10_overlay_yaml_movies, create_top10_overlay_yaml_tv
 )
 from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata, trigger_plex_library_scan
+
+
+def _same_root(a, b):
+    """Path equality that tolerates trailing slashes and, on Windows, case."""
+    return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(os.path.normpath(str(b)))
+
+
+def _build_trending_union(trending_lists, id_keys):
+    """Merge the fetched '_items' of multiple trending lists into one deduped list.
+
+    Lists are visited in config order and each item is stamped with the name of
+    the first list that contains it ('source_list'), so that list's method/root/
+    rank win when an item appears in several lists.
+    """
+    union = []
+    seen = set()
+    for lst in trending_lists:
+        for item in (lst.get('_items') or []):
+            key = None
+            for k in id_keys:
+                if item.get(k):
+                    key = (k, str(item[k]))
+                    break
+            if key is None:
+                key = ('title', f"{item.get('title', '')}|{item.get('year', '')}")
+            if key in seen:
+                continue
+            seen.add(key)
+            item['source_list'] = lst.get('name')
+            union.append(item)
+    return union
+
+
+def _build_list_collection_config(config, block_key, list_name):
+    """Collection config for a non-legacy trending list: inherit the type's
+    collection_trending_* block, but suffix the labels with the sanitized
+    list name so multiple lists' files don't strip each other's labels via
+    non_item_remove_label."""
+    block = config.get(block_key)
+    cfg = deepcopy(block) if isinstance(block, dict) else {}
+    cfg.pop('collection_name', None)  # the list name is the collection name
+    suffix = sanitize_instance_name(list_name or '')
+    for label_key in ('item_label', 'non_item_remove_label'):
+        if cfg.get(label_key):
+            cfg[label_key] = f"{cfg[label_key]}_{suffix}"
+    return cfg
+
+
+def _dedupe_legacy_filenames_flag(trending_lists):
+    """Ensure at most one list per type claims the classic output filenames."""
+    seen = False
+    for lst in trending_lists:
+        if lst.get('legacy_filenames'):
+            if seen:
+                print(f"{ORANGE}Warning: multiple trending lists claim legacy filenames; "
+                      f"ignoring legacy_filenames on '{lst.get('name')}'{RESET}")
+                lst['legacy_filenames'] = False
+            else:
+                seen = True
 
 
 def main(config=None, localization=None):
@@ -60,15 +124,15 @@ def main(config=None, localization=None):
         val = str(val).strip()
         return val or None
 
-    # Trending roots fall back to legacy globals via normalize_instances().
-    trending_root_movies = _normalize_root(config.get('trending_root_movies'))
-    trending_root_tv = _normalize_root(config.get('trending_root_tv'))
+    # Trending lists (legacy flat keys are migrated by normalize_trending()).
+    trending_lists = [l for l in (config.get('trending_lists') or []) if isinstance(l, dict)]
+    for lst in trending_lists:
+        lst['root'] = _normalize_root(lst.get('root'))
+    movie_trending_lists = [l for l in trending_lists if l.get('type') == 'movie' and l.get('method', 0) > 0]
+    tv_trending_lists = [l for l in trending_lists if l.get('type') == 'tv' and l.get('method', 0) > 0]
+    _dedupe_legacy_filenames_flag(movie_trending_lists)
+    _dedupe_legacy_filenames_flag(tv_trending_lists)
 
-    if trending_root_movies:
-        print(f"{GREEN}Trending movie root: {trending_root_movies}{RESET}")
-    if trending_root_tv:
-        print(f"{GREEN}Trending TV root: {trending_root_tv}{RESET}")
-    
     # Get Plex configuration
     plex_url = config.get('plex_url')
     plex_token = config.get('plex_token')
@@ -86,18 +150,19 @@ def main(config=None, localization=None):
     # Get processing methods
     tv_method = config.get('tv', 1)
     movie_method = config.get('movies', 2)
-    trending_tv_method = config.get('trending_tv', 0)
-    trending_movies_method = config.get('trending_movies', 0)
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     preferred_language = str(config.get('preferred_language', 'original')).lower()
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
     edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
-    
+
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
     print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
-    print(f"Trending TV method: {trending_tv_method} ({'Disabled' if trending_tv_method == 0 else 'Trailer' if trending_tv_method == 1 else 'Placeholder'})")
-    print(f"Trending Movies method: {trending_movies_method} ({'Disabled' if trending_movies_method == 0 else 'Trailer' if trending_movies_method == 1 else 'Placeholder'})")
+    for lst in trending_lists:
+        lst_method = lst.get('method', 0)
+        method_label = 'Disabled' if lst_method == 0 else 'Trailer' if lst_method == 1 else 'Placeholder'
+        root_info = f" - root: {lst['root']}" if lst.get('root') and lst_method > 0 else ""
+        print(f"Trending list '{lst.get('name')}' ({'Movies' if lst.get('type') == 'movie' else 'TV'}): {lst_method} ({method_label}){root_info}")
     print(f"Method fallback: {method_fallback}")
     print(f"Preferred trailer language: {preferred_language}")
     print(f"Append dates to sort titles: {append_dates_to_sort_titles}")
@@ -108,13 +173,18 @@ def main(config=None, localization=None):
     # Check requirements based on methods
     video_folder = get_video_folder()
     
-    if tv_method == 1 or movie_method == 1 or trending_tv_method == 1 or trending_movies_method == 1:
+    enabled_trending_lists = movie_trending_lists + tv_trending_lists
+    any_trailer_method = (tv_method == 1 or movie_method == 1
+                          or any(l.get('method') == 1 for l in enabled_trending_lists))
+    any_placeholder_method = (tv_method == 2 or movie_method == 2
+                              or any(l.get('method') == 2 for l in enabled_trending_lists))
+
+    if any_trailer_method:
         if not check_yt_dlp_installed():
             print(f"{RED}yt-dlp is required for trailer downloading but not installed.{RESET}")
             sys.exit(1)
-    
-    if tv_method == 2 or movie_method == 2 or trending_tv_method == 2 or trending_movies_method == 2 or \
-       (method_fallback and (tv_method == 1 or movie_method == 1 or trending_tv_method == 1 or trending_movies_method == 1)):
+
+    if any_placeholder_method or (method_fallback and any_trailer_method):
         if not check_video_file(video_folder):
             print(f"{RED}UMTK video file is required for placeholder method but not found.{RESET}")
             sys.exit(1)
@@ -159,7 +229,7 @@ def main(config=None, localization=None):
         new_tv_files_written = 0
         new_movie_files_written = 0
 
-        process_tv = (tv_method > 0 or trending_tv_method > 0)
+        process_tv = (tv_method > 0 or bool(tv_trending_lists))
         tv_processing_failed = False
 
         instance_warnings = []
@@ -168,6 +238,7 @@ def main(config=None, localization=None):
         sonarr_instances = config.get('sonarr_instances', [])
         radarr_instances = config.get('radarr_instances', [])
         output_mode = config.get('instance_output_mode', 'combined')
+        cross_instance_availability = str(config.get('cross_instance_availability', 'false')).lower() == 'true'
 
         # Process TV Shows
         if process_tv:
@@ -194,23 +265,51 @@ def main(config=None, localization=None):
                 print(f"future_only_tv: {future_only_tv}")
                 print()
 
-                # Fetch MDBList items once (not per-instance)
-                mdblist_tv_limit = config.get('mdblist_tv_limit', 10)
-                if trending_tv_method > 0:
+                # Fetch MDBList items once per trending list (not per-instance)
+                if tv_trending_lists:
                     mdblist_api_key = config.get('mdblist_api_key')
-                    mdblist_tv_url = config.get('mdblist_tv')
-                    if mdblist_api_key and mdblist_tv_url:
-                        print(f"{BLUE}Fetching trending TV shows from MDBList...{RESET}")
-                        mdblist_tv_items = fetch_mdblist_items(mdblist_tv_url, mdblist_api_key, mdblist_tv_limit, debug)
-                        if mdblist_tv_items:
-                            print(f"{GREEN}Fetched {len(mdblist_tv_items)} trending TV shows from MDBList{RESET}\n")
-                        else:
-                            print(f"{ORANGE}No trending TV shows fetched from MDBList{RESET}\n")
+                    if not mdblist_api_key:
+                        print(f"{RED}Error: mdblist_api_key not configured{RESET}")
                     else:
-                        if not mdblist_api_key:
-                            print(f"{RED}Error: mdblist_api_key not configured{RESET}")
-                        if not mdblist_tv_url:
-                            print(f"{RED}Error: mdblist_tv not configured{RESET}")
+                        for lst in tv_trending_lists:
+                            if not lst.get('url'):
+                                print(f"{RED}Error: no MDBList URL configured for trending list '{lst.get('name')}'{RESET}")
+                                lst['_items'] = []
+                                continue
+                            print(f"{BLUE}Fetching trending TV shows from MDBList ('{lst.get('name')}')...{RESET}")
+                            lst['_items'] = fetch_mdblist_items(lst['url'], mdblist_api_key, lst.get('limit', 10), debug)
+                            if lst['_items']:
+                                print(f"{GREEN}Fetched {len(lst['_items'])} trending TV shows from '{lst.get('name')}'{RESET}\n")
+                            else:
+                                print(f"{ORANGE}No trending TV shows fetched from '{lst.get('name')}'{RESET}\n")
+                        mdblist_tv_items = _build_trending_union(
+                            tv_trending_lists, ('tvdb_id', 'tmdb_id', 'imdb_id'))
+
+                globally_available_show_ids = set()
+                series_cache = {}
+                if cross_instance_availability and len(sonarr_instances) > 1 and tv_method > 0:
+                    print(f"{BLUE}Cross-instance availability: scanning Sonarr instances for downloaded premieres...{RESET}")
+                    for instance in sonarr_instances:
+                        try:
+                            pre_timeout = int(instance.get('timeout', 90))
+                            pre_url = process_sonarr_url(instance['url'], instance['api_key'], pre_timeout)
+                            pre_series = get_sonarr_series(pre_url, instance['api_key'], pre_timeout)
+                            series_cache[id(instance)] = pre_series
+                            for series in pre_series:
+                                tvdb_id = series.get('tvdbId')
+                                if not tvdb_id:
+                                    continue
+                                # No files at all -> S01E01 can't have one; skip the episode fetch
+                                if series.get('statistics', {}).get('episodeFileCount', 0) == 0:
+                                    continue
+                                episodes = get_sonarr_episodes(pre_url, instance['api_key'], series['id'], pre_timeout)
+                                s01e01 = next((e for e in episodes if e.get('seasonNumber') == 1 and e.get('episodeNumber') == 1), None)
+                                if s01e01 and s01e01.get('hasFile'):
+                                    globally_available_show_ids.add(tvdb_id)
+                        except (ConnectionError, requests.exceptions.RequestException):
+                            continue
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Cross-instance: {len(globally_available_show_ids)} show(s) already have S01E01 downloaded somewhere{RESET}")
 
                 for instance in sonarr_instances:
                     instance_name = instance.get('name', 'Sonarr')
@@ -226,7 +325,7 @@ def main(config=None, localization=None):
                         sonarr_url = process_sonarr_url(instance['url'], instance['api_key'], sonarr_timeout)
                         sonarr_api_key = instance['api_key']
 
-                        all_series = get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
+                        all_series = series_cache.get(id(instance)) or get_sonarr_series(sonarr_url, sonarr_api_key, sonarr_timeout)
 
                         exclude_sonarr_tag_names = instance.get('exclude_tags', [])
                         if isinstance(exclude_sonarr_tag_names, str):
@@ -256,7 +355,8 @@ def main(config=None, localization=None):
                         if tv_method > 0:
                             future_shows, aired_shows = find_upcoming_shows(
                                 all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows,
-                                utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv
+                                utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv,
+                                globally_available_show_ids
                             )
 
                             if future_shows:
@@ -363,6 +463,9 @@ def main(config=None, localization=None):
                                         successful += 1
                                         new_tv_files_written += 1
                                         inst_shows_with_content.append(show)
+                                        created = show.pop('umtk_created_file', None)
+                                        if created:
+                                            send_file_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -405,7 +508,7 @@ def main(config=None, localization=None):
                 # GLOBAL TRENDING PASS — runs once across all Sonarr instances combined
                 # ====================================================================
                 trending_shows_with_content = []
-                if (trending_tv_method > 0 and mdblist_tv_items
+                if (tv_trending_lists and mdblist_tv_items
                         and sonarr_instances_data):
                     print(f"\n{BLUE}{'=' * 50}{RESET}")
                     print(f"{BLUE}Processing Trending TV Shows (across all Sonarr instances)...{RESET}")
@@ -440,20 +543,26 @@ def main(config=None, localization=None):
                         fallback_used = 0
 
                         sonarr_root_by_name = {inst['name']: inst.get('umtk_root_tv') for inst in sonarr_instances_data}
+                        tv_lists_by_name = {l.get('name'): l for l in tv_trending_lists}
 
                         for show in all_trending_tv:
                             show['is_trending'] = True
 
                             print(f"\nProcessing: {show['title']}")
 
+                            # The list that first contained this item decides its
+                            # method and trending-root fallback.
+                            source_list = tv_lists_by_name.get(show.get('source_list')) or tv_trending_lists[0]
+                            show_method = source_list.get('method', 0)
+
                             # Resolve the root for this trending item:
                             #   - owned items use the owning Sonarr instance's root
-                            #   - request_needed items fall back to trending_root_tv
+                            #   - request_needed items fall back to the source list's root
                             owner_name = (show.get('owner') or {}).get('name')
                             if owner_name and sonarr_root_by_name.get(owner_name):
                                 show_root_tv = sonarr_root_by_name[owner_name]
                             else:
-                                show_root_tv = trending_root_tv
+                                show_root_tv = source_list.get('root')
 
                             show_path = show.get('path')
 
@@ -493,7 +602,7 @@ def main(config=None, localization=None):
 
                             success = False
 
-                            if trending_tv_method == 1:  # Trailer
+                            if show_method == 1:  # Trailer
                                 trailer_info = search_trailer_on_youtube(
                                     show['title'],
                                     show.get('year'),
@@ -516,13 +625,16 @@ def main(config=None, localization=None):
                                         fallback_used += 1
                                         print(f"{GREEN}Fallback to placeholder successful for {show['title']}{RESET}")
 
-                            elif trending_tv_method == 2:  # Placeholder
+                            elif show_method == 2:  # Placeholder
                                 success = create_placeholder_tv(show, debug, show_root_tv)
 
                             if success:
                                 successful += 1
                                 new_tv_files_written += 1
                                 trending_shows_with_content.append(show)
+                                created = show.pop('umtk_created_file', None)
+                                if created:
+                                    send_file_webhook(config, Path(created))
                             else:
                                 failed += 1
 
@@ -578,12 +690,36 @@ def main(config=None, localization=None):
                             cleanup_tv_content(
                                 group, tv_method, debug,
                                 future_days_upcoming_shows, utc_offset, future_only_tv,
-                                trending_tv_monitored, trending_tv_request_needed
+                                trending_tv_monitored, trending_tv_request_needed,
+                                globally_available_show_ids,
+                                webhook_config=config
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
                             print(f"{RED}Cleanup error for Sonarr instance(s) '{names}': {str(e)}{RESET}")
                             instance_warnings.append(f"Sonarr cleanup '{names}': {str(e)}")
+                        print()
+
+                    # Clean each distinct trending root of the enabled TV lists,
+                    # always passing the union across all lists so one list's
+                    # cleanup never deletes another list's content.
+                    trending_tv_roots = []
+                    for lst in tv_trending_lists:
+                        lst_root = lst.get('root')
+                        if lst_root and not any(_same_root(lst_root, r) for r in trending_tv_roots):
+                            trending_tv_roots.append(lst_root)
+                    for lst_root in trending_tv_roots:
+                        if any(not k.startswith("__solo__:") and _same_root(k, lst_root)
+                               for k in tv_cleanup_groups):
+                            continue
+                        print(f"\n{BLUE}Checking trending TV root for stale content...{RESET}")
+                        try:
+                            cleanup_trending_root_tv(lst_root, trending_tv_monitored,
+                                                     trending_tv_request_needed, debug,
+                                                     webhook_config=config)
+                        except Exception as e:
+                            print(f"{RED}Trending TV root cleanup error: {str(e)}{RESET}")
+                            instance_warnings.append(f"Trending TV root cleanup: {str(e)}")
                         print()
 
                 # Merge instance results for YML generation and Plex updates
@@ -596,7 +732,7 @@ def main(config=None, localization=None):
                     )
 
                     # Generate TV YML files
-                    if tv_method > 0 or trending_tv_method > 0:
+                    if tv_method > 0 or tv_trending_lists:
                         if output_mode == 'combined' or len(tv_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
                             merged_aired = dedupe_by_key([r['aired_shows'] for r in tv_instance_results], 'tvdbId')
@@ -607,14 +743,16 @@ def main(config=None, localization=None):
 
                             create_overlay_yaml_tv(
                                 str(overlay_file), merged_future, merged_aired,
-                                trending_tv_monitored if trending_tv_method > 0 else [],
-                                trending_tv_request_needed if trending_tv_method > 0 else [],
+                                trending_tv_monitored if tv_trending_lists else [],
+                                trending_tv_request_needed if tv_trending_lists else [],
                                 {"backdrop": config.get("backdrop_upcoming_shows", {}),
                                  "text": config.get("text_upcoming_shows", {}),
                                  "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
                                  "text_aired": config.get("text_upcoming_shows_aired", {}),
                                  "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                                 "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                                 "text_trending_request_needed": config.get("text_trending_shows_request_needed", {}),
+                                 "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
+                                 "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                 config,
                                 localization
                             )
@@ -639,14 +777,16 @@ def main(config=None, localization=None):
 
                                 create_overlay_yaml_tv(
                                     str(overlay_file), result['future_shows'], result['aired_shows'],
-                                    result['trending_tv_monitored'] if trending_tv_method > 0 else [],
-                                    result['trending_tv_request_needed'] if trending_tv_method > 0 else [],
+                                    result['trending_tv_monitored'] if tv_trending_lists else [],
+                                    result['trending_tv_request_needed'] if tv_trending_lists else [],
                                     {"backdrop": config.get("backdrop_upcoming_shows", {}),
                                      "text": config.get("text_upcoming_shows", {}),
                                      "backdrop_aired": config.get("backdrop_upcoming_shows_aired", {}),
                                      "text_aired": config.get("text_upcoming_shows_aired", {}),
                                      "backdrop_trending_request_needed": config.get("backdrop_trending_shows_request_needed", {}),
-                                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {})},
+                                     "text_trending_request_needed": config.get("text_trending_shows_request_needed", {}),
+                                     "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
+                                     "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                     config,
                                     localization
                                 )
@@ -662,24 +802,52 @@ def main(config=None, localization=None):
                                 create_collection_yaml_tv(str(collection_file), result['future_shows'], result['aired_shows'], config)
                                 print(f"{GREEN}TV YAML files created for instance '{result['name']}'{RESET}")
 
-                    # Create Trending TV collection/overlay YAML (always combined - trending is global)
-                    if trending_tv_method > 0 and mdblist_tv_items:
-                        trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
-                        create_trending_collection_yaml_tv(str(trending_collection_file), mdblist_tv_items, config, trending_tv_request_needed)
-                        print(f"{GREEN}Trending TV collection YAML created successfully{RESET}")
+                    # Create per-list Trending TV collection/overlay YAMLs (always
+                    # combined across instances - trending is global). The
+                    # RequestNeeded companion collection must live in exactly one
+                    # file (with the union across lists), otherwise Kometa files
+                    # would strip each other's labels via non_item_remove_label.
+                    tv_lists_to_generate = [l for l in tv_trending_lists if l.get('_items')]
+                    if tv_lists_to_generate:
+                        tv_request_target = next(
+                            (l for l in tv_lists_to_generate if l.get('legacy_filenames')),
+                            tv_lists_to_generate[0])
+                        for lst in tv_lists_to_generate:
+                            if lst.get('legacy_filenames'):
+                                trending_collection_file = kometa_folder / "UMTK_TV_TRENDING_COLLECTION.yml"
+                                top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
+                                overlay_suffix = ''
+                                collection_name = None  # use the collection_trending_shows block
+                                collection_config = None
+                            else:
+                                san = sanitize_instance_name(lst.get('name', ''))
+                                trending_collection_file = kometa_folder / f"UMTK_TV_TRENDING_COLLECTION_{san}.yml"
+                                top10_tv_overlay_file = kometa_folder / f"UMTK_TV_TOP10_OVERLAYS_{san}.yml"
+                                overlay_suffix = f"_{san}"
+                                collection_name = lst.get('name')
+                                collection_config = _build_list_collection_config(
+                                    config, 'collection_trending_shows', lst.get('name'))
 
-                        top10_tv_overlay_file = kometa_folder / "UMTK_TV_TOP10_OVERLAYS.yml"
-                        create_top10_overlay_yaml_tv(
-                            str(top10_tv_overlay_file),
-                            mdblist_tv_items,
-                            {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
-                             "text": config.get("text_trending_top_10_tv", {})},
-                            limit=mdblist_tv_limit
-                        )
-                        print(f"{GREEN}Top 10 TV overlay YAML created successfully{RESET}")
+                            create_trending_collection_yaml_tv(
+                                str(trending_collection_file), lst['_items'], config,
+                                trending_tv_request_needed if lst is tv_request_target else None,
+                                collection_name=collection_name,
+                                collection_config=collection_config
+                            )
+                            print(f"{GREEN}Trending TV collection YAML created for '{lst.get('name')}'{RESET}")
+
+                            create_top10_overlay_yaml_tv(
+                                str(top10_tv_overlay_file),
+                                lst['_items'],
+                                {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
+                                 "text": config.get("text_trending_top_10_tv", {})},
+                                limit=lst.get('limit', 10),
+                                overlay_suffix=overlay_suffix
+                            )
+                            print(f"{GREEN}Top 10 TV overlay YAML created for '{lst.get('name')}'{RESET}")
         
         # Determine if we need to process Movies at all (either regular or trending)
-        process_movies = (movie_method > 0 or trending_movies_method > 0)
+        process_movies = (movie_method > 0 or bool(movie_trending_lists))
 
         # Process Movies
         if process_movies:
@@ -707,23 +875,43 @@ def main(config=None, localization=None):
                 print(f"include_inCinemas: {include_inCinemas}")
                 print()
 
-                # Fetch MDBList items once (not per-instance)
-                mdblist_movies_limit = config.get('mdblist_movies_limit', 10)
-                if trending_movies_method > 0:
+                # Fetch MDBList items once per trending list (not per-instance)
+                if movie_trending_lists:
                     mdblist_api_key = config.get('mdblist_api_key')
-                    mdblist_movies_url = config.get('mdblist_movies')
-                    if mdblist_api_key and mdblist_movies_url:
-                        print(f"{BLUE}Fetching trending movies from MDBList...{RESET}")
-                        mdblist_movies_items = fetch_mdblist_items(mdblist_movies_url, mdblist_api_key, mdblist_movies_limit, debug)
-                        if mdblist_movies_items:
-                            print(f"{GREEN}Fetched {len(mdblist_movies_items)} trending movies from MDBList{RESET}\n")
-                        else:
-                            print(f"{ORANGE}No trending movies fetched from MDBList{RESET}\n")
+                    if not mdblist_api_key:
+                        print(f"{RED}Error: mdblist_api_key not configured{RESET}")
                     else:
-                        if not mdblist_api_key:
-                            print(f"{RED}Error: mdblist_api_key not configured{RESET}")
-                        if not mdblist_movies_url:
-                            print(f"{RED}Error: mdblist_movies not configured{RESET}")
+                        for lst in movie_trending_lists:
+                            if not lst.get('url'):
+                                print(f"{RED}Error: no MDBList URL configured for trending list '{lst.get('name')}'{RESET}")
+                                lst['_items'] = []
+                                continue
+                            print(f"{BLUE}Fetching trending movies from MDBList ('{lst.get('name')}')...{RESET}")
+                            lst['_items'] = fetch_mdblist_items(lst['url'], mdblist_api_key, lst.get('limit', 10), debug)
+                            if lst['_items']:
+                                print(f"{GREEN}Fetched {len(lst['_items'])} trending movies from '{lst.get('name')}'{RESET}\n")
+                            else:
+                                print(f"{ORANGE}No trending movies fetched from '{lst.get('name')}'{RESET}\n")
+                        mdblist_movies_items = _build_trending_union(
+                            movie_trending_lists, ('tmdb_id', 'imdb_id'))
+
+                globally_available_movie_ids = set()
+                movie_cache = {}
+                if cross_instance_availability and len(radarr_instances) > 1 and movie_method > 0:
+                    print(f"{BLUE}Cross-instance availability: scanning Radarr instances for downloaded movies...{RESET}")
+                    for instance in radarr_instances:
+                        try:
+                            pre_timeout = int(instance.get('timeout', 90))
+                            pre_url = process_radarr_url(instance['url'], instance['api_key'], pre_timeout)
+                            pre_movies = get_radarr_movies(pre_url, instance['api_key'], pre_timeout)
+                            movie_cache[id(instance)] = pre_movies
+                            for m in pre_movies:
+                                if m.get('hasFile') and m.get('tmdbId'):
+                                    globally_available_movie_ids.add(m['tmdbId'])
+                        except (ConnectionError, requests.exceptions.RequestException):
+                            continue
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Cross-instance: {len(globally_available_movie_ids)} movie(s) already downloaded somewhere{RESET}")
 
                 for instance in radarr_instances:
                     instance_name = instance.get('name', 'Radarr')
@@ -739,7 +927,7 @@ def main(config=None, localization=None):
                         radarr_url = process_radarr_url(instance['url'], instance['api_key'], radarr_timeout)
                         radarr_api_key = instance['api_key']
 
-                        all_movies = get_radarr_movies(radarr_url, radarr_api_key, radarr_timeout)
+                        all_movies = movie_cache.get(id(instance)) or get_radarr_movies(radarr_url, radarr_api_key, radarr_timeout)
 
                         exclude_radarr_tag_names = instance.get('exclude_tags', [])
                         if isinstance(exclude_radarr_tag_names, str):
@@ -770,7 +958,7 @@ def main(config=None, localization=None):
                         if movie_method > 0:
                             print(f"{BLUE}Finding upcoming movies...{RESET}")
                             future_movies, released_movies = find_upcoming_movies(
-                                all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies
+                                all_movies, radarr_url, radarr_api_key, future_days_upcoming_movies, utc_offset, future_only, include_inCinemas, debug, exclude_radarr_tag_ids, past_days_upcoming_movies, globally_available_movie_ids
                             )
 
                             if future_movies:
@@ -866,6 +1054,9 @@ def main(config=None, localization=None):
                                         successful += 1
                                         new_movie_files_written += 1
                                         inst_movies_with_content.append(movie)
+                                        created = movie.pop('umtk_created_file', None)
+                                        if created:
+                                            send_file_webhook(config, Path(created))
                                     else:
                                         failed += 1
 
@@ -901,7 +1092,7 @@ def main(config=None, localization=None):
                 # GLOBAL TRENDING PASS — runs once across all Radarr instances combined
                 # ====================================================================
                 trending_movies_with_content = []
-                if (trending_movies_method > 0 and mdblist_movies_items
+                if (movie_trending_lists and mdblist_movies_items
                         and radarr_instances_data):
                     print(f"\n{BLUE}{'=' * 50}{RESET}")
                     print(f"{BLUE}Processing Trending Movies (across all Radarr instances)...{RESET}")
@@ -936,20 +1127,26 @@ def main(config=None, localization=None):
 
                         request_needed_ids = {id(m) for m in trending_movies_request_needed}
                         radarr_root_by_name = {inst['name']: inst.get('umtk_root_movies') for inst in radarr_instances_data}
+                        movie_lists_by_name = {l.get('name'): l for l in movie_trending_lists}
 
                         for movie in all_trending_movies:
                             print(f"\nProcessing: {movie['title']}")
 
                             is_request_needed = id(movie) in request_needed_ids
 
+                            # The list that first contained this item decides its
+                            # method and trending-root fallback.
+                            source_list = movie_lists_by_name.get(movie.get('source_list')) or movie_trending_lists[0]
+                            movie_trending_method = source_list.get('method', 0)
+
                             # Resolve the root for this trending movie:
                             #   - owned movies use the owning Radarr instance's root
-                            #   - request_needed movies fall back to trending_root_movies
+                            #   - request_needed movies fall back to the source list's root
                             owner_name = (movie.get('owner') or {}).get('name')
                             if owner_name and radarr_root_by_name.get(owner_name):
                                 movie_root = radarr_root_by_name[owner_name]
                             else:
-                                movie_root = trending_root_movies
+                                movie_root = source_list.get('root')
 
                             movie_path = movie.get('path')
                             content_exists = False
@@ -986,7 +1183,7 @@ def main(config=None, localization=None):
 
                             success = False
 
-                            if trending_movies_method == 1:  # Trailer
+                            if movie_trending_method == 1:  # Trailer
                                 trailer_info = search_trailer_on_youtube(
                                     movie['title'],
                                     movie.get('year'),
@@ -1009,13 +1206,16 @@ def main(config=None, localization=None):
                                         fallback_used += 1
                                         print(f"{GREEN}Fallback to placeholder successful for {movie['title']}{RESET}")
 
-                            elif trending_movies_method == 2:  # Placeholder
+                            elif movie_trending_method == 2:  # Placeholder
                                 success = create_placeholder_movie(movie, debug, movie_root, is_trending=is_request_needed)
 
                             if success:
                                 successful += 1
                                 new_movie_files_written += 1
                                 trending_movies_with_content.append(movie)
+                                created = movie.pop('umtk_created_file', None)
+                                if created:
+                                    send_file_webhook(config, Path(created))
                             else:
                                 failed += 1
 
@@ -1075,12 +1275,34 @@ def main(config=None, localization=None):
                             cleanup_movie_content(
                                 group, future_by_instance,
                                 trending_movies_monitored, trending_movies_request_needed,
-                                movie_method, debug
+                                movie_method, debug,
+                                webhook_config=config
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
                             print(f"{RED}Cleanup error for Radarr instance(s) '{names}': {str(e)}{RESET}")
                             instance_warnings.append(f"Radarr cleanup '{names}': {str(e)}")
+
+                    # Clean each distinct trending root of the enabled movie lists,
+                    # always passing the union across all lists so one list's
+                    # cleanup never deletes another list's content.
+                    trending_movie_roots = []
+                    for lst in movie_trending_lists:
+                        lst_root = lst.get('root')
+                        if lst_root and not any(_same_root(lst_root, r) for r in trending_movie_roots):
+                            trending_movie_roots.append(lst_root)
+                    for lst_root in trending_movie_roots:
+                        if any(not k.startswith("__solo__:") and _same_root(k, lst_root)
+                               for k in movie_cleanup_groups):
+                            continue
+                        print(f"\n{BLUE}Checking trending movie root for stale content...{RESET}")
+                        try:
+                            cleanup_trending_root_movies(lst_root, trending_movies_monitored,
+                                                         trending_movies_request_needed, debug,
+                                                         webhook_config=config)
+                        except Exception as e:
+                            print(f"{RED}Trending movie root cleanup error: {str(e)}{RESET}")
+                            instance_warnings.append(f"Trending movie root cleanup: {str(e)}")
 
                 # Merge instance results for YML generation and Plex updates
                 if movie_instance_results:
@@ -1090,7 +1312,7 @@ def main(config=None, localization=None):
                     )
 
                     # Generate Movie YML files
-                    if movie_method > 0 or trending_movies_method > 0:
+                    if movie_method > 0 or movie_trending_lists:
                         if output_mode == 'combined' or len(movie_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')
                             merged_released = dedupe_by_key([r['released_movies'] for r in movie_instance_results], 'tmdbId')
@@ -1100,14 +1322,16 @@ def main(config=None, localization=None):
 
                             create_overlay_yaml_movies(
                                 str(overlay_file), merged_future, merged_released,
-                                trending_movies_monitored if trending_movies_method > 0 else [],
-                                trending_movies_request_needed if trending_movies_method > 0 else [],
+                                trending_movies_monitored if movie_trending_lists else [],
+                                trending_movies_request_needed if movie_trending_lists else [],
                                 {"backdrop_future": config.get("backdrop_upcoming_movies_future", {}),
                                  "text_future": config.get("text_upcoming_movies_future", {}),
                                  "backdrop_released": config.get("backdrop_upcoming_movies_released", {}),
                                  "text_released": config.get("text_upcoming_movies_released", {}),
                                  "backdrop_trending_request_needed": config.get("backdrop_trending_movies_request_needed", {}),
-                                 "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})},
+                                 "text_trending_request_needed": config.get("text_trending_movies_request_needed", {}),
+                                 "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
+                                 "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                 config,
                                 localization
                             )
@@ -1124,14 +1348,16 @@ def main(config=None, localization=None):
 
                                 create_overlay_yaml_movies(
                                     str(overlay_file), result['future_movies'], result['released_movies'],
-                                    result['trending_movies_monitored'] if trending_movies_method > 0 else [],
-                                    result['trending_movies_request_needed'] if trending_movies_method > 0 else [],
+                                    result['trending_movies_monitored'] if movie_trending_lists else [],
+                                    result['trending_movies_request_needed'] if movie_trending_lists else [],
                                     {"backdrop_future": config.get("backdrop_upcoming_movies_future", {}),
                                      "text_future": config.get("text_upcoming_movies_future", {}),
                                      "backdrop_released": config.get("backdrop_upcoming_movies_released", {}),
                                      "text_released": config.get("text_upcoming_movies_released", {}),
                                      "backdrop_trending_request_needed": config.get("backdrop_trending_movies_request_needed", {}),
-                                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {})},
+                                     "text_trending_request_needed": config.get("text_trending_movies_request_needed", {}),
+                                     "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
+                                     "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                     config,
                                     localization
                                 )
@@ -1139,21 +1365,49 @@ def main(config=None, localization=None):
                                 create_collection_yaml_movies(str(collection_file), result['future_movies'], result['released_movies'], config)
                                 print(f"{GREEN}Movie YAML files created for instance '{result['name']}'{RESET}")
 
-                    # Create Trending Movies collection/overlay YAML (always combined - trending is global)
-                    if trending_movies_method > 0 and mdblist_movies_items:
-                        trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
-                        create_trending_collection_yaml_movies(str(trending_collection_file), mdblist_movies_items, config, trending_movies_request_needed)
-                        print(f"{GREEN}Trending Movies collection YAML created successfully{RESET}")
+                    # Create per-list Trending Movies collection/overlay YAMLs (always
+                    # combined across instances - trending is global). The
+                    # RequestNeeded companion collection must live in exactly one
+                    # file (with the union across lists), otherwise Kometa files
+                    # would strip each other's labels via non_item_remove_label.
+                    movie_lists_to_generate = [l for l in movie_trending_lists if l.get('_items')]
+                    if movie_lists_to_generate:
+                        movie_request_target = next(
+                            (l for l in movie_lists_to_generate if l.get('legacy_filenames')),
+                            movie_lists_to_generate[0])
+                        for lst in movie_lists_to_generate:
+                            if lst.get('legacy_filenames'):
+                                trending_collection_file = kometa_folder / "UMTK_MOVIES_TRENDING_COLLECTION.yml"
+                                top10_movies_overlay_file = kometa_folder / "UMTK_MOVIES_TOP10_OVERLAYS.yml"
+                                overlay_suffix = ''
+                                collection_name = None  # use the collection_trending_movies block
+                                collection_config = None
+                            else:
+                                san = sanitize_instance_name(lst.get('name', ''))
+                                trending_collection_file = kometa_folder / f"UMTK_MOVIES_TRENDING_COLLECTION_{san}.yml"
+                                top10_movies_overlay_file = kometa_folder / f"UMTK_MOVIES_TOP10_OVERLAYS_{san}.yml"
+                                overlay_suffix = f"_{san}"
+                                collection_name = lst.get('name')
+                                collection_config = _build_list_collection_config(
+                                    config, 'collection_trending_movies', lst.get('name'))
 
-                        top10_movies_overlay_file = kometa_folder / "UMTK_MOVIES_TOP10_OVERLAYS.yml"
-                        create_top10_overlay_yaml_movies(
-                            str(top10_movies_overlay_file),
-                            mdblist_movies_items,
-                            {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
-                             "text": config.get("text_trending_top_10_movies", {})},
-                            limit=mdblist_movies_limit
-                        )
-                        print(f"{GREEN}Top 10 Movies overlay YAML created successfully{RESET}")
+                            create_trending_collection_yaml_movies(
+                                str(trending_collection_file), lst['_items'], config,
+                                trending_movies_request_needed if lst is movie_request_target else None,
+                                collection_name=collection_name,
+                                collection_config=collection_config
+                            )
+                            print(f"{GREEN}Trending Movies collection YAML created for '{lst.get('name')}'{RESET}")
+
+                            create_top10_overlay_yaml_movies(
+                                str(top10_movies_overlay_file),
+                                lst['_items'],
+                                {"backdrop": config.get("backdrop_trending_top_10_movies", {}),
+                                 "text": config.get("text_trending_top_10_movies", {})},
+                                limit=lst.get('limit', 10),
+                                overlay_suffix=overlay_suffix
+                            )
+                            print(f"{GREEN}Top 10 Movies overlay YAML created for '{lst.get('name')}'{RESET}")
         
         # ============================================================
         # PLEX LIBRARY SCANS + METADATA UPDATES
@@ -1181,7 +1435,7 @@ def main(config=None, localization=None):
             update_plex_tv_metadata(
                 plex_url, plex_token, tv_libraries,
                 all_shows_with_content,
-                mdblist_tv_items if trending_tv_method > 0 else None,
+                mdblist_tv_items if tv_trending_lists else None,
                 config, debug, 0, metadata_retry_limit
             )
         elif tv_processing_failed and process_tv:
@@ -1197,7 +1451,7 @@ def main(config=None, localization=None):
             update_plex_movie_metadata(
                 plex_url, plex_token, movie_libraries,
                 all_movies_with_content,
-                mdblist_movies_items if trending_movies_method > 0 else None,
+                mdblist_movies_items if movie_trending_lists else None,
                 config, debug, 0, metadata_retry_limit
             )
         elif debug and process_movies:
