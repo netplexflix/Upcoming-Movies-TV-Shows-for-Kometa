@@ -1013,9 +1013,14 @@ def create_trending_collection_yaml_tv(output_file, mdblist_items, config, trend
     tmdb_ids = []
     
     for item in mdblist_items:
+        # Items whose ID could not be resolved against Sonarr would only add
+        # entries Kometa can never match.
+        if item.get('_id_unresolved'):
+            continue
+
         tvdb_id = item.get('tvdb_id')
         tmdb_id = item.get('tmdb_id') or item.get('id')
-        
+
         if tvdb_id:
             tvdb_ids.append(str(tvdb_id))
         elif tmdb_id:

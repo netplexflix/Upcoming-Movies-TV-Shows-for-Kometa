@@ -94,21 +94,23 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
                     # For movies, use 'id' field as TMDB ID
                     normalized_item['tmdb_id'] = item.get('id')
                 elif mediatype == 'show':
-                    # For TV shows, prefer tvdb_id but fallback to tmdb_id (from 'id' field)
+                    # For TV shows, carry both IDs: TVDB is preferred downstream,
+                    # but keeping the TMDB ID too leaves a usable fallback when
+                    # MDBList's TVDB ID turns out to be stale or wrong.
                     tvdb_id = item.get('tvdb_id')
                     tmdb_id = item.get('id')
-                    
+
                     if tvdb_id:
                         normalized_item['tvdb_id'] = tvdb_id
-                        if debug:
-                            print(f"{BLUE}[DEBUG] TV show '{item.get('title')}' using TVDB ID: {tvdb_id}{RESET}")
-                    elif tmdb_id:
-                        # Use TMDB ID as fallback
+                    if tmdb_id:
                         normalized_item['tmdb_id'] = tmdb_id
-                        if debug:
+
+                    if debug:
+                        if tvdb_id:
+                            print(f"{BLUE}[DEBUG] TV show '{item.get('title')}' using TVDB ID: {tvdb_id} (TMDB ID: {tmdb_id}){RESET}")
+                        elif tmdb_id:
                             print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB ID, using TMDB ID: {tmdb_id}{RESET}")
-                    else:
-                        if debug:
+                        else:
                             print(f"{ORANGE}[DEBUG] TV show '{item.get('title')}' has no TVDB or TMDB ID{RESET}")
                 
                 # Only add items that have at least one required ID

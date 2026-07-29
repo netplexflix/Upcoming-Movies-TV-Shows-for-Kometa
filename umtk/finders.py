@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import convert_utc_to_local
-from .sonarr import get_sonarr_episodes
+from .sonarr import get_sonarr_episodes, sonarr_series_lookup
 
 
 def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows,
@@ -308,6 +308,119 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
     return future_movies, released_movies
 
 
+def _build_sonarr_series_lookups(sonarr_instances_data):
+    """Per-instance ID -> series indexes for the shows already in each library."""
+    per_instance_lookups = []
+    for inst in sonarr_instances_data:
+        by_tvdb, by_imdb, by_tmdb = {}, {}, {}
+        for series in inst.get('all_series', []):
+            if series.get('tvdbId'):
+                by_tvdb[str(series['tvdbId'])] = series
+            if series.get('imdbId'):
+                by_imdb[series['imdbId']] = series
+            if series.get('tmdbId'):
+                by_tmdb[str(series['tmdbId'])] = series
+        per_instance_lookups.append({
+            'instance': inst,
+            'by_tvdb': by_tvdb,
+            'by_imdb': by_imdb,
+            'by_tmdb': by_tmdb,
+        })
+    return per_instance_lookups
+
+
+def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
+    """Anchor each trending TV item to an authoritative TVDB ID.
+
+    MDBList sometimes carries a stale TVDB ID for a show — one that has since
+    been deleted or merged on TVDB — along with the wrong title and year from
+    that dead record. Every downstream consumer (placeholder folder name, Plex
+    lookup, Kometa collection and overlay YAMLs) keys on the TVDB ID, so a bad
+    ID silently poisons all of them.
+
+    For each item:
+      - If its TVDB ID already matches a series in one of the Sonarr libraries,
+        it's authoritative and left alone.
+      - Otherwise Sonarr's metadata proxy is asked to resolve it, by IMDb then
+        TMDB then TVDB ID. On a hit the item's tvdb_id and year are rewritten to
+        Sonarr's canonical values. A free-text title search is deliberately NOT
+        attempted — a fuzzy match risks binding to the wrong series.
+
+    The title is deliberately left alone: it feeds the placeholder *file* name,
+    so rewriting it would orphan the existing file and create a duplicate
+    alongside it. Only the ID and year — which affect the folder name, and which
+    cleanup reconciles — are corrected.
+      - If nothing resolves, the item is flagged '_id_unresolved' so callers can
+        skip it instead of creating content that can never be matched.
+
+    Operates on each list's own '_items' (not a deduped union) so every list's
+    copy of an item gets corrected. Returns the number of unresolved items.
+    """
+    if not sonarr_instances_data:
+        return 0
+
+    per_instance_lookups = _build_sonarr_series_lookups(sonarr_instances_data)
+    primary = sonarr_instances_data[0]
+
+    # An item can appear in several lists; resolve each distinct ID set once.
+    resolution_cache = {}
+    unresolved_count = 0
+
+    for lst in trending_lists:
+        for item in (lst.get('_items') or []):
+            tvdb_id = str(item['tvdb_id']) if item.get('tvdb_id') else None
+            tmdb_id = str(item['tmdb_id']) if item.get('tmdb_id') else None
+            imdb_id = item.get('imdb_id') or None
+            title = item.get('title', 'Unknown')
+
+            # Already known to one of the libraries -> authoritative.
+            if tvdb_id and any(tvdb_id in lk['by_tvdb'] for lk in per_instance_lookups):
+                continue
+
+            cache_key = (tvdb_id, tmdb_id, imdb_id)
+            if cache_key in resolution_cache:
+                resolved = resolution_cache[cache_key]
+            else:
+                resolved = None
+                for term in (f"imdb:{imdb_id}" if imdb_id else None,
+                             f"tmdb:{tmdb_id}" if tmdb_id else None,
+                             f"tvdb:{tvdb_id}" if tvdb_id else None):
+                    if not term:
+                        continue
+                    results = sonarr_series_lookup(primary['url'], primary['api_key'],
+                                                   term, primary.get('timeout') or 90)
+                    match = next((s for s in results if s.get('tvdbId')), None)
+                    if match:
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Resolved trending show '{title}' via {term} "
+                                  f"-> TVDB {match['tvdbId']}{RESET}")
+                        resolved = match
+                        break
+                resolution_cache[cache_key] = resolved
+
+            if resolved:
+                new_tvdb = str(resolved['tvdbId'])
+                if new_tvdb != tvdb_id:
+                    print(f"{ORANGE}Corrected trending show '{title}' ({item.get('year')}): "
+                          f"TVDB {tvdb_id or 'none'} -> {new_tvdb} "
+                          f"'{resolved.get('title', title)}' ({resolved.get('year')}){RESET}")
+                item['tvdb_id'] = resolved['tvdbId']
+                if resolved.get('year'):
+                    item['year'] = resolved['year']
+                if resolved.get('imdbId'):
+                    item['imdb_id'] = resolved['imdbId']
+                item.pop('_id_unresolved', None)
+            else:
+                item['_id_unresolved'] = True
+                unresolved_count += 1
+                print(f"{ORANGE}Skipping trending show '{title}' ({item.get('year')}): "
+                      f"could not resolve a valid TVDB ID "
+                      f"(MDBList gave TVDB {tvdb_id or 'none'}, TMDB {tmdb_id or 'none'}, "
+                      f"IMDB {imdb_id or 'none'}){RESET}")
+
+    return unresolved_count
+
+
 def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
     """
     Process trending TV shows from MDBList against ALL Sonarr instances combined.
@@ -326,23 +439,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
     if debug:
         print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending TV shows across {len(sonarr_instances_data)} Sonarr instance(s){RESET}")
 
-    # Per-instance lookup tables
-    per_instance_lookups = []
-    for inst in sonarr_instances_data:
-        by_tvdb, by_imdb, by_tmdb = {}, {}, {}
-        for series in inst.get('all_series', []):
-            if series.get('tvdbId'):
-                by_tvdb[str(series['tvdbId'])] = series
-            if series.get('imdbId'):
-                by_imdb[series['imdbId']] = series
-            if series.get('tmdbId'):
-                by_tmdb[str(series['tmdbId'])] = series
-        per_instance_lookups.append({
-            'instance': inst,
-            'by_tvdb': by_tvdb,
-            'by_imdb': by_imdb,
-            'by_tmdb': by_tmdb,
-        })
+    per_instance_lookups = _build_sonarr_series_lookups(sonarr_instances_data)
 
     for item in mdblist_items:
         tvdb_id = str(item.get('tvdb_id', '')) if item.get('tvdb_id') else None
@@ -359,12 +456,14 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
         matches = []  # list of (lookup_entry, series)
         for lookup in per_instance_lookups:
             series = None
+            # IMDb before TMDB: MDBList's 'id' field is the less reliable of the
+            # two fallbacks, so try the stable identifier first.
             if tvdb_id and tvdb_id in lookup['by_tvdb']:
                 series = lookup['by_tvdb'][tvdb_id]
-            elif tmdb_id and tmdb_id in lookup['by_tmdb']:
-                series = lookup['by_tmdb'][tmdb_id]
             elif imdb_id and imdb_id in lookup['by_imdb']:
                 series = lookup['by_imdb'][imdb_id]
+            elif tmdb_id and tmdb_id in lookup['by_tmdb']:
+                series = lookup['by_tmdb'][tmdb_id]
             if series:
                 matches.append((lookup, series))
 

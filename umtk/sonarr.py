@@ -82,6 +82,32 @@ def get_sonarr_series(sonarr_url, api_key, timeout=90):
         raise
 
 
+def sonarr_series_lookup(sonarr_url, api_key, term, timeout=90):
+    """Look a series up via Sonarr's metadata proxy.
+
+    'term' is passed through verbatim, so prefixed forms like 'imdb:tt9799648',
+    'tmdb:103516' or 'tvdb:382389' work as well as a free-text title.
+
+    Returns a (possibly empty) list of series objects. Failures return [] rather
+    than raising: an unresolvable ID should degrade to "unresolved" instead of
+    aborting the whole run.
+    """
+    try:
+        url = f"{sonarr_url}/series/lookup"
+        headers = {"X-Api-Key": api_key}
+        response = request_with_retry('GET', url, headers=headers,
+                                      params={"term": term}, timeout=timeout)
+        response.raise_for_status()
+        result = response.json()
+        return result if isinstance(result, list) else []
+    except requests.exceptions.RequestException as e:
+        print(f"{ORANGE}Sonarr lookup failed for '{term}': {str(e)}{RESET}")
+        return []
+    except ValueError as e:
+        print(f"{ORANGE}Sonarr lookup returned invalid JSON for '{term}': {str(e)}{RESET}")
+        return []
+
+
 def get_sonarr_episodes(sonarr_url, api_key, series_id, timeout=90):
     """Get episodes for a specific series"""
     try:
