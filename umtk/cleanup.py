@@ -10,7 +10,8 @@ from pathlib import Path, PureWindowsPath
 from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
-from .utils import sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local
+from .utils import (sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local,
+                    show_folder_name, movie_folder_name)
 from .sonarr import get_sonarr_episodes
 from .webhook import send_file_webhook
 
@@ -87,6 +88,12 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
     
     current_trending_titles = {show['title'] for show in current_trending_shows}
 
+    # Exact folder names content creation would produce for the current trending
+    # list. A trending folder whose name isn't in here is a leftover from an
+    # earlier run under a different title or year (MDBList's year for a show can
+    # change between runs), so it must go even though its title still trends.
+    expected_trending_names = {show_folder_name(show) for show in current_trending_shows}
+
     current_trending_normalized = {normalize_title(show['title']): show['title'] for show in current_trending_shows}
     
     if debug:
@@ -153,33 +160,33 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
             continue
         
         is_trending = (season_00_path / ".trending").exists()
-        
-        show_folder_name = show_dir.name
-        
-        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', show_folder_name)
+
+        folder_name = show_dir.name
+
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', folder_name)
         if title_match:
             show_title_from_folder = title_match.group(1).strip()
         else:
-            show_title_from_folder = show_folder_name
-        
+            show_title_from_folder = folder_name
+
         series = None
         owning_inst = None
         if umtk_root_tv:
-            match = series_by_folder_name.get(show_folder_name)
+            match = series_by_folder_name.get(folder_name)
             if match:
                 series, owning_inst = match
             if debug:
                 if series:
-                    print(f"{BLUE}[DEBUG] Found series for folder '{show_folder_name}': {series['title']} (instance: {owning_inst['name']}){RESET}")
+                    print(f"{BLUE}[DEBUG] Found series for folder '{folder_name}': {series['title']} (instance: {owning_inst['name']}){RESET}")
                 else:
-                    print(f"{BLUE}[DEBUG] No series found for folder '{show_folder_name}'{RESET}")
+                    print(f"{BLUE}[DEBUG] No series found for folder '{folder_name}'{RESET}")
         else:
             match = series_by_path.get(str(show_dir))
             if match:
                 series, owning_inst = match
 
         if debug:
-            print(f"{BLUE}[DEBUG] Checking show folder: {show_folder_name} (trending: {is_trending}, in Sonarr: {series is not None}){RESET}")
+            print(f"{BLUE}[DEBUG] Checking show folder: {folder_name} (trending: {is_trending}, in Sonarr: {series is not None}){RESET}")
         
         trailer_files = list(season_00_path.glob("*.S00E00.Trailer.*")) + list(season_00_path.glob("*.S00E00.Coming.Soon.*"))
         
@@ -222,6 +229,13 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                     if debug:
                         print(f"{BLUE}[DEBUG] Not found in trending list. Check title: '{check_title}'{RESET}")
                         print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+                elif folder_name not in expected_trending_names:
+                    # Still trending, but under a different folder name now.
+                    should_remove = True
+                    removal_reason = "stale folder name for a still-trending show"
+                    if debug:
+                        print(f"{BLUE}[DEBUG] Folder '{folder_name}' is not an expected trending folder{RESET}")
+                        print(f"{BLUE}[DEBUG] Expected trending folders: {expected_trending_names}{RESET}")
                 elif debug:
                     print(f"{BLUE}[DEBUG] Keeping trending content for {check_title} - still in trending list{RESET}")
             else:
@@ -230,7 +244,7 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                     removal_reason = "show no longer exists in Sonarr"
                     if debug:
                         print(f"{BLUE}[DEBUG] No series found in Sonarr for {show_title_from_folder}{RESET}")
-                        print(f"{BLUE}[DEBUG] Folder name: {show_folder_name}{RESET}")
+                        print(f"{BLUE}[DEBUG] Folder name: {folder_name}{RESET}")
                         print(f"{BLUE}[DEBUG] Available folder mappings: {list(series_by_folder_name.keys())}{RESET}")
                 else:
                     if series['title'] not in current_upcoming_titles:
@@ -429,6 +443,14 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
     current_trending_movies = trending_monitored + trending_request_needed
     current_trending_titles = {movie['title'] for movie in current_trending_movies}
 
+    # Exact folder names content creation would produce for the current trending
+    # list (see cleanup_tv_content). A trending folder whose name isn't in here is
+    # a leftover from an earlier run under a different title or year.
+    expected_trending_names = set()
+    for movie in current_trending_movies:
+        for edition in ("Trending", "Coming Soon"):
+            expected_trending_names.add(movie_folder_name(movie, edition))
+
     current_trending_normalized = {normalize_title(movie['title']): movie['title'] for movie in current_trending_movies}
     
     current_trending_monitored_titles = {movie['title'] for movie in trending_monitored}
@@ -572,6 +594,13 @@ def cleanup_movie_content(radarr_instances, future_by_instance,
                         if debug:
                             print(f"{BLUE}[DEBUG] Not found in trending list. Folder title: '{title_without_year}'{RESET}")
                             print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+                    elif folder.name not in expected_trending_names:
+                        # Still trending, but under a different folder name now.
+                        should_remove = True
+                        reason = "stale folder name for a still-trending movie"
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Folder '{folder.name}' is not an expected trending folder{RESET}")
+                            print(f"{BLUE}[DEBUG] Expected trending folders: {expected_trending_names}{RESET}")
                     else:
                         if debug:
                             print(f"{BLUE}[DEBUG] Keeping trending content for {title_without_year} - still in trending list{RESET}")
@@ -759,10 +788,16 @@ def cleanup_trending_root_movies(trending_root, trending_monitored,
         return
 
     combined = (trending_monitored or []) + (trending_request_needed or [])
-    current_trending_titles = {movie['title'] for movie in combined}
+
+    # Compare against the exact folder names content creation would produce (see
+    # cleanup_trending_root_tv), covering both editions.
+    expected_names = set()
+    for movie in combined:
+        for edition in ("Trending", "Coming Soon"):
+            expected_names.add(movie_folder_name(movie, edition))
 
     if debug:
-        print(f"{BLUE}[DEBUG] Scanning trending root for stale movie folders: {trending_root} ({len(current_trending_titles)} trending titles){RESET}")
+        print(f"{BLUE}[DEBUG] Scanning trending root for stale movie folders: {trending_root} ({len(expected_names)} expected folders){RESET}")
 
     removed_count = 0
     checked_count = 0
@@ -786,6 +821,11 @@ def cleanup_trending_root_movies(trending_root, trending_monitored,
             edition_type = "Trending" if is_trending else "Coming Soon"
             print(f"{BLUE}[DEBUG] Found {edition_type} edition folder: {folder.name}{RESET}")
 
+        if folder.name in expected_names:
+            if debug:
+                print(f"{BLUE}[DEBUG] Keeping trending content for {folder.name} - still in trending list{RESET}")
+            continue
+
         if is_trending:
             movie_title = folder.name.replace(" {edition-Trending}", "")
         else:
@@ -797,16 +837,17 @@ def cleanup_trending_root_movies(trending_root, trending_monitored,
         else:
             title_without_year = movie_title
 
-        if _title_in_trending(title_without_year, combined, debug):
-            if debug:
-                print(f"{BLUE}[DEBUG] Keeping trending content for {title_without_year} - still in trending list{RESET}")
-            continue
-
         if debug:
-            print(f"{BLUE}[DEBUG] Not found in trending list. Folder title: '{title_without_year}'{RESET}")
-            print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+            print(f"{BLUE}[DEBUG] Folder '{folder.name}' is not an expected trending folder{RESET}")
+            print(f"{BLUE}[DEBUG] Expected trending folders: {expected_names}{RESET}")
 
-        if _remove_placeholder_folder(folder, title_without_year, "no longer in trending list", debug, webhook_config):
+        # A folder whose title still trends but whose name no longer matches is a
+        # leftover from an earlier run under a different title or year.
+        reason = ("stale name for a still-trending movie"
+                  if _title_in_trending(title_without_year, combined, debug)
+                  else "no longer in trending list")
+
+        if _remove_placeholder_folder(folder, title_without_year, reason, debug, webhook_config):
             removed_count += 1
 
     if removed_count > 0:
@@ -836,10 +877,13 @@ def cleanup_trending_root_tv(trending_root, trending_monitored,
         return
 
     combined = (trending_monitored or []) + (trending_request_needed or [])
-    current_trending_titles = {show['title'] for show in combined}
+
+    # Compare against the exact folder names content creation would produce, so a
+    # title or year change leaves no orphaned duplicate behind.
+    expected_names = {show_folder_name(show) for show in combined}
 
     if debug:
-        print(f"{BLUE}[DEBUG] Scanning trending root for stale show folders: {trending_root} ({len(current_trending_titles)} trending titles){RESET}")
+        print(f"{BLUE}[DEBUG] Scanning trending root for stale show folders: {trending_root} ({len(expected_names)} expected folders){RESET}")
 
     removed_count = 0
     checked_count = 0
@@ -856,26 +900,29 @@ def cleanup_trending_root_tv(trending_root, trending_monitored,
 
         checked_count += 1
 
-        show_folder_name = show_dir.name
+        folder_name = show_dir.name
         if debug:
-            print(f"{BLUE}[DEBUG] Found trending show folder: {show_folder_name}{RESET}")
+            print(f"{BLUE}[DEBUG] Found trending show folder: {folder_name}{RESET}")
 
-        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', show_folder_name)
-        if title_match:
-            show_title_from_folder = title_match.group(1).strip()
-        else:
-            show_title_from_folder = show_folder_name
-
-        if _title_in_trending(show_title_from_folder, combined, debug):
+        if folder_name in expected_names:
             if debug:
-                print(f"{BLUE}[DEBUG] Keeping trending content for {show_title_from_folder} - still in trending list{RESET}")
+                print(f"{BLUE}[DEBUG] Keeping trending content for {folder_name} - still in trending list{RESET}")
             continue
 
-        if debug:
-            print(f"{BLUE}[DEBUG] Not found in trending list. Check title: '{show_title_from_folder}'{RESET}")
-            print(f"{BLUE}[DEBUG] Current trending titles: {current_trending_titles}{RESET}")
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', folder_name)
+        show_title_from_folder = title_match.group(1).strip() if title_match else folder_name
 
-        if _remove_placeholder_folder(show_dir, show_title_from_folder, "no longer in trending list", debug, webhook_config):
+        if debug:
+            print(f"{BLUE}[DEBUG] Folder '{folder_name}' is not an expected trending folder{RESET}")
+            print(f"{BLUE}[DEBUG] Expected trending folders: {expected_names}{RESET}")
+
+        # A folder whose title still trends but whose name no longer matches is a
+        # leftover from an earlier run under a different title or year.
+        reason = ("stale name for a still-trending show"
+                  if _title_in_trending(show_title_from_folder, combined, debug)
+                  else "no longer in trending list")
+
+        if _remove_placeholder_folder(show_dir, show_title_from_folder, reason, debug, webhook_config):
             removed_count += 1
 
     if removed_count > 0:

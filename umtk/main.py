@@ -14,15 +14,16 @@ from .config_loader import load_config, load_localization, get_cookies_path, get
 from .updater import check_for_updates
 from .utils import (
     check_yt_dlp_installed, check_video_file,
-    get_tag_ids_from_names, sanitize_filename,
-    dedupe_by_key, sanitize_instance_name
+    get_tag_ids_from_names,
+    dedupe_by_key, sanitize_instance_name,
+    show_folder_name, movie_folder_name
 )
 from .sonarr import process_sonarr_url, get_sonarr_series, get_sonarr_episodes
 from .radarr import process_radarr_url, get_radarr_movies
 from .mdblist import fetch_mdblist_items
 from .finders import (
     find_upcoming_shows, find_new_shows, find_upcoming_movies,
-    process_trending_tv, process_trending_movies
+    process_trending_tv, process_trending_movies, resolve_trending_tv_ids
 )
 from .media_handlers import (
     search_trailer_on_youtube, download_trailer_tv, download_trailer_movie,
@@ -514,6 +515,16 @@ def main(config=None, localization=None):
                     print(f"{BLUE}Processing Trending TV Shows (across all Sonarr instances)...{RESET}")
                     print(f"{BLUE}{'=' * 50}{RESET}")
 
+                    # Correct stale MDBList TVDB IDs against Sonarr before anything
+                    # keys off them, then rebuild the union so unresolvable items
+                    # are dropped from every downstream consumer.
+                    resolve_trending_tv_ids(tv_trending_lists, sonarr_instances_data, debug)
+                    mdblist_tv_items = [
+                        item for item in _build_trending_union(
+                            tv_trending_lists, ('tvdb_id', 'tmdb_id', 'imdb_id'))
+                        if not item.get('_id_unresolved')
+                    ]
+
                     trending_tv_monitored, trending_tv_request_needed = process_trending_tv(
                         mdblist_tv_items, sonarr_instances_data, debug
                     )
@@ -566,20 +577,10 @@ def main(config=None, localization=None):
 
                             show_path = show.get('path')
 
-                            if show_path:
-                                if show_root_tv:
-                                    show_name = PureWindowsPath(show_path).name
-                                    season_00_path = Path(show_root_tv) / show_name / "Season 00"
-                                else:
-                                    season_00_path = Path(show_path) / "Season 00"
-                            elif show_root_tv:
-                                show_title = show.get('title', 'Unknown')
-                                show_year = show.get('year', '')
-                                if show_year:
-                                    show_folder = sanitize_filename(f"{show_title} ({show_year})")
-                                else:
-                                    show_folder = sanitize_filename(show_title)
-                                season_00_path = Path(show_root_tv) / show_folder / "Season 00"
+                            if show_root_tv:
+                                season_00_path = Path(show_root_tv) / show_folder_name(show) / "Season 00"
+                            elif show_path:
+                                season_00_path = Path(show_path) / "Season 00"
                             else:
                                 season_00_path = None
 
@@ -828,8 +829,13 @@ def main(config=None, localization=None):
                                 collection_config = _build_list_collection_config(
                                     config, 'collection_trending_shows', lst.get('name'))
 
+                            # Items whose TVDB ID couldn't be resolved against
+                            # Sonarr are excluded - Kometa could never match them.
+                            resolved_items = [i for i in lst['_items']
+                                              if not i.get('_id_unresolved')]
+
                             create_trending_collection_yaml_tv(
-                                str(trending_collection_file), lst['_items'], config,
+                                str(trending_collection_file), resolved_items, config,
                                 trending_tv_request_needed if lst is tv_request_target else None,
                                 collection_name=collection_name,
                                 collection_config=collection_config
@@ -838,7 +844,7 @@ def main(config=None, localization=None):
 
                             create_top10_overlay_yaml_tv(
                                 str(top10_tv_overlay_file),
-                                lst['_items'],
+                                resolved_items,
                                 {"backdrop": config.get("backdrop_trending_top_10_tv", {}),
                                  "text": config.get("text_trending_top_10_tv", {})},
                                 limit=lst.get('limit', 10),
@@ -993,11 +999,8 @@ def main(config=None, localization=None):
                                     content_exists = False
 
                                     if movie_path or umtk_root_movies:
-                                        movie_title = movie.get('title', 'Unknown')
-                                        movie_year = movie.get('year', '')
-
                                         for check_edition in ["Coming Soon", "Trending"]:
-                                            check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
+                                            check_folder = movie_folder_name(movie, check_edition)
 
                                             if umtk_root_movies:
                                                 check_path = Path(umtk_root_movies) / check_folder
@@ -1152,11 +1155,8 @@ def main(config=None, localization=None):
                             content_exists = False
 
                             if movie_path or movie_root:
-                                movie_title = movie.get('title', 'Unknown')
-                                movie_year = movie.get('year', '')
-
                                 for check_edition in ["Coming Soon", "Trending"]:
-                                    check_folder = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{check_edition}}}")
+                                    check_folder = movie_folder_name(movie, check_edition)
 
                                     if movie_root:
                                         check_path = Path(movie_root) / check_folder

@@ -6,11 +6,12 @@ import os
 import re
 import shutil
 import yt_dlp
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
-from .utils import sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local
+from .utils import (sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local,
+                    show_folder_name, movie_folder_name)
 from .config_loader import get_cookies_path, get_video_folder
 from .sonarr import get_sonarr_episodes
 
@@ -226,17 +227,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     
     # Determine the target directory
     if umtk_root_tv:
-        if show_path:
-            show_name = PureWindowsPath(show_path).name
-        else:
-            show_title = show.get('title', 'Unknown')
-            show_year = show.get('year', '')
-            if show_year:
-                show_name = sanitize_filename(f"{show_title} ({show_year})")
-            else:
-                show_name = sanitize_filename(show_title)
-        
-        parent_dir = Path(umtk_root_tv) / show_name
+        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -381,7 +372,7 @@ def download_trailer_movie(movie, trailer_info, debug=False, umtk_root_movies=No
     
     edition_tag = "Trending" if is_trending else "Coming Soon"
     
-    folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{edition_tag}}}")
+    folder_name = movie_folder_name(movie, edition_tag)
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-{edition_tag}}}")
     
     if not movie_path:
@@ -531,17 +522,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     show_path = show.get('path')
     
     if umtk_root_tv:
-        if show_path:
-            show_name = PureWindowsPath(show_path).name
-        else:
-            show_title = show.get('title', 'Unknown')
-            show_year = show.get('year', '')
-            if show_year:
-                show_name = sanitize_filename(f"{show_title} ({show_year})")
-            else:
-                show_name = sanitize_filename(show_title)
-        
-        parent_dir = Path(umtk_root_tv) / show_name
+        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -660,7 +641,7 @@ def create_placeholder_movie(movie, debug=False, umtk_root_movies=None, is_trend
     
     edition_tag = "Trending" if is_trending else "Coming Soon"
     
-    folder_name = sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{edition_tag}}}")
+    folder_name = movie_folder_name(movie, edition_tag)
     file_name = sanitize_filename(f"{movie_title} ({movie_year}) {{tmdb-{tmdb_id}}} {{edition-{edition_tag}}}")
     
     if not movie_path:

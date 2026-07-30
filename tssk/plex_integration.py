@@ -40,6 +40,29 @@ def get_plex_libraries(plex_url, plex_token, config):
         return {}
 
 
+def _plex_item_ids(plex_item):
+    """All TVDB IDs of a Plex item, tolerating pre-multi-ID callers."""
+    ids = [str(i) for i in (plex_item.get('tvdbIds') or []) if i]
+    if not ids and plex_item.get('tvdbId'):
+        ids = [str(plex_item['tvdbId'])]
+    return ids
+
+
+def _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids):
+    """Pick which of a Plex item's TVDB IDs to match on.
+
+    An item can carry several TVDB GUIDs (a show matched to two TVDB entries,
+    say). Prefer the one TSSK is actually targeting so the item isn't treated as
+    unknown - and its sort title reset - just because Plex listed the other ID
+    first; fall back to the first ID when none of them are targeted.
+    """
+    ids = _plex_item_ids(plex_item)
+    for candidate in ids:
+        if candidate in valid_tvdb_ids:
+            return candidate
+    return ids[0] if ids else None
+
+
 def get_plex_library_items(plex_url, plex_token, library_key, config):
     """Get all items from a Plex library with their sort titles and external IDs"""
     try:
@@ -72,22 +95,37 @@ def get_plex_library_items(plex_url, plex_token, library_key, config):
 
             guids = item.get('Guid', [])
 
+            # A Plex item can carry several GUIDs of the same type (e.g. a show
+            # matched to two TVDB entries), so collect them all. The scalar keys
+            # keep holding the first value for backwards compatibility.
+            id_lists = {'tvdbIds': [], 'tmdbIds': [], 'imdbIds': []}
+
             for guid_entry in guids:
                 guid_id = guid_entry.get('id', '')
-                if guid_id.startswith('tvdb://'):
-                    item_data['tvdbId'] = guid_id.replace('tvdb://', '')
-                elif guid_id.startswith('tmdb://'):
-                    item_data['tmdbId'] = guid_id.replace('tmdb://', '')
-                elif guid_id.startswith('imdb://'):
-                    item_data['imdbId'] = guid_id.replace('imdb://', '')
+                for prefix, list_key in (('tvdb://', 'tvdbIds'),
+                                         ('tmdb://', 'tmdbIds'),
+                                         ('imdb://', 'imdbIds')):
+                    if guid_id.startswith(prefix):
+                        value = guid_id[len(prefix):]
+                        if value and value not in id_lists[list_key]:
+                            id_lists[list_key].append(value)
+                        break
 
             main_guid = item.get('guid', '')
-            if 'tvdb://' in main_guid and 'tvdbId' not in item_data:
-                item_data['tvdbId'] = main_guid.split('tvdb://')[1].split('?')[0].split('/')[0]
-            elif 'tmdb://' in main_guid and 'tmdbId' not in item_data:
-                item_data['tmdbId'] = main_guid.split('tmdb://')[1].split('?')[0].split('/')[0]
-            elif 'imdb://' in main_guid and 'imdbId' not in item_data:
-                item_data['imdbId'] = main_guid.split('imdb://')[1].split('?')[0].split('/')[0]
+            if 'tvdb://' in main_guid and not id_lists['tvdbIds']:
+                id_lists['tvdbIds'].append(main_guid.split('tvdb://')[1].split('?')[0].split('/')[0])
+            elif 'tmdb://' in main_guid and not id_lists['tmdbIds']:
+                id_lists['tmdbIds'].append(main_guid.split('tmdb://')[1].split('?')[0].split('/')[0])
+            elif 'imdb://' in main_guid and not id_lists['imdbIds']:
+                id_lists['imdbIds'].append(main_guid.split('imdb://')[1].split('?')[0].split('/')[0])
+
+            for list_key, scalar_key in (('tvdbIds', 'tvdbId'),
+                                         ('tmdbIds', 'tmdbId'),
+                                         ('imdbIds', 'imdbId')):
+                values = [v for v in id_lists[list_key] if v]
+                item_data[list_key] = values
+                if values:
+                    item_data[scalar_key] = values[0]
 
             items.append(item_data)
 
@@ -196,18 +234,19 @@ def update_plex_sort_titles(plex_url, plex_token, tv_libraries, matched_shows, a
 
     debug_print(f"{BLUE}[DEBUG] Valid TVDB IDs for sort title: {list(valid_tvdb_ids.keys())}{RESET}", config)
 
-    # Build Plex item index by TVDB ID
+    # Build Plex item index by TVDB ID. Register every TVDB ID an item carries,
+    # not just the first, so a show Plex matched to several TVDB entries is
+    # findable by any of them.
     plex_items_by_tvdb = {}
     for plex_item in all_plex_items:
-        tvdb_id = plex_item.get('tvdbId')
-        if tvdb_id:
-            plex_items_by_tvdb[str(tvdb_id)] = plex_item
+        for tvdb_id in _plex_item_ids(plex_item):
+            plex_items_by_tvdb.setdefault(tvdb_id, plex_item)
 
     updated_sort_titles = 0
     reset_sort_titles = 0
 
     for plex_item in all_plex_items:
-        tvdb_id = plex_item.get('tvdbId')
+        tvdb_id = _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids)
         rating_key = plex_item.get('ratingKey')
         current_sort_title = plex_item.get('titleSort', '')
         original_title = plex_item.get('title', '')

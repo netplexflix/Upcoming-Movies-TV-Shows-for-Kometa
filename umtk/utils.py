@@ -8,6 +8,7 @@ import time
 import requests
 import subprocess
 from datetime import datetime, timedelta, timezone
+from pathlib import PureWindowsPath
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
 
@@ -141,6 +142,34 @@ def sanitize_filename(filename):
     
     sanitized = sanitized.rstrip('. ')
     return sanitized
+
+
+def show_folder_name(show):
+    """Folder name for a show's placeholder/trailer content.
+
+    Sonarr's own folder name wins when the show is in a library; otherwise the
+    name is derived from the title and year. Single source of truth so content
+    creation and cleanup can never disagree about which folder belongs to a show
+    (a mismatch used to leave stale duplicates behind when a year changed).
+    """
+    show_path = show.get('path')
+    if show_path:
+        return PureWindowsPath(show_path).name
+
+    show_title = show.get('title', 'Unknown')
+    show_year = show.get('year', '')
+    # Some titles already carry a disambiguating year ("Little House on the
+    # Prairie (2026)") - appending it again would produce "... (2026) (2026)".
+    if show_year and not re.search(r'\(\d{4}\)\s*$', show_title):
+        return sanitize_filename(f"{show_title} ({show_year})")
+    return sanitize_filename(show_title)
+
+
+def movie_folder_name(movie, edition_tag):
+    """Folder name for a movie's placeholder/trailer content."""
+    movie_title = movie.get('title', 'Unknown')
+    movie_year = movie.get('year', '')
+    return sanitize_filename(f"{movie_title} ({movie_year}) {{edition-{edition_tag}}}")
 
 
 def sanitize_sort_title(title):
