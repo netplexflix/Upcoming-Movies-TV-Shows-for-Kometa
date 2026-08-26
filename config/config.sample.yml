@@ -92,14 +92,6 @@ future_only_tv: false
 ################################################################################
 label_request_needed: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
-# Add as many MDBList trending lists as you want. Per list:
-#   name:   Plex collection name (also used in output filenames)
-#   type:   movie | tv
-#   method: 0 = Don't process, 1 = Download trailers, 2 = Placeholder video file
-#   url:    the MDBList list URL
-#   limit:  how many items to pull from the list
-#   root:   root folder for items not in any Radarr/Sonarr library
-#   legacy_filenames: used for backwards compatibility. do not change.
 trending_lists:
   - name: Trending Movies
     type: movie
@@ -107,6 +99,8 @@ trending_lists:
     url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
     limit: 10
     root: /umtkmovies
+    build_in_plex: false
+    plex_library: ''
     legacy_filenames: true
   - name: Trending Shows
     type: tv
@@ -114,11 +108,21 @@ trending_lists:
     url: https://mdblist.com/lists/netplexflix/umtk-trending-top20
     limit: 10
     root: /umtktv
+    build_in_plex: false
+    plex_library: ''
     legacy_filenames: true
   
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########
 ################################################################################
+upcoming_movies_build_in_plex: false
+upcoming_movies_plex_library: ''
+upcoming_shows_build_in_plex: false
+upcoming_shows_plex_library: ''
+upcoming_shows_include_new_season_soon: false
+upcoming_shows_include_upcoming_episode: false
+upcoming_shows_include_upcoming_finale: false
+
 collection_upcoming_movies:
   collection_name: "ComingSoon"
   item_label: Coming Soon

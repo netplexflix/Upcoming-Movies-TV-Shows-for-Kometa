@@ -136,11 +136,13 @@ def _run_inner():
     umtk_warnings = []
     tssk_warnings = []
 
+    collector = {}
+
     # ---- Run UMTK ----
     if enable_umtk:
         try:
             from umtk.main import main as umtk_main
-            umtk_warnings = umtk_main(config, localization) or []
+            umtk_warnings = umtk_main(config, localization, collector) or []
         except Exception as e:
             print(f"\n{RED}UMTK failed: {e}{RESET}")
             umtk_success = False
@@ -176,12 +178,23 @@ def _run_inner():
                     tssk_config['sonarr_instances'] = config['sonarr_instances']
                 tssk_config['instance_output_mode'] = config.get('instance_output_mode', 'combined')
 
-                tssk_warnings = run_tssk(tssk_config, localization) or []
+                tssk_warnings = run_tssk(tssk_config, localization, collector) or []
         except Exception as e:
             print(f"\n{RED}TSSK failed: {e}{RESET}")
             tssk_success = False
     else:
         print(f"\n{ORANGE}TSSK is disabled (enable_tssk: false){RESET}")
+
+    # ---- Coming Soon collections in Plex ----
+    # Runs last so it can merge UMTK's upcoming items with TSSK's categories.
+    if enable_umtk and umtk_success and config.get('plex_url') and config.get('plex_token'):
+        try:
+            from umtk.plex_collections import sync_upcoming_collections
+            debug = str(config.get('debug', 'false')).lower() == 'true'
+            sync_upcoming_collections(config['plex_url'], config['plex_token'],
+                                      config, collector, debug)
+        except Exception as e:
+            print(f"\n{RED}Building the Coming Soon collections in Plex failed: {e}{RESET}")
 
     # Summary
     def _module_status(success, warnings):

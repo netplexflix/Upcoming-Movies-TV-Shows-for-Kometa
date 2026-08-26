@@ -39,9 +39,12 @@ from .yaml_generators import (
 from .plex_integration import update_plex_sort_titles
 
 
-def run_tssk(config, localization=None):
+def run_tssk(config, localization=None, collector=None):
     """
     Run TSSK processing with the given config dict.
+
+    collector: optional dict the caller passes in to receive this run's upcoming
+    categories, so UMTK can merge them into its Coming Soon Plex collection.
 
     Config should contain both TSSK-specific settings and shared credentials
     (sonarr_instances, plex_url, plex_token, etc.) already merged in.
@@ -350,6 +353,15 @@ def run_tssk(config, localization=None):
                                   result['upcoming_eps'], result['finale_eps'],
                                   result['season_finale_shows'], result['final_episode_shows'])
             print(f"{GREEN}TSSK YAML files created for instance '{result['name']}'{RESET}")
+
+    # Hand caller the three upcoming categories (merged across instances) so UMTK can optionally merge them in its Coming Soon Plex collection.
+    if collector is not None:
+        collector['tssk_new_season_soon'] = dedupe_by_key(
+            [r['matched_shows'] for r in instance_results], 'tvdbId')
+        collector['tssk_upcoming_episode'] = dedupe_by_key(
+            [r['upcoming_eps'] for r in instance_results], 'tvdbId')
+        collector['tssk_upcoming_finale'] = dedupe_by_key(
+            [r['finale_eps'] for r in instance_results], 'tvdbId')
 
     # Update Plex sort titles (uses merged data from all instances)
     merged_all_series_for_plex = dedupe_by_key([r['all_series'] for r in instance_results], 'tvdbId')

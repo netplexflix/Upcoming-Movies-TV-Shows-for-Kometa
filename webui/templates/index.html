@@ -1863,6 +1863,9 @@ let _instanceData = { radarr_instances: [], sonarr_instances: [] };
 
 /* ── Trending list editor state ───────────────────────────────────────── */
 let _trendingListsData = [];
+/* First configured Plex movie/TV library, used to pre-fill the 'Build in Plex'
+   library fields on the trending cards and the Coming Soon settings. */
+let _defaultPlexLibraries = { movie: '', tv: '' };
 
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
@@ -2327,6 +2330,7 @@ async function fetchUmtk() {
             if (listsRes.ok) {
                 const listsData = await listsRes.json();
                 _trendingListsData = listsData.trending_lists || [];
+                _defaultPlexLibraries = listsData.default_libraries || { movie: '', tv: '' };
             }
         } catch (e) { /* silent */ }
         _umtkLoaded = true;
@@ -2350,11 +2354,37 @@ function renderUmtkSettings() {
         trendingOpts.appendChild(wrap);
         renderTrendingLists();
     }
+    wirePlexLibraryFields();
     renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
     renderOptionSections(umtkData.webhook || [], document.getElementById('umtk-webhook'), null);
     /* Wire the preset dropdown to pre-fill the webhook fields. */
     const presetSel = document.querySelector('#umtk-webhook [data-key="webhook_preset"]');
     if (presetSel) presetSel.addEventListener('change', () => applyWebhookPreset(presetSel.value));
+}
+
+/* ── Coming Soon "Build in Plex" library fields ── */
+const PLEX_LIBRARY_FIELDS = [
+    { toggle: 'upcoming_movies_build_in_plex', input: 'upcoming_movies_plex_library', type: 'movie' },
+    { toggle: 'upcoming_shows_build_in_plex', input: 'upcoming_shows_plex_library', type: 'tv' },
+];
+
+function wirePlexLibraryFields() {
+    const scope = document.getElementById('page-umtk');
+    if (!scope) return;
+    PLEX_LIBRARY_FIELDS.forEach(field => {
+        const toggle = scope.querySelector(`[data-key="${field.toggle}"]`);
+        const input = scope.querySelector(`[data-key="${field.input}"]`);
+        if (!toggle || !input) return;
+        const fallback = _defaultPlexLibraries[field.type] || '';
+        input.placeholder = fallback;
+        const sync = () => {
+            const enabled = toggle.value === 'true';
+            input.disabled = !enabled;
+            if (enabled && !input.value) input.value = fallback;
+        };
+        toggle.addEventListener('change', () => { sync(); _checkDirty('umtk'); });
+        sync();
+    });
 }
 
 /* ── Trending list management ─────────────────────────────────────────── */
@@ -2376,6 +2406,9 @@ function renderTrendingListCard(idx, lst) {
     const type = lst.type === 'tv' ? 'tv' : 'movie';
     const method = [0, 1, 2].includes(Number(lst.method)) ? Number(lst.method) : 0;
     const rootPlaceholder = type === 'tv' ? '/umtktv' : '/umtkmovies';
+    const buildInPlex = String(lst.build_in_plex).toLowerCase() === 'true';
+    const plexLibraryVal = escapeAttr(lst.plex_library || '');
+    const libraryPlaceholder = escapeAttr(_defaultPlexLibraries[type] || (type === 'tv' ? 'TV Shows' : 'Movies'));
     const legacyBadge = lst.legacy_filenames
         ? `<span class="setting-desc" style="margin-right:8px" title="This list writes the classic UMTK trending filenames so existing Kometa configs keep working">classic filenames</span>`
         : '';
@@ -2421,8 +2454,40 @@ function renderTrendingListCard(idx, lst) {
                 <label>Root</label>
                 <input type="text" data-trend-field="root" value="${rootVal}" placeholder="${rootPlaceholder}">
             </div>
+            <div class="instance-field">
+                <label>Build in Plex</label>
+                <select data-trend-field="build_in_plex" onchange="onBuildInPlexToggle(${idx}, this)">
+                    <option value="false"${buildInPlex ? '' : ' selected'}>False</option>
+                    <option value="true"${buildInPlex ? ' selected' : ''}>True</option>
+                </select>
+            </div>
+            <div class="instance-field">
+                <label>Plex Library</label>
+                <input type="text" data-trend-field="plex_library" value="${plexLibraryVal}" placeholder="${libraryPlaceholder}"${buildInPlex ? '' : ' disabled'}>
+            </div>
+            <div class="instance-field full-width">
+                <span class="setting-desc">Let UMTK create and update this collection directly in Plex in rank order.<br>Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits</span>
+            </div>
         </div>
     </div>`;
+}
+
+/* Setting 'Build in Plex' to True enables the library field and seeds it with
+   the first configured library of the list's current type. */
+function onBuildInPlexToggle(idx, select) {
+    const enabled = select.value === 'true';
+    const card = select.closest('.instance-card');
+    const libraryInput = card.querySelector('[data-trend-field="plex_library"]');
+    const typeSelect = card.querySelector('[data-trend-field="type"]');
+    if (libraryInput) {
+        libraryInput.disabled = !enabled;
+        if (enabled && !libraryInput.value) {
+            const type = typeSelect && typeSelect.value === 'tv' ? 'tv' : 'movie';
+            libraryInput.value = _defaultPlexLibraries[type] || '';
+        }
+    }
+    gatherTrendingListsFromDOM();
+    _checkDirty('umtk');
 }
 
 function addTrendingList() {
@@ -2430,7 +2495,8 @@ function addTrendingList() {
     const count = _trendingListsData.length + 1;
     _trendingListsData.push({
         name: `Trending List ${count}`, type: 'movie', method: 0,
-        url: '', limit: 10, root: '', legacy_filenames: false,
+        url: '', limit: 10, root: '', build_in_plex: false, plex_library: '',
+        legacy_filenames: false,
     });
     renderTrendingLists();
     _checkDirty('umtk');
@@ -2462,6 +2528,7 @@ function gatherTrendingListsFromDOM() {
             const field = input.dataset.trendField;
             if (field === 'method') lst[field] = parseInt(input.value) || 0;
             else if (field === 'limit') lst[field] = parseInt(input.value) || 10;
+            else if (field === 'build_in_plex') lst[field] = input.value === 'true';
             else lst[field] = input.value;
         });
     });

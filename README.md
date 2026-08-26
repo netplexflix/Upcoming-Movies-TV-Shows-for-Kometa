@@ -412,6 +412,8 @@ Each Radarr and Sonarr instance has its own options configured under the **Conne
   - **url:** the MDBList list URL. You can create your own lists.
   - **limit:** how many items to pull from the list
   - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
+  - **build_in_plex:** `true` lets UMTK create and update this list's collection **directly in Plex**, with the items in MDBList rank order.
+  - **plex_library:** which Plex library `build_in_plex` should build the collection in. Leave empty to use the first entry of `movie_libraries` / `tv_libraries`.
   - **legacy_filenames:** used automatically for backwards compatibility. Do not use/change.
 
   Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
@@ -431,15 +433,19 @@ trending_lists:
     url: https://mdblist.com/lists/someuser/popular-movies
     limit: 20
     root: /umtkmovies
+    build_in_plex: true
+    plex_library: Movies
 ```
 
-> [!NOTE]
-> **Upgrading from an older version?** The old `trending_movies`, `trending_tv`, `mdblist_movies`, `mdblist_movies_limit`, `mdblist_tv`, `mdblist_tv_limit`, `trending_root_movies` and `trending_root_tv` keys are deprecated but still work: they are automatically converted into two `trending_lists` entries (with `legacy_filenames: true`, so your existing Kometa file references keep working). Saving the Trending settings in the WebUI migrates your config file to the new format.
+#### Building collections directly in Plex
 
-> [!NOTE]
-> If the same item appears in several lists, it is only processed once: the first list (in config order) that contains it decides its method, root and Top 10 rank. The `RequestNeeded` label collection is written to a single file per type (the `legacy_filenames` list's file if present) and covers all lists.
-> [!TIP]
-> With [Pulsarr](https://github.com/jamcalli/Pulsarr) you and your users can easily request missing content by adding it to watchlist in Plex. No external request platforms needed.
+By default UMTK writes a Kometa collection YAML per trending list and Kometa creates the collection in Plex. To get the items to show up in the right order, UMTK can edit sort_titles. This however changes how those items sort everywhere in Plex, not just inside the collection.
+
+Setting **`build_in_plex: true`** on a list makes UMTK build that collection directly in Plex instead, using Plex's own **Custom** collection order. On every run it creates the collection if it doesn't exist yet, adds items that joined the list, removes items that dropped off it, and re-orders the items as needed.
+
+
+> [!IMPORTANT]
+> UMTK still writes the Kometa collection YAML for the list, unchanged. If your Kometa config also builds that collection, both will manage it and overwrite each other's contents and order on every run. When you enable `build_in_plex`, remove the collection yml from your Kometa config and disable the sort_title edits if you previously used them.
 
 ### Overlay & Collection Settings:
 

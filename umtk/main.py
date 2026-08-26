@@ -42,6 +42,7 @@ from .yaml_generators import (
     create_top10_overlay_yaml_movies, create_top10_overlay_yaml_tv
 )
 from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata, trigger_plex_library_scan
+from .plex_collections import sync_trending_collections
 
 
 def _same_root(a, b):
@@ -103,7 +104,13 @@ def _dedupe_legacy_filenames_flag(trending_lists):
                 seen = True
 
 
-def main(config=None, localization=None):
+def main(config=None, localization=None, collector=None):
+    """Run UMTK.
+
+    collector: optional dict the caller passes in to receive this run's upcoming
+    movies/shows. UMTK.py uses it to build the Coming Soon Plex collections after
+    TSSK has also run, since those can merge in TSSK's upcoming categories.
+    """
     start_time = datetime.now()
 
     # Add Docker detection message
@@ -163,7 +170,11 @@ def main(config=None, localization=None):
         lst_method = lst.get('method', 0)
         method_label = 'Disabled' if lst_method == 0 else 'Trailer' if lst_method == 1 else 'Placeholder'
         root_info = f" - root: {lst['root']}" if lst.get('root') and lst_method > 0 else ""
-        print(f"Trending list '{lst.get('name')}' ({'Movies' if lst.get('type') == 'movie' else 'TV'}): {lst_method} ({method_label}){root_info}")
+        plex_info = ""
+        if str(lst.get('build_in_plex', False)).lower() == "true" and lst_method > 0:
+            target = (lst.get('plex_library') or '').strip() or 'first configured library'
+            plex_info = f" - Plex collection in: {target}"
+        print(f"Trending list '{lst.get('name')}' ({'Movies' if lst.get('type') == 'movie' else 'TV'}): {lst_method} ({method_label}){root_info}{plex_info}")
     print(f"Method fallback: {method_fallback}")
     print(f"Preferred trailer language: {preferred_language}")
     print(f"Append dates to sort titles: {append_dates_to_sort_titles}")
@@ -734,6 +745,15 @@ def main(config=None, localization=None):
 
                     # Generate TV YML files
                     if tv_method > 0 or tv_trending_lists:
+                        # Hand the caller the union across instances. Split mode
+                        # writes one file per instance but they all declare the
+                        # same collection name, so one merged list is correct
+                        # for the Plex collection either way.
+                        if collector is not None:
+                            collector['upcoming_shows'] = (
+                                dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
+                                + dedupe_by_key([r['aired_shows'] for r in tv_instance_results], 'tvdbId'))
+
                         if output_mode == 'combined' or len(tv_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
                             merged_aired = dedupe_by_key([r['aired_shows'] for r in tv_instance_results], 'tvdbId')
@@ -1313,6 +1333,12 @@ def main(config=None, localization=None):
 
                     # Generate Movie YML files
                     if movie_method > 0 or movie_trending_lists:
+                        # See the TV note above - one merged list regardless of mode.
+                        if collector is not None:
+                            collector['upcoming_movies'] = (
+                                dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')
+                                + dedupe_by_key([r['released_movies'] for r in movie_instance_results], 'tmdbId'))
+
                         if output_mode == 'combined' or len(movie_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')
                             merged_released = dedupe_by_key([r['released_movies'] for r in movie_instance_results], 'tmdbId')
@@ -1456,6 +1482,20 @@ def main(config=None, localization=None):
             )
         elif debug and process_movies:
             print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
+
+        # Build trending collections straight in Plex for the lists that opted in.
+        # Runs last so any library scan and the metadata pass' wait-for-items
+        # retry have already given Plex a chance to pick new files up.
+        plex_collection_lists = [l for l in (movie_trending_lists + tv_trending_lists)
+                                 if str(l.get('build_in_plex', False)).lower() == "true"
+                                 and l.get('_items')]
+        if plex_collection_lists and plex_url and plex_token:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Building trending collections in Plex...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            sync_trending_collections(plex_url, plex_token, plex_collection_lists, config, debug)
+        elif plex_collection_lists and debug:
+            print(f"{ORANGE}[DEBUG] Plex collection building skipped - missing plex_url or plex_token{RESET}")
 
         # Calculate and display runtime
         end_time = datetime.now()

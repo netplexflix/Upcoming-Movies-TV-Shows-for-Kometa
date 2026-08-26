@@ -115,6 +115,8 @@ def normalize_trending(config):
                 'url': config.get('mdblist_movies', ''),
                 'limit': config.get('mdblist_movies_limit', 10),
                 'root': config.get('trending_root_movies', ''),
+                'build_in_plex': False,
+                'plex_library': '',
                 'legacy_filenames': True,
             },
             {
@@ -124,6 +126,8 @@ def normalize_trending(config):
                 'url': config.get('mdblist_tv', ''),
                 'limit': config.get('mdblist_tv_limit', 10),
                 'root': config.get('trending_root_tv', ''),
+                'build_in_plex': False,
+                'plex_library': '',
                 'legacy_filenames': True,
             },
         ]
@@ -139,6 +143,8 @@ def normalize_trending(config):
         lst.setdefault('method', 0)
         lst.setdefault('url', '')
         lst.setdefault('limit', 10)
+        lst.setdefault('build_in_plex', False)
+        lst.setdefault('plex_library', '')
         lst.setdefault('legacy_filenames', False)
         if not lst.get('root'):
             fallback = ('trending_root_movies' if lst.get('type') == 'movie'

@@ -124,6 +124,14 @@ UMTK_OPTIONS = [
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
+    # Plex Collections
+    {"key": "upcoming_movies_build_in_plex", "type": "select", "default": "false", "label": "Upcoming Movies: Build in Plex", "description": "Let UMTK create and update the Coming Soon movies collection directly in Plex, ordered by expected release date. Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
+    {"key": "upcoming_movies_plex_library", "type": "string", "default": "", "label": "Upcoming Movies: Plex Library", "description": "Which Plex library to build that collection in. Pre-filled with the first of your Movie Libraries.", "section": "Plex Collections"},
+    {"key": "upcoming_shows_build_in_plex", "type": "select", "default": "false", "label": "Upcoming Shows: Build in Plex", "description": "Let UMTK create and update the Coming Soon shows collection directly in Plex, ordered by expected air date. Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
+    {"key": "upcoming_shows_plex_library", "type": "string", "default": "", "label": "Upcoming Shows: Plex Library", "description": "Which Plex library to build that collection in. Pre-filled with the first of your TV Libraries.", "section": "Plex Collections"},
+    {"key": "upcoming_shows_include_new_season_soon", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK New Season Soon", "description": "Also put TSSK's New Season Soon shows in the Coming Soon shows collection. Requires TSSK enabled with its New Season Soon category switched on. TSSK's own collection is unaffected.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
+    {"key": "upcoming_shows_include_upcoming_episode", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK Upcoming Episode", "description": "Also put TSSK's Upcoming Episode shows in the Coming Soon shows collection. Requires TSSK enabled with its Upcoming Episode category switched on.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
+    {"key": "upcoming_shows_include_upcoming_finale", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK Upcoming Finale", "description": "Also put TSSK's Upcoming Finale shows in the Coming Soon shows collection. Requires TSSK enabled with its Upcoming Finale category switched on.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
     # Trending (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
     {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
@@ -249,6 +257,15 @@ def _get_config_value(config, key, default=None):
     val = config.get(key)
     if val is None:
         return default
+    return val
+
+
+def _option_value(config, opt):
+    val = _get_config_value(config, opt["key"], opt["default"])
+    if opt.get("type") == "select" and isinstance(val, bool):
+        choices = [o.get("value") for o in opt.get("options", [])]
+        if all(isinstance(c, str) for c in choices) and choices:
+            return str(val).lower()
     return val
 
 
@@ -541,7 +558,7 @@ def register_routes(app):
         ensure_trending_requested_blocks(config)
         result = {"options": [], "blocks": {}, "webhook": []}
         for opt in UMTK_OPTIONS:
-            val = _get_config_value(config, opt["key"], opt["default"])
+            val = _option_value(config, opt)
             if opt.get("sensitive") and val:
                 val = MASKED_VALUE
             result["options"].append({**opt, "value": val})
@@ -701,13 +718,25 @@ def register_routes(app):
         return jsonify({"ok": True})
 
     # ── Config: Trending lists ────────────────────────────────────────
+    def _first_library(value):
+        """First entry of a comma-separated Plex library setting."""
+        names = [n.strip() for n in str(value or '').split(',') if n.strip()]
+        return names[0] if names else ''
+
     @app.route("/api/config/trending_lists")
     def api_config_trending_lists():
         config = _load_yaml(webui._config_path)
         # Apply normalization to handle the legacy flat trending format
         from umtk.config_loader import normalize_instances, normalize_trending
         config = normalize_trending(normalize_instances(config))
-        return jsonify({"trending_lists": config.get('trending_lists', [])})
+        return jsonify({
+            "trending_lists": config.get('trending_lists', []),
+            # Used to pre-fill 'Build in Plex' with the first relevant library.
+            "default_libraries": {
+                "movie": _first_library(config.get('movie_libraries')),
+                "tv": _first_library(config.get('tv_libraries')),
+            },
+        })
 
     @app.route("/api/config/trending_lists", methods=["POST"])
     def api_save_trending_lists():
@@ -758,6 +787,11 @@ def register_routes(app):
             if method > 0 and not url:
                 return jsonify({"ok": False, "error": f"Trending list '{name}' is missing an MDBList URL"}), 400
 
+            build_in_plex = str(lst.get('build_in_plex', False)).lower() == 'true'
+            plex_library = (lst.get('plex_library') or '').strip()
+            if build_in_plex and not plex_library:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': choose a Plex library to build the collection in"}), 400
+
             legacy = bool(lst.get('legacy_filenames'))
             if legacy:
                 if list_type in legacy_seen:
@@ -771,6 +805,8 @@ def register_routes(app):
                 'url': url,
                 'limit': limit,
                 'root': (lst.get('root') or '').strip(),
+                'build_in_plex': build_in_plex,
+                'plex_library': plex_library,
                 'legacy_filenames': legacy,
             })
 
