@@ -508,13 +508,13 @@ def sync_trending_collections(plex_url, plex_token, lists, config, debug=False):
                   lst, config, debug)
 
 
-# ── Upcoming (Coming Soon) collections ────────────────────────────────────
+# ── Coming Soon collections ───────────────────────────────────────────────
 
-# Which collector list each 'include TSSK ...' option pulls in.
-TSSK_UPCOMING_SOURCES = (
-    ('upcoming_shows_include_new_season_soon', 'tssk_new_season_soon', 'New Season Soon'),
-    ('upcoming_shows_include_upcoming_episode', 'tssk_upcoming_episode', 'Upcoming Episode'),
-    ('upcoming_shows_include_upcoming_finale', 'tssk_upcoming_finale', 'Upcoming Finale'),
+# Per-collection option -> the collector key it pulls in, and its label.
+TSSK_INCLUDE_SOURCES = (
+    ('include_new_season_soon', 'tssk_new_season_soon', 'New Season Soon'),
+    ('include_upcoming_episode', 'tssk_upcoming_episode', 'Upcoming Episode'),
+    ('include_upcoming_finale', 'tssk_upcoming_finale', 'Upcoming Finale'),
 )
 
 # Items with no date sort last rather than jumping to the front.
@@ -526,12 +526,11 @@ def _is_true(value):
     return str(value).lower() == 'true'
 
 
-def upcoming_collection_name(config, block_key, default):
-    """The collection name create_collection_yaml_* writes for an upcoming block."""
-    block = config.get(block_key)
-    if isinstance(block, dict):
-        return block.get('collection_name') or default
-    return default
+def _name_list(value):
+    """A YAML list / comma-separated string as a list of names."""
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [n.strip() for n in str(value or '').split(',') if n.strip()]
 
 
 def _sorted_by_date(items, date_key):
@@ -559,85 +558,126 @@ def _resolve_by_id(items, index, id_key):
     return rating_keys, missing
 
 
-def _collect_upcoming_shows(config, collector, debug=False):
-    """UMTK's upcoming shows plus whichever TSSK categories are switched on.
+def _instance_items(groups, instances):
+    """Items from the named instances; an empty 'instances' means all of them.
 
-    Deduped on tvdbId with UMTK's own entry winning, then ordered by air date.
+    'groups' is the per-instance shape the collector carries:
+    [{'instance': name, 'items': [...]}, ...]. Names are only guaranteed unique
+    by the WebUI's save validation, so match on them without building a
+    name-keyed dict that would silently drop a duplicate.
     """
-    groups = [collector.get('upcoming_shows') or []]
-
-    for option_key, collector_key, label in TSSK_UPCOMING_SOURCES:
-        if not _is_true(config.get(option_key, 'false')):
-            continue
-        shows = collector.get(collector_key)
-        if shows is None:
-            print(f"{ORANGE}Coming Soon shows: TSSK '{label}' is switched on but TSSK "
-                  f"produced no results this run — skipping that category{RESET}")
-            continue
-        if debug:
-            print(f"{BLUE}[DEBUG] Adding {len(shows)} show(s) from TSSK '{label}'{RESET}")
-        groups.append(shows)
-
-    return _sorted_by_date(dedupe_by_key(groups, 'tvdbId'), 'airDate')
+    wanted = set(instances or ())
+    return [group.get('items') or [] for group in (groups or [])
+            if not wanted or group.get('instance') in wanted]
 
 
-def _sync_upcoming(plex_url, plex_token, machine_id, libraries, library_items_cache,
-                   config, items, expected_type, id_key, library_option, block_key,
-                   default_name, label, debug=False):
-    """Build/update one upcoming collection from date-ordered item dicts."""
-    library_name, library = _resolve_library(
-        libraries, config.get(library_option), expected_type, label, config, debug)
-    if not library:
+def _collection_items(entry, collector, debug=False):
+    """One entry's deduped, date-ordered item list."""
+    is_tv = entry.get('type') == 'tv'
+    source_key = 'upcoming_shows' if is_tv else 'upcoming_movies'
+    id_key = 'tvdbId' if is_tv else 'tmdbId'
+    date_key = 'airDate' if is_tv else 'releaseDate'
+    instances = entry.get('instances') or []
+    name = entry.get('name')
+
+    groups = _instance_items(collector.get(source_key), instances)
+
+    if is_tv:
+        for option_key, collector_key, label in TSSK_INCLUDE_SOURCES:
+            if not _is_true(entry.get(option_key, False)):
+                continue
+            available = collector.get(collector_key)
+            if available is None:
+                print(f"{ORANGE}Coming Soon '{name}': TSSK '{label}' is switched on but TSSK "
+                      f"produced no results this run — skipping that category{RESET}")
+                continue
+            extra = _instance_items(available, instances)
+            if debug:
+                print(f"{BLUE}[DEBUG] Coming Soon '{name}': adding "
+                      f"{sum(len(g) for g in extra)} show(s) from TSSK '{label}'{RESET}")
+            groups.extend(extra)
+
+    # UMTK's own entry wins for a show that is also in a TSSK category.
+    return _sorted_by_date(dedupe_by_key(groups, id_key), date_key)
+
+
+def _entry_libraries(entry, config):
+    """The libraries an entry builds in, falling back to the first configured one."""
+    libraries = _name_list(entry.get('libraries'))
+    if libraries:
+        return libraries
+    fallback_key = 'tv_libraries' if entry.get('type') == 'tv' else 'movie_libraries'
+    fallback = _first_library_name(config.get(fallback_key))
+    return [fallback] if fallback else []
+
+
+def _sync_coming_soon_entry(plex_url, plex_token, machine_id, libraries,
+                            library_items_cache, config, entry, collector, debug=False):
+    """Build/update one configured Coming Soon collection in every library it names."""
+    name = entry.get('name')
+    expected_type = 'show' if entry.get('type') == 'tv' else 'movie'
+    id_key = 'tvdbId' if expected_type == 'show' else 'tmdbId'
+
+    if not name:
+        print(f"{ORANGE}Coming Soon collection without a name — skipping{RESET}")
         return
 
-    plex_items = _library_items(plex_url, plex_token, library['key'],
-                                library_items_cache, debug)
-    by_tmdb, by_tvdb = _build_id_index(plex_items)
-    index = by_tvdb if id_key == 'tvdbId' else by_tmdb
-
-    desired, missing = _resolve_by_id(items, index, id_key)
-
-    if missing:
-        print(f"{ORANGE}{label}: {len(missing)} item(s) not in Plex library "
-              f"'{library_name}' yet:{RESET}")
-        for title in missing:
-            print(f"  - {title}")
-
-    collection_name = upcoming_collection_name(config, block_key, default_name)
-    if not desired:
-        print(f"{ORANGE}{label}: none of the items are in Plex — "
-              f"leaving collection '{collection_name}' untouched{RESET}")
+    items = _collection_items(entry, collector, debug)
+    if not items:
+        print(f"{ORANGE}Coming Soon '{name}': nothing to put in the collection this run{RESET}")
         return
 
-    _sync_collection(plex_url, plex_token, machine_id, library['key'], library_name,
-                     expected_type, collection_name, desired, debug)
+    target_libraries = _entry_libraries(entry, config)
+    if not target_libraries:
+        print(f"{ORANGE}Coming Soon '{name}': no Plex library configured — "
+              f"skipping collection{RESET}")
+        return
+
+    for library_name in target_libraries:
+        label = f"Coming Soon '{name}' ({library_name})"
+        resolved_name, library = _resolve_library(
+            libraries, library_name, expected_type, label, config, debug)
+        if not library:
+            continue
+
+        # ratingKeys are per library, so the id lookup has to run per library.
+        plex_items = _library_items(plex_url, plex_token, library['key'],
+                                    library_items_cache, debug)
+        by_tmdb, by_tvdb = _build_id_index(plex_items)
+        index = by_tvdb if id_key == 'tvdbId' else by_tmdb
+
+        desired, missing = _resolve_by_id(items, index, id_key)
+
+        if missing:
+            print(f"{ORANGE}{label}: {len(missing)} item(s) not in this library yet:{RESET}")
+            for title in missing:
+                print(f"  - {title}")
+
+        if not desired:
+            print(f"{ORANGE}{label}: none of the items are in this library — "
+                  f"leaving the collection untouched{RESET}")
+            continue
+
+        _sync_collection(plex_url, plex_token, machine_id, library['key'], resolved_name,
+                         expected_type, name, desired, debug)
 
 
 def sync_upcoming_collections(plex_url, plex_token, config, collector, debug=False):
-    """Build/update the Coming Soon movie and TV collections directly in Plex.
+    """Build/update every configured Coming Soon collection directly in Plex.
 
-    Ordered by expected release date (movies) / air date (shows). The shows
-    collection can also absorb TSSK's upcoming categories - see
-    TSSK_UPCOMING_SOURCES.
+    Each coming_soon_collections entry names its own collection, the libraries to
+    build it in and the Radarr/Sonarr instances to draw from. Items are ordered by
+    expected release date (movies) / air date (shows); a TV entry can also absorb
+    TSSK's upcoming categories - see TSSK_INCLUDE_SOURCES.
     """
-    do_movies = _is_true(config.get('upcoming_movies_build_in_plex', 'false'))
-    do_shows = _is_true(config.get('upcoming_shows_build_in_plex', 'false'))
-    if not do_movies and not do_shows:
+    entries = [e for e in (config.get('coming_soon_collections') or [])
+               if isinstance(e, dict)]
+    if not entries:
         return
 
     print(f"\n{BLUE}{'=' * 50}{RESET}")
     print(f"{BLUE}Building Coming Soon collections in Plex...{RESET}")
     print(f"{BLUE}{'=' * 50}{RESET}\n")
-
-    movies = _sorted_by_date(collector.get('upcoming_movies') or [], 'releaseDate') if do_movies else []
-    shows = _collect_upcoming_shows(config, collector, debug) if do_shows else []
-
-    if do_movies and not movies:
-        print(f"{ORANGE}Coming Soon movies: nothing to put in the collection this run{RESET}")
-    if do_shows and not shows:
-        print(f"{ORANGE}Coming Soon shows: nothing to put in the collection this run{RESET}")
-    if not movies and not shows:
-        return
 
     machine_id = get_plex_machine_identifier(plex_url, plex_token, debug)
     if not machine_id:
@@ -650,16 +690,10 @@ def sync_upcoming_collections(plex_url, plex_token, config, collector, debug=Fal
         print(f"{RED}Could not fetch Plex libraries — skipping collection building{RESET}")
         return
 
+    # Several entries can target the same library and that fetch pulls a whole
+    # section, so keep the results around for the duration of the run.
     library_items_cache = {}
 
-    if movies:
-        _sync_upcoming(plex_url, plex_token, machine_id, libraries, library_items_cache,
-                       config, movies, 'movie', 'tmdbId',
-                       'upcoming_movies_plex_library', 'collection_upcoming_movies',
-                       'Upcoming Movies', 'Coming Soon movies', debug)
-
-    if shows:
-        _sync_upcoming(plex_url, plex_token, machine_id, libraries, library_items_cache,
-                       config, shows, 'show', 'tvdbId',
-                       'upcoming_shows_plex_library', 'collection_upcoming_shows',
-                       'Upcoming Shows', 'Coming Soon shows', debug)
+    for entry in entries:
+        _sync_coming_soon_entry(plex_url, plex_token, machine_id, libraries,
+                                library_items_cache, config, entry, collector, debug)

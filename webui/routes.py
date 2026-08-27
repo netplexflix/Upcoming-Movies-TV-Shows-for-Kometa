@@ -49,6 +49,7 @@ UMTK_SECTION_HEADERS = {
     'future_days_upcoming_shows': '################################################################################\n##########                         TV SHOWS:                          ##########\n################################################################################',
     'trending_movies': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
     'trending_lists': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
+    'coming_soon_collections': '################################################################################\n##########              COMING SOON COLLECTIONS (PLEX):               ##########\n################################################################################',
     'collection_upcoming_movies': '################################################################################\n##########                UPCOMING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_upcoming_movies_future': '################################################################################\n##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########\n################################################################################',
     'backdrop_upcoming_movies_released': '################################################################################\n##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########\n################################################################################',
@@ -124,14 +125,8 @@ UMTK_OPTIONS = [
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
-    # Plex Collections
-    {"key": "upcoming_movies_build_in_plex", "type": "select", "default": "false", "label": "Upcoming Movies: Build in Plex", "description": "Let UMTK create and update the Coming Soon movies collection directly in Plex, ordered by expected release date. Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
-    {"key": "upcoming_movies_plex_library", "type": "string", "default": "", "label": "Upcoming Movies: Plex Library", "description": "Which Plex library to build that collection in. Pre-filled with the first of your Movie Libraries.", "section": "Plex Collections"},
-    {"key": "upcoming_shows_build_in_plex", "type": "select", "default": "false", "label": "Upcoming Shows: Build in Plex", "description": "Let UMTK create and update the Coming Soon shows collection directly in Plex, ordered by expected air date. Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
-    {"key": "upcoming_shows_plex_library", "type": "string", "default": "", "label": "Upcoming Shows: Plex Library", "description": "Which Plex library to build that collection in. Pre-filled with the first of your TV Libraries.", "section": "Plex Collections"},
-    {"key": "upcoming_shows_include_new_season_soon", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK New Season Soon", "description": "Also put TSSK's New Season Soon shows in the Coming Soon shows collection. Requires TSSK enabled with its New Season Soon category switched on. TSSK's own collection is unaffected.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
-    {"key": "upcoming_shows_include_upcoming_episode", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK Upcoming Episode", "description": "Also put TSSK's Upcoming Episode shows in the Coming Soon shows collection. Requires TSSK enabled with its Upcoming Episode category switched on.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
-    {"key": "upcoming_shows_include_upcoming_finale", "type": "select", "default": "false", "label": "Upcoming Shows: Include TSSK Upcoming Finale", "description": "Also put TSSK's Upcoming Finale shows in the Coming Soon shows collection. Requires TSSK enabled with its Upcoming Finale category switched on.", "section": "Plex Collections", "options": [{"value": "false", "label": "False"}, {"value": "true", "label": "True"}]},
+    # Coming Soon collections are a list-of-dicts managed via
+    # /api/config/coming_soon_collections, so they have no flat options here.
     # Trending (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
     {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
@@ -718,9 +713,13 @@ def register_routes(app):
         return jsonify({"ok": True})
 
     # ── Config: Trending lists ────────────────────────────────────────
+    def _library_names(value):
+        """Every entry of a comma-separated Plex library setting."""
+        return [n.strip() for n in str(value or '').split(',') if n.strip()]
+
     def _first_library(value):
         """First entry of a comma-separated Plex library setting."""
-        names = [n.strip() for n in str(value or '').split(',') if n.strip()]
+        names = _library_names(value)
         return names[0] if names else ''
 
     @app.route("/api/config/trending_lists")
@@ -814,6 +813,110 @@ def register_routes(app):
 
         # Remove legacy flat keys if present (migrated to trending_lists)
         for old_key in LEGACY_TRENDING_KEYS:
+            config.pop(old_key, None)
+
+        _save_yaml(webui._config_path, config)
+        return jsonify({"ok": True})
+
+    # ── Config: Coming Soon collections ───────────────────────────────
+    def _instance_names(config, key):
+        return [str(i.get('name') or '').strip()
+                for i in (config.get(key) or []) if isinstance(i, dict)
+                and str(i.get('name') or '').strip()]
+
+    @app.route("/api/config/coming_soon_collections")
+    def api_config_coming_soon_collections():
+        from umtk.config_loader import normalize_instances, normalize_coming_soon
+
+        config = normalize_coming_soon(normalize_instances(_load_yaml(webui._config_path)))
+        # The UMTK page can't assume the Connections page has been loaded, so the
+        # card editor gets its library/instance choices from here.
+        return jsonify({
+            "coming_soon_collections": config.get('coming_soon_collections', []),
+            "libraries": {
+                "movie": _library_names(config.get('movie_libraries')),
+                "tv": _library_names(config.get('tv_libraries')),
+            },
+            "instances": {
+                "movie": _instance_names(config, 'radarr_instances'),
+                "tv": _instance_names(config, 'sonarr_instances'),
+            },
+        })
+
+    @app.route("/api/config/coming_soon_collections", methods=["POST"])
+    def api_save_coming_soon_collections():
+        from umtk.config_loader import (normalize_instances, LEGACY_COMING_SOON_KEYS)
+
+        config = _load_yaml(webui._config_path)
+        data = request.get_json() or {}
+        new_collections = data.get('coming_soon_collections', [])
+        if not isinstance(new_collections, list):
+            return jsonify({"ok": False, "error": "coming_soon_collections must be a list"}), 400
+
+        normalized = normalize_instances(dict(config))
+        available_libraries = {
+            'movie': _library_names(config.get('movie_libraries')),
+            'tv': _library_names(config.get('tv_libraries')),
+        }
+        available_instances = {
+            'movie': _instance_names(normalized, 'radarr_instances'),
+            'tv': _instance_names(normalized, 'sonarr_instances'),
+        }
+
+        def _picked(values, available):
+            """Keep the submitted names that still exist, in configured order."""
+            wanted = {str(v).strip() for v in values if str(v).strip()} \
+                if isinstance(values, (list, tuple)) else set()
+            return [name for name in available if name in wanted]
+
+        seen_targets = set()
+        cleaned = []
+        for entry in new_collections:
+            if not isinstance(entry, dict):
+                return jsonify({"ok": False, "error": "Each collection must be an object"}), 400
+
+            name = (entry.get('name') or '').strip()
+            if not name:
+                return jsonify({"ok": False, "error": "All collections must have a name"}), 400
+
+            coll_type = entry.get('type')
+            if coll_type not in ('movie', 'tv'):
+                return jsonify({"ok": False, "error": f"Collection '{name}' has an invalid type"}), 400
+
+            libraries = _picked(entry.get('libraries'), available_libraries[coll_type])
+            if not libraries:
+                return jsonify({"ok": False, "error": f"Collection '{name}': select at least one Plex library"}), 400
+
+            # The same name in two libraries is fine (one collection each); the
+            # same name twice in one library would be two entries fighting over it.
+            for library in libraries:
+                target = (library, name.lower())
+                if target in seen_targets:
+                    return jsonify({"ok": False, "error": f"Two collections named '{name}' target the Plex library '{library}'"}), 400
+                seen_targets.add(target)
+
+            instances = _picked(entry.get('instances'), available_instances[coll_type])
+            # All of them selected is stored as "all", so an instance added later
+            # feeds this collection too instead of being silently left out.
+            if instances == available_instances[coll_type]:
+                instances = []
+
+            cleaned_entry = {
+                'name': name,
+                'type': coll_type,
+                'libraries': libraries,
+                'instances': instances,
+            }
+            if coll_type == 'tv':
+                for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
+                    key = f'include_{flag}'
+                    cleaned_entry[key] = str(entry.get(key, False)).lower() == 'true'
+            cleaned.append(cleaned_entry)
+
+        config['coming_soon_collections'] = cleaned
+
+        # Remove legacy flat keys if present (migrated to coming_soon_collections)
+        for old_key in LEGACY_COMING_SOON_KEYS:
             config.pop(old_key, None)
 
         _save_yaml(webui._config_path, config)

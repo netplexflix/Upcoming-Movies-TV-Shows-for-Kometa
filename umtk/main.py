@@ -745,14 +745,16 @@ def main(config=None, localization=None, collector=None):
 
                     # Generate TV YML files
                     if tv_method > 0 or tv_trending_lists:
-                        # Hand the caller the union across instances. Split mode
-                        # writes one file per instance but they all declare the
-                        # same collection name, so one merged list is correct
-                        # for the Plex collection either way.
+                        # Hand the caller this run's shows grouped per instance,
+                        # so a Coming Soon collection can be restricted to the
+                        # instances it was configured for. Deduping happens per
+                        # collection, once the groups have been filtered.
                         if collector is not None:
-                            collector['upcoming_shows'] = (
-                                dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
-                                + dedupe_by_key([r['aired_shows'] for r in tv_instance_results], 'tvdbId'))
+                            collector['upcoming_shows'] = [
+                                {'instance': r['name'],
+                                 'items': r['future_shows'] + r['aired_shows']}
+                                for r in tv_instance_results
+                            ]
 
                         if output_mode == 'combined' or len(tv_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
@@ -1333,11 +1335,13 @@ def main(config=None, localization=None, collector=None):
 
                     # Generate Movie YML files
                     if movie_method > 0 or movie_trending_lists:
-                        # See the TV note above - one merged list regardless of mode.
+                        # See the TV note above - grouped per instance.
                         if collector is not None:
-                            collector['upcoming_movies'] = (
-                                dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')
-                                + dedupe_by_key([r['released_movies'] for r in movie_instance_results], 'tmdbId'))
+                            collector['upcoming_movies'] = [
+                                {'instance': r['name'],
+                                 'items': r['future_movies'] + r['released_movies']}
+                                for r in movie_instance_results
+                            ]
 
                         if output_mode == 'combined' or len(movie_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')

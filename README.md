@@ -447,6 +447,38 @@ Setting **`build_in_plex: true`** on a list makes UMTK build that collection dir
 > [!IMPORTANT]
 > UMTK still writes the Kometa collection YAML for the list, unchanged. If your Kometa config also builds that collection, both will manage it and overwrite each other's contents and order on every run. When you enable `build_in_plex`, remove the collection yml from your Kometa config and disable the sort_title edits if you previously used them.
 
+#### Coming Soon collections
+
+**`coming_soon_collections`** does the same for your upcoming movies and shows: UMTK builds these collections in Plex itself, ordered by expected release date (movies) or expected air date (shows), oldest first. Add as many as you want — one per Plex library, per Arr instance, or any mix. Each entry has:
+
+- **name:** the Plex collection name
+- **type:** `movie` or `tv`
+- **libraries:** which Plex libraries to build it in. The same collection is created in each one.
+- **instances:** which Radarr (movies) / Sonarr (tv) instances to take items from. Leave empty for all of them, so instances you add later are included automatically.
+- **include_new_season_soon / include_upcoming_episode / include_upcoming_finale:** `tv` only. Also puts TSSK's shows from those categories in the collection, interleaved by air date. Requires TSSK enabled with the matching `process_` option on. TSSK's own collections and labels are not affected.
+
+```yaml
+coming_soon_collections:
+  - name: Movies Coming Soon
+    type: movie
+    libraries: [Movies]
+    instances: []
+  - name: 4K Movies Coming Soon
+    type: movie
+    libraries: [4K Movies]
+    instances: [Radarr4K]
+  - name: TV Shows Coming Soon
+    type: tv
+    libraries: [TV Shows, Anime]
+    instances: []
+    include_new_season_soon: true
+    include_upcoming_episode: false
+    include_upcoming_finale: true
+```
+
+> [!IMPORTANT]
+> Same as above: UMTK keeps writing `UMTK_MOVIES_UPCOMING_COLLECTION.yml` / `UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml` for Kometa. Remove them from your Kometa config so both don't manage the same collection.
+
 ### Overlay & Collection Settings:
 
 The remaining settings customize the output .yml files for Kometa.

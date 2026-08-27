@@ -355,13 +355,15 @@ def run_tssk(config, localization=None, collector=None):
             print(f"{GREEN}TSSK YAML files created for instance '{result['name']}'{RESET}")
 
     # Hand caller the three upcoming categories (merged across instances) so UMTK can optionally merge them in its Coming Soon Plex collection.
+    # Grouped per instance so a Coming Soon collection can be restricted to the
+    # Sonarr instances it was configured for; deduping happens per collection.
     if collector is not None:
-        collector['tssk_new_season_soon'] = dedupe_by_key(
-            [r['matched_shows'] for r in instance_results], 'tvdbId')
-        collector['tssk_upcoming_episode'] = dedupe_by_key(
-            [r['upcoming_eps'] for r in instance_results], 'tvdbId')
-        collector['tssk_upcoming_finale'] = dedupe_by_key(
-            [r['finale_eps'] for r in instance_results], 'tvdbId')
+        for collector_key, result_key in (('tssk_new_season_soon', 'matched_shows'),
+                                          ('tssk_upcoming_episode', 'upcoming_eps'),
+                                          ('tssk_upcoming_finale', 'finale_eps')):
+            collector[collector_key] = [
+                {'instance': r['name'], 'items': r[result_key]} for r in instance_results
+            ]
 
     # Update Plex sort titles (uses merged data from all instances)
     merged_all_series_for_plex = dedupe_by_key([r['all_series'] for r in instance_results], 'tvdbId')

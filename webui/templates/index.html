@@ -538,6 +538,29 @@ select { min-width: 120px; }
     width: 100%;
 }
 
+/* Multi-pick rows (Coming Soon libraries / instances / TSSK categories) */
+.cs-check-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 2px 0;
+}
+
+.custom-var-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.custom-var-check input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
 .btn-add-instance {
     background: none;
     border: 1px dashed var(--border);
@@ -1867,6 +1890,12 @@ let _trendingListsData = [];
    library fields on the trending cards and the Coming Soon settings. */
 let _defaultPlexLibraries = { movie: '', tv: '' };
 
+/* ── Coming Soon collections editor state ─────────────────────────────── */
+let _comingSoonData = [];
+/* Libraries / Arr instances to choose from, served by the API so this page
+   doesn't have to depend on the Connections page having been opened. */
+let _comingSoonChoices = { libraries: { movie: [], tv: [] }, instances: { movie: [], tv: [] } };
+
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
     try {
@@ -2333,6 +2362,17 @@ async function fetchUmtk() {
                 _defaultPlexLibraries = listsData.default_libraries || { movie: '', tv: '' };
             }
         } catch (e) { /* silent */ }
+        try {
+            const csRes = await apiFetch('/api/config/coming_soon_collections');
+            if (csRes.ok) {
+                const csData = await csRes.json();
+                _comingSoonData = csData.coming_soon_collections || [];
+                _comingSoonChoices = {
+                    libraries: csData.libraries || { movie: [], tv: [] },
+                    instances: csData.instances || { movie: [], tv: [] },
+                };
+            }
+        } catch (e) { /* silent */ }
         _umtkLoaded = true;
         renderUmtkSettings();
         _snapshotPage('umtk');
@@ -2354,7 +2394,7 @@ function renderUmtkSettings() {
         trendingOpts.appendChild(wrap);
         renderTrendingLists();
     }
-    wirePlexLibraryFields();
+    renderComingSoonSection();
     renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
     renderOptionSections(umtkData.webhook || [], document.getElementById('umtk-webhook'), null);
     /* Wire the preset dropdown to pre-fill the webhook fields. */
@@ -2362,28 +2402,161 @@ function renderUmtkSettings() {
     if (presetSel) presetSel.addEventListener('change', () => applyWebhookPreset(presetSel.value));
 }
 
-/* ── Coming Soon "Build in Plex" library fields ── */
-const PLEX_LIBRARY_FIELDS = [
-    { toggle: 'upcoming_movies_build_in_plex', input: 'upcoming_movies_plex_library', type: 'movie' },
-    { toggle: 'upcoming_shows_build_in_plex', input: 'upcoming_shows_plex_library', type: 'tv' },
-];
 
-function wirePlexLibraryFields() {
-    const scope = document.getElementById('page-umtk');
-    if (!scope) return;
-    PLEX_LIBRARY_FIELDS.forEach(field => {
-        const toggle = scope.querySelector(`[data-key="${field.toggle}"]`);
-        const input = scope.querySelector(`[data-key="${field.input}"]`);
-        if (!toggle || !input) return;
-        const fallback = _defaultPlexLibraries[field.type] || '';
-        input.placeholder = fallback;
-        const sync = () => {
-            const enabled = toggle.value === 'true';
-            input.disabled = !enabled;
-            if (enabled && !input.value) input.value = fallback;
-        };
-        toggle.addEventListener('change', () => { sync(); _checkDirty('umtk'); });
-        sync();
+
+/* ── Coming Soon collections management ───────────────────────────────── */
+
+/* The Plex Collections section has no flat settings of its own, so
+   renderOptionSections() never emits it - build the wrapper here. */
+function renderComingSoonSection() {
+    const container = document.getElementById('umtk-sections');
+    if (!container) return;
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    section.innerHTML = `<h2>Plex Collections</h2>
+        <div class="setting-desc" style="margin-bottom:12px">Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date. Make sure to remove the matching collection yml from your Kometa config, and optionally disable sort_title edits.</div>
+        <div class="instance-cards" id="coming-soon-cards"></div>
+        <button class="btn-add-instance" onclick="addComingSoonCollection()">+ Add Collection</button>`;
+    container.appendChild(section);
+    renderComingSoonCollections();
+    /* The section is appended after renderOptionSections wired the Enable UMTK
+       toggle, so re-fire it to have the new section follow the toggle too. */
+    const enableToggle = container.querySelector('[data-key="enable_umtk"]');
+    if (enableToggle) enableToggle.dispatchEvent(new Event('change'));
+}
+
+function renderComingSoonCollections() {
+    const container = document.getElementById('coming-soon-cards');
+    if (!container) return;
+    container.innerHTML = _comingSoonData.map((c, idx) => renderComingSoonCard(idx, c)).join('');
+}
+
+/* A checkbox per available library / instance. Checkboxes (unlike the tag
+   control) are picked up by the page snapshot, so dirty tracking just works. */
+function comingSoonCheckboxes(idx, field, available, selected, emptyText) {
+    if (!available.length) {
+        return `<span class="setting-desc">${escapeHtml(emptyText)}</span>`;
+    }
+    return available.map(nm => `<label class="custom-var-check">
+        <input type="checkbox" data-cs-field="${field}" value="${escapeAttr(nm)}"${selected.includes(nm) ? ' checked' : ''}>
+        <span>${escapeHtml(nm)}</span>
+    </label>`).join('');
+}
+
+function renderComingSoonCard(idx, c) {
+    const type = c.type === 'tv' ? 'tv' : 'movie';
+    const nameVal = escapeAttr(c.name || '');
+    const libraries = _comingSoonChoices.libraries[type] || [];
+    const instances = _comingSoonChoices.instances[type] || [];
+    const pickedLibraries = Array.isArray(c.libraries) ? c.libraries : [];
+    /* Stored empty means "every instance", so show them all ticked. */
+    const pickedInstances = (Array.isArray(c.instances) && c.instances.length)
+        ? c.instances : instances;
+    const arrLabel = type === 'tv' ? 'Sonarr' : 'Radarr';
+
+    const tsskFields = type !== 'tv' ? '' : `
+            <div class="instance-field full-width">
+                <label>Also include from TSSK</label>
+                <div class="cs-check-group">
+                    ${[['include_new_season_soon', 'New Season Soon'],
+                       ['include_upcoming_episode', 'Upcoming Episode'],
+                       ['include_upcoming_finale', 'Upcoming Finale']].map(([key, label]) =>
+                        `<label class="custom-var-check">
+                            <input type="checkbox" data-cs-field="${key}"${String(c[key]).toLowerCase() === 'true' ? ' checked' : ''}>
+                            <span>${label}</span>
+                        </label>`).join('')}
+                </div>
+                <span class="setting-desc">Only contributes when TSSK is enabled with the matching category switched on.</span>
+            </div>`;
+
+    return `<div class="instance-card" data-cs-idx="${idx}">
+        <div class="instance-card-header">
+            <span class="instance-card-title">${escapeHtml(c.name || 'New Collection')}</span>
+            <div class="instance-card-actions">
+                <button class="btn-remove-instance" onclick="removeComingSoonCollection(${idx})">Remove</button>
+            </div>
+        </div>
+        <div class="instance-fields">
+            <div class="instance-field">
+                <label>Name</label>
+                <input type="text" data-cs-field="name" value="${nameVal}" placeholder="e.g. Movies Coming Soon" oninput="updateComingSoonField(${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Collection';">
+            </div>
+            <div class="instance-field">
+                <label>Type</label>
+                <select data-cs-field="type" onchange="onComingSoonTypeChange(${idx}, this)">
+                    <option value="movie"${type === 'movie' ? ' selected' : ''}>Movies</option>
+                    <option value="tv"${type === 'tv' ? ' selected' : ''}>TV Shows</option>
+                </select>
+            </div>
+            <div class="instance-field full-width">
+                <label>Plex Libraries</label>
+                <div class="cs-check-group">${comingSoonCheckboxes(idx, 'libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`)}</div>
+            </div>
+            <div class="instance-field full-width">
+                <label>${arrLabel} Instances</label>
+                <div class="cs-check-group">${comingSoonCheckboxes(idx, 'instances', instances, pickedInstances, `No ${arrLabel} instances configured — add them on the Connections page.`)}</div>
+            </div>${tsskFields}
+        </div>
+    </div>`;
+}
+
+/* Switching type changes which libraries, instances and extra fields apply, so
+   re-render the cards with that type's choices pre-selected. */
+function onComingSoonTypeChange(idx, select) {
+    gatherComingSoonFromDOM();
+    const entry = _comingSoonData[idx];
+    if (entry) {
+        entry.type = select.value === 'tv' ? 'tv' : 'movie';
+        const libraries = _comingSoonChoices.libraries[entry.type] || [];
+        entry.libraries = libraries.slice(0, 1);
+        entry.instances = [];
+    }
+    renderComingSoonCollections();
+    _checkDirty('umtk');
+}
+
+function addComingSoonCollection() {
+    gatherComingSoonFromDOM();
+    const libraries = _comingSoonChoices.libraries.movie || [];
+    _comingSoonData.push({
+        name: 'Movies Coming Soon', type: 'movie',
+        libraries: libraries.slice(0, 1), instances: [],
+        include_new_season_soon: false, include_upcoming_episode: false,
+        include_upcoming_finale: false,
+    });
+    renderComingSoonCollections();
+    _checkDirty('umtk');
+}
+
+function removeComingSoonCollection(idx) {
+    const name = _comingSoonData[idx]?.name || 'this collection';
+    if (!confirm(`Remove ${name}?`)) return;
+    gatherComingSoonFromDOM();
+    _comingSoonData.splice(idx, 1);
+    renderComingSoonCollections();
+    _checkDirty('umtk');
+}
+
+function updateComingSoonField(idx, field, value) {
+    if (_comingSoonData[idx]) _comingSoonData[idx][field] = value;
+    _checkDirty('umtk');
+}
+
+function gatherComingSoonFromDOM() {
+    document.querySelectorAll('.instance-card[data-cs-idx]').forEach(card => {
+        const entry = _comingSoonData[parseInt(card.dataset.csIdx)];
+        if (!entry) return;
+        card.querySelectorAll('[data-cs-field]').forEach(input => {
+            const field = input.dataset.csField;
+            if (field === 'libraries' || field === 'instances') return;  /* handled below */
+            if (input.type === 'checkbox') entry[field] = input.checked;
+            else entry[field] = input.value;
+        });
+        ['libraries', 'instances'].forEach(field => {
+            const boxes = card.querySelectorAll(`[data-cs-field="${field}"]`);
+            if (!boxes.length) return;
+            entry[field] = Array.from(boxes).filter(b => b.checked).map(b => b.value);
+        });
     });
 }
 
@@ -2659,6 +2832,7 @@ async function saveUmtk() {
     const blocks = gatherBlocks('umtk');
     const webhook = gatherOptionValues(umtkData.webhook || [], scopeEl);
     gatherTrendingListsFromDOM();
+    gatherComingSoonFromDOM();
     try {
         const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
@@ -2670,13 +2844,19 @@ async function saveUmtk() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ trending_lists: _trendingListsData }),
         });
-        if (res.ok && listsRes.ok) {
+        const csRes = await apiFetch('/api/config/coming_soon_collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coming_soon_collections: _comingSoonData }),
+        });
+        if (res.ok && listsRes.ok && csRes.ok) {
             showToast('UMTK settings saved', 'success');
             _snapshotPage('umtk');
         } else {
             let msg = 'Failed to save';
             try {
-                const err = await (res.ok ? listsRes : res).json();
+                const failed = !res.ok ? res : (!listsRes.ok ? listsRes : csRes);
+                const err = await failed.json();
                 if (err && err.error) msg = err.error;
             } catch (e) {}
             showToast(msg, 'error');

@@ -81,6 +81,18 @@ LEGACY_TRENDING_KEYS = (
     'trending_root_movies', 'trending_root_tv',
 )
 
+# Legacy flat Coming Soon keys, superseded by the coming_soon_collections
+# list-of-dicts (which supports several collections, libraries and instances).
+LEGACY_COMING_SOON_KEYS = (
+    'upcoming_movies_build_in_plex', 'upcoming_movies_plex_library',
+    'upcoming_shows_build_in_plex', 'upcoming_shows_plex_library',
+    'upcoming_shows_include_new_season_soon',
+    'upcoming_shows_include_upcoming_episode',
+    'upcoming_shows_include_upcoming_finale',
+)
+
+COMING_SOON_DEFAULT_NAMES = {'movie': 'Movies Coming Soon', 'tv': 'TV Shows Coming Soon'}
+
 
 def normalize_trending(config):
     """Convert legacy flat trending/mdblist keys into a trending_lists list.
@@ -154,6 +166,68 @@ def normalize_trending(config):
     return config
 
 
+def _as_name_list(value):
+    """A YAML list / comma-separated string / single value as a list of names."""
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    return [n.strip() for n in str(value or '').split(',') if n.strip()]
+
+
+def normalize_coming_soon(config):
+    """Convert the legacy flat Coming Soon keys into coming_soon_collections.
+
+    Mirrors normalize_trending(): in-memory only, the YAML file on disk is never
+    rewritten here. The old keys allowed exactly one movie and one TV collection,
+    each in one library and fed by every instance; each enabled one becomes a
+    single entry keeping the collection name Kometa/UMTK already used, so a
+    collection that is already in Plex is adopted rather than orphaned.
+    """
+    if config is None:
+        return config
+
+    if 'coming_soon_collections' in config:
+        collections = config.get('coming_soon_collections') or []
+    elif any(key in config for key in LEGACY_COMING_SOON_KEYS):
+        collections = []
+        for kind, block_key in (('movie', 'collection_upcoming_movies'),
+                                ('tv', 'collection_upcoming_shows')):
+            prefix = 'upcoming_movies' if kind == 'movie' else 'upcoming_shows'
+            if str(config.get(f'{prefix}_build_in_plex', 'false')).lower() != 'true':
+                continue
+
+            block = config.get(block_key)
+            name = (block.get('collection_name') if isinstance(block, dict) else None)
+
+            entry = {
+                'name': name or COMING_SOON_DEFAULT_NAMES[kind],
+                'type': kind,
+                'libraries': _as_name_list(config.get(f'{prefix}_plex_library')),
+                'instances': [],  # the flat keys always used every instance
+            }
+            if kind == 'tv':
+                for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
+                    entry[f'include_{flag}'] = str(
+                        config.get(f'upcoming_shows_include_{flag}', 'false')).lower() == 'true'
+            collections.append(entry)
+
+        config['coming_soon_collections'] = collections
+    else:
+        collections = []
+
+    for entry in collections:
+        if not isinstance(entry, dict):
+            continue
+        entry.setdefault('type', 'movie')
+        entry.setdefault('name', COMING_SOON_DEFAULT_NAMES.get(entry.get('type'),
+                                                               COMING_SOON_DEFAULT_NAMES['movie']))
+        entry['libraries'] = _as_name_list(entry.get('libraries'))
+        entry['instances'] = _as_name_list(entry.get('instances'))
+        for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
+            entry.setdefault(f'include_{flag}', False)
+
+    return config
+
+
 # Backwards-compatible "REQUESTED" trending overlay blocks.
 TRENDING_REQUESTED_SOURCES = {
     'backdrop_trending_movies_requested': 'backdrop_upcoming_movies_released',
@@ -223,6 +297,7 @@ def load_config(file_path=None):
             config = yaml.safe_load(file)
         config = normalize_instances(config)
         config = normalize_trending(config)
+        config = normalize_coming_soon(config)
         added = ensure_trending_requested_blocks(config)
         if added:
             _append_blocks_to_config(file_path, config, added)
