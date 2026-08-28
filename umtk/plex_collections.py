@@ -2,6 +2,8 @@
 Direct Plex collection management for UMTK trending lists.
 """
 
+import time
+
 import requests
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
@@ -12,6 +14,11 @@ from .plex_integration import get_plex_libraries, get_plex_library_items, _plex_
 PLEX_TYPE_MOVIE = 1
 PLEX_TYPE_SHOW = 2
 COLLECTION_SORT_CUSTOM = 2
+
+# Plex needs a moment to index placeholders/trailers UMTK just wrote, so items
+# can be missing on the first look. Same wait as the sort-title pass in
+# plex_integration.py, driven by the same metadata_retry_limit setting.
+PLEX_ITEM_RETRY_WAIT = 60
 
 
 def _headers(plex_token):
@@ -450,62 +457,137 @@ def _sync_collection(plex_url, plex_token, machine_id, library_key, library_name
           f"+{added} added, -{removed} removed, {moves} reordered{RESET}")
 
 
-def _sync_one(plex_url, plex_token, machine_id, libraries, library_items_cache,
-              lst, config, debug=False):
-    """Create or update one trending list's collection in Plex."""
-    label = f"Trending list '{lst.get('name') or 'Unnamed list'}'"
+def _resolve_targets(libraries, config, specs, debug=False):
+    """Pair every spec with each Plex library it builds in.
+
+    Done once, before any waiting: which libraries exist cannot change while we
+    wait for Plex to index, and this keeps the warnings to a single printing.
+    """
+    targets = []
+    for spec in specs:
+        for library_name in spec['library_names']:
+            resolved_name, library = _resolve_library(
+                libraries, library_name, spec['type'],
+                spec['label'](library_name), config, debug)
+            if library:
+                targets.append({'spec': spec, 'library': library,
+                                'library_name': resolved_name})
+    return targets
+
+
+def _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
+                wait_for_items=False, debug=False):
+    """Resolve every spec against Plex and sync the resulting collections.
+
+    Items UMTK wrote this run may not be indexed by Plex yet. When that is
+    possible (wait_for_items), retry the lookup the way the sort-title pass does
+    - up to metadata_retry_limit times, a minute apart - so a placeholder that
+    lands late still makes it into the collection on this run. One shared wait
+    covers every collection rather than one wait each.
+    """
+    targets = _resolve_targets(libraries, config, specs, debug)
+    if not targets:
+        return
+
+    try:
+        max_retries = int(config.get('metadata_retry_limit', 4))
+    except (TypeError, ValueError):
+        max_retries = 4
+
+    # Several targets can share a library and that fetch pulls a whole section,
+    # so cache it - and drop the cache between attempts to force a fresh read.
+    library_items_cache = {}
+    attempt = 0
+
+    while True:
+        for target in targets:
+            plex_items = _library_items(plex_url, plex_token, target['library']['key'],
+                                        library_items_cache, debug)
+            by_tmdb, by_tvdb = _build_id_index(plex_items)
+            target['desired'], target['missing'] = target['spec']['resolve'](by_tmdb, by_tvdb)
+
+        missing = [(t['spec']['label'](t['library_name']), title)
+                   for t in targets for title in t['missing']]
+        if not missing:
+            break
+
+        if not wait_for_items:
+            if debug:
+                print(f"{BLUE}[DEBUG] Not waiting for Plex to index - no new files "
+                      f"were written this run{RESET}")
+            break
+
+        if attempt >= max_retries:
+            print(f"{RED}The following item(s) could not be found in Plex after "
+                  f"{max_retries + 1} attempts:{RESET}")
+            for label, title in missing:
+                print(f"  - {title} ({label})")
+            break
+
+        attempt += 1
+        print(f"{ORANGE}The following {len(missing)} item(s) are not yet present in Plex:{RESET}")
+        for label, title in missing:
+            print(f"  - {title} ({label})")
+        print(f"{ORANGE}Waiting 1 minute before retry ({attempt}/{max_retries})...{RESET}",
+              flush=True)
+        time.sleep(PLEX_ITEM_RETRY_WAIT)
+        library_items_cache.clear()
+
+    for target in targets:
+        spec = target['spec']
+        label = spec['label'](target['library_name'])
+
+        # Already listed above when we waited for them.
+        if target['missing'] and not wait_for_items:
+            print(f"{ORANGE}{label}: {len(target['missing'])} item(s) not in this "
+                  f"library yet:{RESET}")
+            for title in target['missing']:
+                print(f"  - {title}")
+
+        if not target['desired']:
+            print(f"{ORANGE}{label}: none of the items are in this library - "
+                  f"leaving collection '{spec['name']}' untouched{RESET}")
+            continue
+
+        _sync_collection(plex_url, plex_token, machine_id, target['library']['key'],
+                         target['library_name'], spec['type'], spec['name'],
+                         target['desired'], debug)
+
+
+def _trending_spec(lst, config):
+    """Turn a trending list into a spec for _sync_specs."""
+    list_name = lst.get('name') or 'Unnamed list'
     expected_type = 'show' if lst.get('type') == 'tv' else 'movie'
 
-    library_name, library = _resolve_library(
-        libraries, lst.get('plex_library'), expected_type, label, config, debug)
-    if not library:
-        return
-
-    plex_items = _library_items(plex_url, plex_token, library['key'],
-                                library_items_cache, debug)
-    by_tmdb, by_tvdb = _build_id_index(plex_items)
-
-    desired, missing = _resolve_items(lst, by_tmdb, by_tvdb)
-
-    if missing:
-        print(f"{ORANGE}{label}: {len(missing)} item(s) not in Plex "
-              f"library '{library_name}' yet:{RESET}")
-        for title in missing:
-            print(f"  - {title}")
-
-    collection_name = trending_collection_name(config, lst)
-    if not desired:
-        print(f"{ORANGE}{label}: none of the items are in Plex — "
-              f"leaving collection '{collection_name}' untouched{RESET}")
-        return
-
-    _sync_collection(plex_url, plex_token, machine_id, library['key'], library_name,
-                     expected_type, collection_name, desired, debug)
+    return {
+        'name': trending_collection_name(config, lst),
+        'type': expected_type,
+        'library_names': [(lst.get('plex_library') or '').strip()],
+        'label': lambda _library_name, n=list_name: f"Trending list '{n}'",
+        'resolve': lambda by_tmdb, by_tvdb, l=lst: _resolve_items(l, by_tmdb, by_tvdb),
+    }
 
 
-def sync_trending_collections(plex_url, plex_token, lists, config, debug=False):
+def sync_trending_collections(plex_url, plex_token, lists, config, debug=False,
+                              wait_for_items=False):
     """Build/update the Plex collections of every trending list with build_in_plex."""
     if not lists:
         return
 
     machine_id = get_plex_machine_identifier(plex_url, plex_token, debug)
     if not machine_id:
-        print(f"{RED}Could not determine the Plex machine identifier — "
+        print(f"{RED}Could not determine the Plex machine identifier - "
               f"skipping collection building{RESET}")
         return
 
     libraries = get_plex_libraries(plex_url, plex_token, debug)
     if not libraries:
-        print(f"{RED}Could not fetch Plex libraries — skipping collection building{RESET}")
+        print(f"{RED}Could not fetch Plex libraries - skipping collection building{RESET}")
         return
 
-    # Several lists can target the same library and that fetch pulls a whole
-    # section, so keep the results around for the duration of the run.
-    library_items_cache = {}
-
-    for lst in lists:
-        _sync_one(plex_url, plex_token, machine_id, libraries, library_items_cache,
-                  lst, config, debug)
+    specs = [_trending_spec(lst, config) for lst in lists]
+    _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
+                wait_for_items, debug)
 
 
 # ── Coming Soon collections ───────────────────────────────────────────────
@@ -611,58 +693,43 @@ def _entry_libraries(entry, config):
     return [fallback] if fallback else []
 
 
-def _sync_coming_soon_entry(plex_url, plex_token, machine_id, libraries,
-                            library_items_cache, config, entry, collector, debug=False):
-    """Build/update one configured Coming Soon collection in every library it names."""
+def _coming_soon_spec(entry, config, collector, debug=False):
+    """Turn one coming_soon_collections entry into a spec for _sync_specs."""
     name = entry.get('name')
     expected_type = 'show' if entry.get('type') == 'tv' else 'movie'
     id_key = 'tvdbId' if expected_type == 'show' else 'tmdbId'
 
     if not name:
-        print(f"{ORANGE}Coming Soon collection without a name — skipping{RESET}")
-        return
+        print(f"{ORANGE}Coming Soon collection without a name - skipping{RESET}")
+        return None
 
     items = _collection_items(entry, collector, debug)
     if not items:
         print(f"{ORANGE}Coming Soon '{name}': nothing to put in the collection this run{RESET}")
-        return
+        return None
 
-    target_libraries = _entry_libraries(entry, config)
-    if not target_libraries:
-        print(f"{ORANGE}Coming Soon '{name}': no Plex library configured — "
+    library_names = _entry_libraries(entry, config)
+    if not library_names:
+        print(f"{ORANGE}Coming Soon '{name}': no Plex library configured - "
               f"skipping collection{RESET}")
-        return
+        return None
 
-    for library_name in target_libraries:
-        label = f"Coming Soon '{name}' ({library_name})"
-        resolved_name, library = _resolve_library(
-            libraries, library_name, expected_type, label, config, debug)
-        if not library:
-            continue
-
-        # ratingKeys are per library, so the id lookup has to run per library.
-        plex_items = _library_items(plex_url, plex_token, library['key'],
-                                    library_items_cache, debug)
-        by_tmdb, by_tvdb = _build_id_index(plex_items)
+    def resolve(by_tmdb, by_tvdb):
+        # ratingKeys are per library, so this runs once per target library.
         index = by_tvdb if id_key == 'tvdbId' else by_tmdb
+        return _resolve_by_id(items, index, id_key)
 
-        desired, missing = _resolve_by_id(items, index, id_key)
-
-        if missing:
-            print(f"{ORANGE}{label}: {len(missing)} item(s) not in this library yet:{RESET}")
-            for title in missing:
-                print(f"  - {title}")
-
-        if not desired:
-            print(f"{ORANGE}{label}: none of the items are in this library — "
-                  f"leaving the collection untouched{RESET}")
-            continue
-
-        _sync_collection(plex_url, plex_token, machine_id, library['key'], resolved_name,
-                         expected_type, name, desired, debug)
+    return {
+        'name': name,
+        'type': expected_type,
+        'library_names': library_names,
+        'label': lambda library_name, n=name: f"Coming Soon '{n}' ({library_name})",
+        'resolve': resolve,
+    }
 
 
-def sync_upcoming_collections(plex_url, plex_token, config, collector, debug=False):
+def sync_upcoming_collections(plex_url, plex_token, config, collector, debug=False,
+                              wait_for_items=False):
     """Build/update every configured Coming Soon collection directly in Plex.
 
     Each coming_soon_collections entry names its own collection, the libraries to
@@ -681,19 +748,17 @@ def sync_upcoming_collections(plex_url, plex_token, config, collector, debug=Fal
 
     machine_id = get_plex_machine_identifier(plex_url, plex_token, debug)
     if not machine_id:
-        print(f"{RED}Could not determine the Plex machine identifier — "
+        print(f"{RED}Could not determine the Plex machine identifier - "
               f"skipping collection building{RESET}")
         return
 
     libraries = get_plex_libraries(plex_url, plex_token, debug)
     if not libraries:
-        print(f"{RED}Could not fetch Plex libraries — skipping collection building{RESET}")
+        print(f"{RED}Could not fetch Plex libraries - skipping collection building{RESET}")
         return
 
-    # Several entries can target the same library and that fetch pulls a whole
-    # section, so keep the results around for the duration of the run.
-    library_items_cache = {}
-
-    for entry in entries:
-        _sync_coming_soon_entry(plex_url, plex_token, machine_id, libraries,
-                                library_items_cache, config, entry, collector, debug)
+    specs = [spec for spec in
+             (_coming_soon_spec(e, config, collector, debug) for e in entries)
+             if spec]
+    _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
+                wait_for_items, debug)

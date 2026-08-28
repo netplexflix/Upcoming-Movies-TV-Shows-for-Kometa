@@ -1493,11 +1493,17 @@ def main(config=None, localization=None, collector=None):
         plex_collection_lists = [l for l in (movie_trending_lists + tv_trending_lists)
                                  if str(l.get('build_in_plex', False)).lower() == "true"
                                  and l.get('_items')]
+        # Only worth waiting on Plex when UMTK actually wrote something this run;
+        # otherwise a missing item is missing for good and waiting just stalls.
+        new_files_written = new_tv_files_written + new_movie_files_written
+        if collector is not None:
+            collector['new_files_written'] = new_files_written
         if plex_collection_lists and plex_url and plex_token:
             print(f"\n{BLUE}{'=' * 50}{RESET}")
             print(f"{BLUE}Building trending collections in Plex...{RESET}")
             print(f"{BLUE}{'=' * 50}{RESET}\n")
-            sync_trending_collections(plex_url, plex_token, plex_collection_lists, config, debug)
+            sync_trending_collections(plex_url, plex_token, plex_collection_lists, config,
+                                      debug, wait_for_items=new_files_written > 0)
         elif plex_collection_lists and debug:
             print(f"{ORANGE}[DEBUG] Plex collection building skipped - missing plex_url or plex_token{RESET}")
 

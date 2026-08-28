@@ -124,7 +124,7 @@ UMTK_OPTIONS = [
     {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles", "description": "Add release dates to Plex sort titles", "section": "Plex Metadata"},
     {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
-    {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
+    {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
     # Coming Soon collections are a list-of-dicts managed via
     # /api/config/coming_soon_collections, so they have no flat options here.
     # Trending (per-list settings live in trending_lists, managed via
