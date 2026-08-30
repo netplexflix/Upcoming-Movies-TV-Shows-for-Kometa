@@ -368,7 +368,7 @@ radarr_instances:
 - **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
 - **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
 - **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
-- **metadata_retry_limit:** How many times to retry metadata edits. This gives Plex some time to pick up the newly created items.
+- **metadata_retry_limit:** How many times to retry, one minute apart, when items UMTK just created aren't in Plex yet. Applies to the metadata edits and to collections UMTK builds directly in Plex. Only used when UMTK actually wrote new placeholders/trailers that run.
 
 ### Radarr / Sonarr Instance Settings:
 
@@ -595,7 +595,7 @@ Each category has its own collection and overlay blocks, following the same patt
 
 UMTK can send an HTTP request whenever it creates a new file — a downloaded trailer **or** a copied placeholder video (for both upcoming and trending movies/shows). It **also** fires when the cleanup logic later removes a placeholder/trailer (e.g. the movie was downloaded, the show started airing, or the item dropped off the trending list), so the stale item gets picked up and removed from Plex too. (e.g. for triggering Autoscan/Autopulse/..)
 
-Enable it in the WebUI under **UMTK Settings → Webhook** (at the bottom of the page), or in `config.yml`. 
+Enable it in the WebUI on the **Webhooks** tab, or in `config.yml`. 
 
 The URL and Body support these substitution variables:
 

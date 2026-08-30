@@ -113,16 +113,32 @@ trending_lists:
     legacy_filenames: true
   
 ################################################################################
+##########              COMING SOON COLLECTIONS (PLEX):               ##########
+################################################################################
+# Collections UMTK creates and updates directly in Plex, ordered by expected
+# release date (movies) / air date (shows). Add as many as you want. Per entry:
+#   name:      the Plex collection name
+#   type:      movie | tv
+#   libraries: which Plex libraries to build it in
+#   instances: which Radarr/Sonarr instances to draw from (empty = all of them)
+#   include_*: tv only - also add TSSK's New Season Soon / Upcoming Episode /
+#              Upcoming Finale shows to the collection
+coming_soon_collections: []
+#  - name: Movies Coming Soon
+#    type: movie
+#    libraries: [Movies]
+#    instances: []
+#  - name: TV Shows Coming Soon
+#    type: tv
+#    libraries: [TV Shows]
+#    instances: []
+#    include_new_season_soon: false
+#    include_upcoming_episode: false
+#    include_upcoming_finale: false
+
+################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########
 ################################################################################
-upcoming_movies_build_in_plex: false
-upcoming_movies_plex_library: ''
-upcoming_shows_build_in_plex: false
-upcoming_shows_plex_library: ''
-upcoming_shows_include_new_season_soon: false
-upcoming_shows_include_upcoming_episode: false
-upcoming_shows_include_upcoming_finale: false
-
 collection_upcoming_movies:
   collection_name: "ComingSoon"
   item_label: Coming Soon

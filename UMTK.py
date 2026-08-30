@@ -192,7 +192,8 @@ def _run_inner():
             from umtk.plex_collections import sync_upcoming_collections
             debug = str(config.get('debug', 'false')).lower() == 'true'
             sync_upcoming_collections(config['plex_url'], config['plex_token'],
-                                      config, collector, debug)
+                                      config, collector, debug,
+                                      wait_for_items=bool(collector.get('new_files_written')))
         except Exception as e:
             print(f"\n{RED}Building the Coming Soon collections in Plex failed: {e}{RESET}")
 

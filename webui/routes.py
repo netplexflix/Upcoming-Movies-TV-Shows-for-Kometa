@@ -112,17 +112,17 @@ UMTK_OPTIONS = [
     {"key": "simplify_next_week_dates", "type": "bool", "default": True, "label": "Simplify Dates", "description": "Use 'today'/'tomorrow'/weekday names for near dates", "section": "General"},
     {"key": "skip_channels", "type": "string_list", "default": [], "label": "Skip Channels", "description": "YouTube channels to skip when searching trailers", "section": "General"},
     # Movies
-    {"key": "future_days_upcoming_movies", "type": "int", "default": 30, "label": "Future Days (Movies)", "description": "Days ahead to look for upcoming movies", "section": "Movies"},
-    {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies"},
-    {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies"},
-    {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies"},
+    {"key": "future_days_upcoming_movies", "type": "int", "default": 30, "label": "Future Days (Movies)", "description": "Days ahead to look for upcoming movies", "section": "Movies Coming Soon"},
+    {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies Coming Soon"},
+    {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies Coming Soon"},
+    {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies Coming Soon"},
     # TV Shows
-    {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows"},
-    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days back to look for newly premiered shows", "section": "TV Shows"},
-    {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows"},
+    {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows Coming Soon"},
+    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (Newly Premiered Shows)", "description": "Days back to look for newly premiered shows", "section": "TV Shows Coming Soon"},
+    {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows Coming Soon"},
     # Plex Metadata
-    {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles", "description": "Add release dates to Plex sort titles", "section": "Plex Metadata"},
-    {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
+    {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles (Coming Soon)", "description": "Add the expected release/air date to the Plex sort titles of Coming Soon movies and shows.", "section": "Plex Metadata"},
+    {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Titles (Trending)", "description": "Add the list rank to the Plex sort titles of trending items.", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
     # Coming Soon collections are a list-of-dicts managed via
@@ -139,29 +139,29 @@ TSSK_OPTIONS = [
     {"key": "skip_unmonitored", "type": "bool", "default": True, "label": "Skip Unmonitored", "description": "Skip unmonitored shows/episodes", "section": "General"},
     {"key": "ignore_finales_tags", "type": "string", "default": "ignorefinales", "label": "Ignore Finales Tags", "description": "Comma-separated Sonarr tags to exclude from finale detection", "section": "General"},
     # Sort title edits
-    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_upcoming_episode", "type": "bool", "default": False, "label": "Upcoming Episode", "description": "Edit sort titles for shows in the Upcoming Episode category.", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_upcoming_finale", "type": "bool", "default": False, "label": "Upcoming Finale", "description": "Edit sort titles for shows in the Upcoming Finale category.", "section": "Sort Titles"},
+    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles for TV Status Items", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Plex Metadata"},
+    {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
+    {"key": "edit_sort_titles_upcoming_episode", "type": "bool", "default": False, "label": "Upcoming Episode", "description": "Edit sort titles for shows in the Upcoming Episode category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
+    {"key": "edit_sort_titles_upcoming_finale", "type": "bool", "default": False, "label": "Upcoming Finale", "description": "Edit sort titles for shows in the Upcoming Finale category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
     # Process flags
-    {"key": "process_new_shows", "type": "bool", "default": True, "label": "New Shows", "description": "Process recently added new shows", "section": "Process Categories"},
-    {"key": "process_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Process shows with upcoming new seasons", "section": "Process Categories"},
-    {"key": "process_new_season_started", "type": "bool", "default": True, "label": "New Season Started", "description": "Process shows with recently started seasons", "section": "Process Categories"},
-    {"key": "process_upcoming_episode", "type": "bool", "default": True, "label": "Upcoming Episode", "description": "Process upcoming regular episodes", "section": "Process Categories"},
-    {"key": "process_upcoming_finale", "type": "bool", "default": True, "label": "Upcoming Finale", "description": "Process upcoming season finales", "section": "Process Categories"},
-    {"key": "process_season_finale", "type": "bool", "default": True, "label": "Season Finale", "description": "Process recently aired season finales", "section": "Process Categories"},
-    {"key": "process_final_episode", "type": "bool", "default": True, "label": "Final Episode", "description": "Process recently aired final episodes", "section": "Process Categories"},
-    {"key": "process_returning_shows", "type": "bool", "default": True, "label": "Returning Shows", "description": "Process returning (continuing) shows", "section": "Process Categories"},
-    {"key": "process_ended_shows", "type": "bool", "default": True, "label": "Ended Shows", "description": "Process ended shows", "section": "Process Categories"},
-    {"key": "process_canceled_shows", "type": "bool", "default": True, "label": "Canceled Shows", "description": "Process canceled shows", "section": "Process Categories"},
+    {"key": "process_new_shows", "type": "bool", "default": True, "label": "New Shows", "description": "Process recently added new shows", "section": "Process TV Show Categories"},
+    {"key": "process_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Process shows with upcoming new seasons", "section": "Process TV Show Categories"},
+    {"key": "process_new_season_started", "type": "bool", "default": True, "label": "New Season Started", "description": "Process shows with recently started seasons", "section": "Process TV Show Categories"},
+    {"key": "process_upcoming_episode", "type": "bool", "default": True, "label": "Upcoming Episode", "description": "Process upcoming regular episodes", "section": "Process TV Show Categories"},
+    {"key": "process_upcoming_finale", "type": "bool", "default": True, "label": "Upcoming Finale", "description": "Process upcoming season finales", "section": "Process TV Show Categories"},
+    {"key": "process_season_finale", "type": "bool", "default": True, "label": "Season Finale", "description": "Process recently aired season finales", "section": "Process TV Show Categories"},
+    {"key": "process_final_episode", "type": "bool", "default": True, "label": "Final Episode", "description": "Process recently aired final episodes", "section": "Process TV Show Categories"},
+    {"key": "process_returning_shows", "type": "bool", "default": True, "label": "Returning Shows", "description": "Process returning (continuing) shows", "section": "Process TV Show Categories"},
+    {"key": "process_ended_shows", "type": "bool", "default": True, "label": "Ended Shows", "description": "Process ended shows", "section": "Process TV Show Categories"},
+    {"key": "process_canceled_shows", "type": "bool", "default": True, "label": "Canceled Shows", "description": "Process canceled shows", "section": "Process TV Show Categories"},
     # Timeframes
-    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days to look back for new shows", "section": "Timeframes"},
-    {"key": "future_days_new_season", "type": "int", "default": 31, "label": "Future Days (New Season)", "description": "Days ahead for upcoming new seasons", "section": "Timeframes"},
-    {"key": "recent_days_new_season_started", "type": "int", "default": 7, "label": "Recent Days (Season Started)", "description": "Days to look back for started seasons", "section": "Timeframes"},
-    {"key": "future_days_upcoming_episode", "type": "int", "default": 31, "label": "Future Days (Episode)", "description": "Days ahead for upcoming episodes", "section": "Timeframes"},
-    {"key": "future_days_upcoming_finale", "type": "int", "default": 31, "label": "Future Days (Finale)", "description": "Days ahead for upcoming finales", "section": "Timeframes"},
-    {"key": "recent_days_season_finale", "type": "int", "default": 7, "label": "Recent Days (Season Finale)", "description": "Days to look back for season finales", "section": "Timeframes"},
-    {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "Timeframes"},
+    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days to look back for new shows", "section": "TV Show Timeframes"},
+    {"key": "future_days_new_season", "type": "int", "default": 31, "label": "Future Days (New Season)", "description": "Days ahead for upcoming new seasons", "section": "TV Show Timeframes"},
+    {"key": "recent_days_new_season_started", "type": "int", "default": 7, "label": "Recent Days (Season Started)", "description": "Days to look back for started seasons", "section": "TV Show Timeframes"},
+    {"key": "future_days_upcoming_episode", "type": "int", "default": 31, "label": "Future Days (Episode)", "description": "Days ahead for upcoming episodes", "section": "TV Show Timeframes"},
+    {"key": "future_days_upcoming_finale", "type": "int", "default": 31, "label": "Future Days (Finale)", "description": "Days ahead for upcoming finales", "section": "TV Show Timeframes"},
+    {"key": "recent_days_season_finale", "type": "int", "default": 7, "label": "Recent Days (Season Finale)", "description": "Days to look back for season finales", "section": "TV Show Timeframes"},
+    {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "TV Show Timeframes"},
 ]
 
 # ── Webhook (fire after a new placeholder/trailer is created) ───────────────
@@ -1219,9 +1219,9 @@ def register_routes(app):
         plex_token = config.get('plex_token', '')
         if plex_url and plex_token:
             ok, msg, ms = _test_connection(plex_url, token=plex_token, timeout=5)
-            services.append({'name': 'Plex', 'online': ok, 'message': msg, 'responseTime': ms})
+            services.append({'name': 'Plex', 'service': 'plex', 'online': ok, 'message': msg, 'responseTime': ms})
         else:
-            services.append({'name': 'Plex', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Plex', 'service': 'plex', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         radarr_instances = config.get('radarr_instances', [])
         if radarr_instances:
@@ -1231,11 +1231,11 @@ def register_routes(app):
                 inst_name = instance.get('name', 'Radarr')
                 if inst_url and inst_key:
                     ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
-                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                    services.append({'name': inst_name, 'service': 'radarr', 'online': ok, 'message': msg, 'responseTime': ms})
                 else:
-                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
+                    services.append({'name': inst_name, 'service': 'radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
-            services.append({'name': 'Radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Radarr', 'service': 'radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         sonarr_instances = config.get('sonarr_instances', [])
         if sonarr_instances:
@@ -1245,11 +1245,11 @@ def register_routes(app):
                 inst_name = instance.get('name', 'Sonarr')
                 if inst_url and inst_key:
                     ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
-                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                    services.append({'name': inst_name, 'service': 'sonarr', 'online': ok, 'message': msg, 'responseTime': ms})
                 else:
-                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
+                    services.append({'name': inst_name, 'service': 'sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
-            services.append({'name': 'Sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Sonarr', 'service': 'sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         services.append(_get_ytdlp_info())
 
