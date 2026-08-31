@@ -454,7 +454,7 @@ Setting **`build_in_plex: true`** on a list makes UMTK build that collection dir
 - **name:** the Plex collection name
 - **type:** `movie` or `tv`
 - **libraries:** which Plex libraries to build it in. The same collection is created in each one.
-- **instances:** which Radarr (movies) / Sonarr (tv) instances to take items from. Leave empty for all of them, so instances you add later are included automatically.
+- **instances:** which Radarr (movies) / Sonarr (tv) instances to take Coming Soon items from.
 - **include_new_season_soon / include_upcoming_episode / include_upcoming_finale:** `tv` only. Also puts TSSK's shows from those categories in the collection, interleaved by air date. Requires TSSK enabled with the matching `process_` option on. TSSK's own collections and labels are not affected.
 
 ```yaml
@@ -470,7 +470,7 @@ coming_soon_collections:
   - name: TV Shows Coming Soon
     type: tv
     libraries: [TV Shows, Anime]
-    instances: []
+    instances: [Sonarr]
     include_new_season_soon: true
     include_upcoming_episode: false
     include_upcoming_finale: true

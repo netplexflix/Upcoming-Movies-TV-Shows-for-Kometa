@@ -173,6 +173,14 @@ def _as_name_list(value):
     return [n.strip() for n in str(value or '').split(',') if n.strip()]
 
 
+def _instance_names(config, kind):
+    """Every configured Radarr (movie) / Sonarr (tv) instance name."""
+    key = 'sonarr_instances' if kind == 'tv' else 'radarr_instances'
+    return [str(i.get('name') or '').strip()
+            for i in (config.get(key) or []) if isinstance(i, dict)
+            and str(i.get('name') or '').strip()]
+
+
 def normalize_coming_soon(config):
     """Convert the legacy flat Coming Soon keys into coming_soon_collections.
 
@@ -202,7 +210,8 @@ def normalize_coming_soon(config):
                 'name': name or COMING_SOON_DEFAULT_NAMES[kind],
                 'type': kind,
                 'libraries': _as_name_list(config.get(f'{prefix}_plex_library')),
-                'instances': [],  # the flat keys always used every instance
+                # The flat keys always used every instance.
+                'instances': _instance_names(config, kind),
             }
             if kind == 'tv':
                 for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
@@ -221,7 +230,14 @@ def normalize_coming_soon(config):
         entry.setdefault('name', COMING_SOON_DEFAULT_NAMES.get(entry.get('type'),
                                                                COMING_SOON_DEFAULT_NAMES['movie']))
         entry['libraries'] = _as_name_list(entry.get('libraries'))
-        entry['instances'] = _as_name_list(entry.get('instances'))
+        # An explicit (possibly empty) list is taken at face value - empty means
+        # "no Arr instances", which is how a TV collection can be built from TSSK
+        # categories alone. Omitting the key entirely means "all of them", so a
+        # hand-written config doesn't have to list them.
+        if 'instances' in entry:
+            entry['instances'] = _as_name_list(entry.get('instances'))
+        else:
+            entry['instances'] = _instance_names(config, entry.get('type'))
         for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
             entry.setdefault(f'include_{flag}', False)
 

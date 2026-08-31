@@ -2634,9 +2634,9 @@ function renderComingSoonCard(idx, c) {
     const libraries = _comingSoonChoices.libraries[type] || [];
     const instances = _comingSoonChoices.instances[type] || [];
     const pickedLibraries = Array.isArray(c.libraries) ? c.libraries : [];
-    /* Stored empty means "every instance", so show them all ticked. */
-    const pickedInstances = (Array.isArray(c.instances) && c.instances.length)
-        ? c.instances : instances;
+    /* Shown exactly as stored: unticking every instance is a real choice (a TV
+       collection built from the TSSK categories alone). */
+    const pickedInstances = Array.isArray(c.instances) ? c.instances : [];
     const arrLabel = type === 'tv' ? 'Sonarr' : 'Radarr';
 
     const tsskFields = type !== 'tv' ? '' : `
@@ -2680,6 +2680,7 @@ function renderComingSoonCard(idx, c) {
             <div class="instance-field full-width">
                 <label>${arrLabel} Instances</label>
                 <div class="cs-check-group">${comingSoonCheckboxes(idx, 'instances', instances, pickedInstances, `No ${arrLabel} instances configured — add them on the Connections page.`)}</div>
+                ${type === 'tv' ? '<span class="setting-desc">Untick all of them to build this collection from the TSSK categories below only.</span>' : ''}
             </div>${tsskFields}
         </div>
     </div>`;
@@ -2694,7 +2695,7 @@ function onComingSoonTypeChange(idx, select) {
         entry.type = select.value === 'tv' ? 'tv' : 'movie';
         const libraries = _comingSoonChoices.libraries[entry.type] || [];
         entry.libraries = libraries.slice(0, 1);
-        entry.instances = [];
+        entry.instances = (_comingSoonChoices.instances[entry.type] || []).slice();
     }
     renderComingSoonCollections();
     _checkDirty('umtk');
@@ -2705,7 +2706,8 @@ function addComingSoonCollection() {
     const libraries = _comingSoonChoices.libraries.movie || [];
     _comingSoonData.push({
         name: 'Movies Coming Soon', type: 'movie',
-        libraries: libraries.slice(0, 1), instances: [],
+        libraries: libraries.slice(0, 1),
+        instances: (_comingSoonChoices.instances.movie || []).slice(),
         include_new_season_soon: false, include_upcoming_episode: false,
         include_upcoming_finale: false,
     });

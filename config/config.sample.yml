@@ -120,19 +120,19 @@ trending_lists:
 #   name:      the Plex collection name
 #   type:      movie | tv
 #   libraries: which Plex libraries to build it in
-#   instances: which Radarr/Sonarr instances to draw from (empty = all of them)
+#   instances: which Radarr/Sonarr instances to draw Coming Soon items from.
 #   include_*: tv only - also add TSSK's New Season Soon / Upcoming Episode /
 #              Upcoming Finale shows to the collection
 coming_soon_collections: []
 #  - name: Movies Coming Soon
 #    type: movie
 #    libraries: [Movies]
-#    instances: []
+#    instances: [Radarr]
 #  - name: TV Shows Coming Soon
 #    type: tv
 #    libraries: [TV Shows]
-#    instances: []
-#    include_new_season_soon: false
+#    instances: [Sonarr]
+#    include_new_season_soon: true
 #    include_upcoming_episode: false
 #    include_upcoming_finale: false
 

@@ -896,10 +896,6 @@ def register_routes(app):
                 seen_targets.add(target)
 
             instances = _picked(entry.get('instances'), available_instances[coll_type])
-            # All of them selected is stored as "all", so an instance added later
-            # feeds this collection too instead of being silently left out.
-            if instances == available_instances[coll_type]:
-                instances = []
 
             cleaned_entry = {
                 'name': name,
@@ -911,6 +907,13 @@ def register_routes(app):
                 for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
                     key = f'include_{flag}'
                     cleaned_entry[key] = str(entry.get(key, False)).lower() == 'true'
+
+            if not instances and not any(cleaned_entry.get(f'include_{f}') for f in
+                                         ('new_season_soon', 'upcoming_episode', 'upcoming_finale')):
+                arr = 'Sonarr' if coll_type == 'tv' else 'Radarr'
+                extra = ' or a TSSK category' if coll_type == 'tv' else ''
+                return jsonify({"ok": False, "error": f"Collection '{name}': select at least one {arr} instance{extra}"}), 400
+
             cleaned.append(cleaned_entry)
 
         config['coming_soon_collections'] = cleaned

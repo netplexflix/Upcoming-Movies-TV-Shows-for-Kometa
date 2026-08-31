@@ -640,15 +640,16 @@ def _resolve_by_id(items, index, id_key):
     return rating_keys, missing
 
 
-def _instance_items(groups, instances):
-    """Items from the named instances; an empty 'instances' means all of them.
-
+def _instance_items(groups, instances, all_when_empty=False):
+    """Items from the named instances.
     'groups' is the per-instance shape the collector carries:
     [{'instance': name, 'items': [...]}, ...]. Names are only guaranteed unique
     by the WebUI's save validation, so match on them without building a
     name-keyed dict that would silently drop a duplicate.
     """
     wanted = set(instances or ())
+    if not wanted and not all_when_empty:
+        return []
     return [group.get('items') or [] for group in (groups or [])
             if not wanted or group.get('instance') in wanted]
 
@@ -673,7 +674,9 @@ def _collection_items(entry, collector, debug=False):
                 print(f"{ORANGE}Coming Soon '{name}': TSSK '{label}' is switched on but TSSK "
                       f"produced no results this run — skipping that category{RESET}")
                 continue
-            extra = _instance_items(available, instances)
+            # Selected instances still narrow a category; selecting none only
+            # switches off UMTK's own Coming Soon items, not the category.
+            extra = _instance_items(available, instances, all_when_empty=True)
             if debug:
                 print(f"{BLUE}[DEBUG] Coming Soon '{name}': adding "
                       f"{sum(len(g) for g in extra)} show(s) from TSSK '{label}'{RESET}")
@@ -701,6 +704,15 @@ def _coming_soon_spec(entry, config, collector, debug=False):
 
     if not name:
         print(f"{ORANGE}Coming Soon collection without a name - skipping{RESET}")
+        return None
+
+    has_tssk = expected_type == 'show' and any(
+        _is_true(entry.get(option_key)) for option_key, _, _ in TSSK_INCLUDE_SOURCES)
+    if not entry.get('instances') and not has_tssk:
+        arr = 'Sonarr' if expected_type == 'show' else 'Radarr'
+        extra = ' and no TSSK categories' if expected_type == 'show' else ''
+        print(f"{ORANGE}Coming Soon '{name}': no {arr} instances{extra} selected - "
+              f"nothing to build the collection from{RESET}")
         return None
 
     items = _collection_items(entry, collector, debug)
