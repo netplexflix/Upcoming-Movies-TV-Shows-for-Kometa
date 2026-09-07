@@ -296,7 +296,7 @@ collection_trending_movies:
 ################################################################################  
 backdrop_trending_movies_request_needed:
   enable: true
-  name: red_frame
+  name: purple_frame
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame.png
   group: UMTK_backdrop
   weight: 200
@@ -349,7 +349,7 @@ collection_trending_shows:
 ################################################################################  
 backdrop_trending_shows_request_needed:
   enable: true
-  name: red_frame_bottom
+  name: purple_frame_bottom
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame_bottom.png
   group: TSSK_backdrop
   weight: 100
