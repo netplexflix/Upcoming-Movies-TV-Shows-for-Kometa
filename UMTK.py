@@ -197,6 +197,15 @@ def _run_inner():
         except Exception as e:
             print(f"\n{RED}Building the Coming Soon collections in Plex failed: {e}{RESET}")
 
+    # ---- Overlay block key audit ----
+    # Runs after both modules so it sees every generated overlay file.
+    try:
+        from umtk.config_loader import get_kometa_folder
+        from umtk.utils import audit_overlay_block_keys
+        audit_overlay_block_keys(get_kometa_folder())
+    except Exception as e:
+        print(f"{ORANGE}Could not audit overlay block keys: {e}{RESET}")
+
     # Summary
     def _module_status(success, warnings):
         """Render a module's status: FAILED (crash), OK with a WARN count when

@@ -30,16 +30,20 @@ yaml.add_representer(QuotedString, _quoted_str_presenter, Dumper=yaml.SafeDumper
 yaml.add_representer(OrderedDict, _represent_ordereddict, Dumper=yaml.SafeDumper)
 
 
-def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored, 
-                           trending_request_needed, config_sections, config, localization=None):
+def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored,
+                           trending_request_needed, config_sections, config, localization=None,
+                           instance_suffix=""):
     """Create overlay YAML file for TV shows"""
     if not future_shows and not aired_shows and not trending_monitored and not trending_request_needed:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No matching shows found")
         return
-    
+
     overlays_dict = {}
-    
+
+    # Scope token keeping block keys unique across media types and Sonarr instances
+    scope = f"tv{instance_suffix}"
+
     # Get global settings
     simplify_next_week = config.get("simplify_next_week_dates", False)
     utc_offset = float(config.get('utc_offset', 0))
@@ -64,7 +68,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 backdrop_config["name"] = "backdrop"
             all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_future_tvdb_ids) if i)
             
-            overlays_dict["backdrop_future"] = {
+            overlays_dict[f"backdrop_future_{scope}"] = {
                 "overlay": backdrop_config,
                 "tvdb_show": all_tvdb_ids_str
             }
@@ -88,7 +92,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                     tvdb_ids_for_date = sorted(tvdb_id for tvdb_id in date_to_tvdb_ids[date_str] if tvdb_id)
                     tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_date)
                     
-                    block_key = f"UMTK_future_{formatted_date}"
+                    block_key = f"UMTK_future_{scope}_{formatted_date}"
                     overlays_dict[block_key] = {
                         "overlay": sub_overlay_config,
                         "tvdb_show": tvdb_ids_str
@@ -100,7 +104,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(all_future_tvdb_ids) if i)
                 
-                overlays_dict["UMTK_upcoming_shows_future"] = {
+                overlays_dict[f"UMTK_upcoming_shows_future_{scope}"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -122,7 +126,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
             
             all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_aired_tvdb_ids) if i)
             
-            overlays_dict["backdrop_aired"] = {
+            overlays_dict[f"backdrop_aired_{scope}"] = {
                 "overlay": backdrop_config,
                 "tvdb_show": all_tvdb_ids_str
             }
@@ -142,7 +146,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
             
             tvdb_ids_str = ", ".join(str(i) for i in sorted(all_aired_tvdb_ids) if i)
             
-            overlays_dict["UMTK_aired"] = {
+            overlays_dict[f"UMTK_aired_{scope}"] = {
                 "overlay": sub_overlay_config,
                 "tvdb_show": tvdb_ids_str
             }
@@ -172,7 +176,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
 
-                overlays_dict["backdrop_trending_monitored_tvdb"] = {
+                overlays_dict[f"backdrop_trending_monitored_tvdb_{scope}"] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -187,7 +191,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
 
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
 
-                overlays_dict["backdrop_trending_monitored_tmdb"] = {
+                overlays_dict[f"backdrop_trending_monitored_tmdb_{scope}"] = {
                     "overlay": backdrop_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -208,7 +212,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_monitored))
 
-                overlays_dict["UMTK_trending_monitored_tvdb"] = {
+                overlays_dict[f"UMTK_trending_monitored_tvdb_{scope}"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -229,7 +233,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
 
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_monitored))
 
-                overlays_dict["UMTK_trending_monitored_tmdb"] = {
+                overlays_dict[f"UMTK_trending_monitored_tmdb_{scope}"] = {
                     "overlay": sub_overlay_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -255,7 +259,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
                 
-                overlays_dict["backdrop_trending_request_tvdb"] = {
+                overlays_dict[f"backdrop_trending_request_tvdb_{scope}"] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -270,7 +274,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
                 
-                overlays_dict["backdrop_trending_request_tmdb"] = {
+                overlays_dict[f"backdrop_trending_request_tmdb_{scope}"] = {
                     "overlay": backdrop_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -291,7 +295,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(tvdb_request))
                 
-                overlays_dict["UMTK_trending_request_tvdb"] = {
+                overlays_dict[f"UMTK_trending_request_tvdb_{scope}"] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -312,7 +316,7 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
                 
                 tmdb_ids_str = ", ".join(str(i) for i in sorted(tmdb_request))
                 
-                overlays_dict["UMTK_trending_request_tmdb"] = {
+                overlays_dict[f"UMTK_trending_request_tmdb_{scope}"] = {
                     "overlay": sub_overlay_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -509,20 +513,23 @@ def create_new_shows_collection_yaml(output_file, shows, config):
         yaml.dump(data, f, Dumper=yaml.SafeDumper, sort_keys=False)
 
 
-def create_new_shows_overlay_yaml(output_file, shows, config_sections):
+def create_new_shows_overlay_yaml(output_file, shows, config_sections, instance_suffix=""):
     """Create overlay YAML file for new shows"""
     if not shows:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No new shows found")
         return
-    
+
     all_tvdb_ids = set()
     for s in shows:
         if s.get("tvdbId"):
             all_tvdb_ids.add(s['tvdbId'])
-    
+
     overlays_dict = {}
-    
+
+    # Scope token keeping block keys unique across media types and Sonarr instances
+    scope = f"new_shows_tv{instance_suffix}"
+
     backdrop_config = deepcopy(config_sections.get("backdrop", {}))
     enable_backdrop = backdrop_config.pop("enable", True)
 
@@ -531,7 +538,7 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
             backdrop_config["name"] = "backdrop"
         all_tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
         
-        overlays_dict["backdrop"] = {
+        overlays_dict[f"backdrop_{scope}"] = {
             "overlay": backdrop_config,
             "tvdb_show": all_tvdb_ids_str,
             "filters": {
@@ -554,7 +561,7 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         
         tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
         
-        overlays_dict["UMTK_new_shows"] = {
+        overlays_dict[f"UMTK_{scope}"] = {
             "overlay": sub_overlay_config,
             "tvdb_show": tvdb_ids_str,
             "filters": {
@@ -568,15 +575,19 @@ def create_new_shows_overlay_yaml(output_file, shows, config_sections):
         yaml.dump(final_output, f, sort_keys=False)
 
 
-def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored, 
-                               trending_request_needed, config_sections, config, localization=None):
+def create_overlay_yaml_movies(output_file, future_movies, released_movies, trending_monitored,
+                               trending_request_needed, config_sections, config, localization=None,
+                               instance_suffix=""):
     """Create overlay YAML file for movies"""
     if not future_movies and not released_movies and not trending_monitored and not trending_request_needed:
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("#No matching movies found")
         return
-    
+
     overlays_dict = {}
+
+    # Scope token keeping block keys unique across media types and Radarr instances
+    scope = f"movies{instance_suffix}"
     
     # Get global settings
     simplify_next_week = config.get("simplify_next_week_dates", False)
@@ -602,7 +613,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_future_tmdb_ids) if i)
             
-            overlays_dict["backdrop_future"] = {
+            overlays_dict[f"backdrop_future_{scope}"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
@@ -629,7 +640,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
                 tmdb_ids_for_date = sorted(tmdb_id for tmdb_id in date_to_tmdb_ids[date_str] if tmdb_id)
                 tmdb_ids_str = ", ".join(str(i) for i in tmdb_ids_for_date)
                 
-                block_key = f"UMTK_future_{formatted_date}"
+                block_key = f"UMTK_future_{scope}_{formatted_date}"
                 overlays_dict[block_key] = {
                     "overlay": sub_overlay_config,
                     "tmdb_movie": tmdb_ids_str
@@ -652,7 +663,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_released_tmdb_ids) if i)
             
-            overlays_dict["backdrop_released"] = {
+            overlays_dict[f"backdrop_released_{scope}"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
@@ -675,7 +686,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             tmdb_ids_str = ", ".join(str(i) for i in sorted(all_released_tmdb_ids) if i)
             
-            overlays_dict["UMTK_released"] = {
+            overlays_dict[f"UMTK_released_{scope}"] = {
                 "overlay": sub_overlay_config,
                 "tmdb_movie": tmdb_ids_str
             }
@@ -699,7 +710,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
 
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tmdb_ids) if i)
 
-            overlays_dict["backdrop_trending_monitored"] = {
+            overlays_dict[f"backdrop_trending_monitored_{scope}"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
@@ -722,7 +733,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_monitored_tmdb_ids) if i)
             
-            overlays_dict["UMTK_trending_monitored"] = {
+            overlays_dict[f"UMTK_trending_monitored_{scope}"] = {
                 "overlay": sub_overlay_config,
                 "tmdb_movie": tmdb_ids_str
             }
@@ -744,7 +755,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             all_tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tmdb_ids) if i)
             
-            overlays_dict["backdrop_trending_request"] = {
+            overlays_dict[f"backdrop_trending_request_{scope}"] = {
                 "overlay": backdrop_config,
                 "tmdb_movie": all_tmdb_ids_str
             }
@@ -767,7 +778,7 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
             
             tmdb_ids_str = ", ".join(str(i) for i in sorted(all_trending_request_tmdb_ids) if i)
             
-            overlays_dict["UMTK_trending_request"] = {
+            overlays_dict[f"UMTK_trending_request_{scope}"] = {
                 "overlay": sub_overlay_config,
                 "tmdb_movie": tmdb_ids_str
             }
@@ -1220,7 +1231,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                 up_config = deepcopy(backdrop_config)
                 up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_up" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_up_movies" + overlay_suffix] = {
                     "overlay": up_config,
                     "tmdb_movie": ", ".join(tmdb_up)
                 }
@@ -1229,7 +1240,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                 equal_config = deepcopy(backdrop_config)
                 equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_equal" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_equal_movies" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tmdb_movie": ", ".join(tmdb_equal)
                 }
@@ -1238,7 +1249,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
                 down_config = deepcopy(backdrop_config)
                 down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_down" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_down_movies" + overlay_suffix] = {
                     "overlay": down_config,
                     "tmdb_movie": ", ".join(tmdb_down)
                 }
@@ -1258,7 +1269,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
 
                 tmdb_ids_str = ", ".join(all_tmdb_ids)
 
-                overlays_dict["backdrop_trending_top_10" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_movies" + overlay_suffix] = {
                     "overlay": backdrop_config,
                     "tmdb_movie": tmdb_ids_str
                 }
@@ -1281,7 +1292,7 @@ def create_top10_overlay_yaml_movies(output_file, mdblist_items, config_sections
             rank_text_config = deepcopy(text_config)
             rank_text_config["name"] = f"text({rank})"
 
-            block_key = f"trending_top10_{rank}{overlay_suffix}"
+            block_key = f"trending_top10_{rank}_movies{overlay_suffix}"
             overlays_dict[block_key] = {
                 "overlay": rank_text_config,
                 "tmdb_movie": str(tmdb_id)
@@ -1461,7 +1472,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 up_config = deepcopy(backdrop_config)
                 up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_tvdb_up" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_up_tv" + overlay_suffix] = {
                     "overlay": up_config,
                     "tvdb_show": ", ".join(tvdb_up)
                 }
@@ -1470,7 +1481,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 equal_config = deepcopy(backdrop_config)
                 equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_tvdb_equal" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_equal_tv" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tvdb_show": ", ".join(tvdb_equal)
                 }
@@ -1479,7 +1490,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 down_config = deepcopy(backdrop_config)
                 down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_tvdb_down" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_down_tv" + overlay_suffix] = {
                     "overlay": down_config,
                     "tvdb_show": ", ".join(tvdb_down)
                 }
@@ -1488,7 +1499,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 up_config = deepcopy(backdrop_config)
                 up_config["name"] = backdrop_config.get("name", "backdrop") + "up" + overlay_suffix
                 up_config["url"] = urlup
-                overlays_dict["backdrop_trending_top_10_tmdb_up" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_up_tv" + overlay_suffix] = {
                     "overlay": up_config,
                     "tmdb_show": ", ".join(tmdb_up)
                 }
@@ -1497,7 +1508,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 equal_config = deepcopy(backdrop_config)
                 equal_config["name"] = backdrop_config.get("name", "backdrop") + "equal" + overlay_suffix
                 equal_config["url"] = urlequal
-                overlays_dict["backdrop_trending_top_10_tmdb_equal" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_equal_tv" + overlay_suffix] = {
                     "overlay": equal_config,
                     "tmdb_show": ", ".join(tmdb_equal)
                 }
@@ -1506,7 +1517,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
                 down_config = deepcopy(backdrop_config)
                 down_config["name"] = backdrop_config.get("name", "backdrop") + "down" + overlay_suffix
                 down_config["url"] = urldown
-                overlays_dict["backdrop_trending_top_10_tmdb_down" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_down_tv" + overlay_suffix] = {
                     "overlay": down_config,
                     "tmdb_show": ", ".join(tmdb_down)
                 }
@@ -1529,7 +1540,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
 
                 tvdb_ids_str = ", ".join(tvdb_ids)
 
-                overlays_dict["backdrop_trending_top_10_tvdb" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tvdb_tv" + overlay_suffix] = {
                     "overlay": backdrop_config,
                     "tvdb_show": tvdb_ids_str
                 }
@@ -1543,7 +1554,7 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
 
                 tmdb_ids_str = ", ".join(tmdb_ids)
 
-                overlays_dict["backdrop_trending_top_10_tmdb" + overlay_suffix] = {
+                overlays_dict["backdrop_trending_top_10_tmdb_tv" + overlay_suffix] = {
                     "overlay": tmdb_config,
                     "tmdb_show": tmdb_ids_str
                 }
@@ -1568,13 +1579,13 @@ def create_top10_overlay_yaml_tv(output_file, mdblist_items, config_sections, li
             rank_text_config["name"] = f"text({rank})"
             
             if tvdb_id:
-                block_key = f"trending_top10_{rank}_tvdb{overlay_suffix}"
+                block_key = f"trending_top10_{rank}_tvdb_tv{overlay_suffix}"
                 overlays_dict[block_key] = {
                     "overlay": rank_text_config,
                     "tvdb_show": str(tvdb_id)
                 }
             elif tmdb_id:
-                block_key = f"trending_top10_{rank}_tmdb{overlay_suffix}"
+                block_key = f"trending_top10_{rank}_tmdb_tv{overlay_suffix}"
                 overlays_dict[block_key] = {
                     "overlay": rank_text_config,
                     "tmdb_show": str(tmdb_id)

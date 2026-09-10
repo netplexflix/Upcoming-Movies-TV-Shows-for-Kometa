@@ -301,37 +301,43 @@ def run_tssk(config, localization=None, collector=None):
         if process_new_season_soon:
             create_overlay_yaml(f"TSSK_TV_NEW_SEASON_OVERLAYS{suffix}.yml", matched_shows,
                                {"backdrop": config.get("backdrop_new_season", config.get("backdrop", {})),
-                                "text": config.get("text_new_season", config.get("text", {}))}, config, "backdrop_new_season", localization)
+                                "text": config.get("text_new_season", config.get("text", {}))}, config,
+                               f"backdrop_new_season{suffix}", localization, f"new_season{suffix}")
             create_collection_yaml(f"TSSK_TV_NEW_SEASON_COLLECTION{suffix}.yml", matched_shows, config)
 
         if process_new_season_started:
             create_overlay_yaml(f"TSSK_TV_NEW_SEASON_STARTED_OVERLAYS{suffix}.yml", new_season_started_shows,
                                {"backdrop": config.get("backdrop_new_season_started", {}),
-                                "text": config.get("text_new_season_started", {})}, config, "backdrop_new_season_started", localization)
+                                "text": config.get("text_new_season_started", {})}, config,
+                               f"backdrop_new_season_started{suffix}", localization, f"new_season_started{suffix}")
             create_collection_yaml(f"TSSK_TV_NEW_SEASON_STARTED_COLLECTION{suffix}.yml", new_season_started_shows, config)
 
         if process_upcoming_episode:
             create_overlay_yaml(f"TSSK_TV_UPCOMING_EPISODE_OVERLAYS{suffix}.yml", upcoming_eps,
                                {"backdrop": config.get("backdrop_upcoming_episode", {}),
-                                "text": config.get("text_upcoming_episode", {})}, config, "backdrop_upcoming_episode", localization)
+                                "text": config.get("text_upcoming_episode", {})}, config,
+                               f"backdrop_upcoming_episode{suffix}", localization, f"upcoming_episode{suffix}")
             create_collection_yaml(f"TSSK_TV_UPCOMING_EPISODE_COLLECTION{suffix}.yml", upcoming_eps, config)
 
         if process_upcoming_finale:
             create_overlay_yaml(f"TSSK_TV_UPCOMING_FINALE_OVERLAYS{suffix}.yml", finale_eps,
                                {"backdrop": config.get("backdrop_upcoming_finale", {}),
-                                "text": config.get("text_upcoming_finale", {})}, config, "backdrop_upcoming_finale", localization)
+                                "text": config.get("text_upcoming_finale", {})}, config,
+                               f"backdrop_upcoming_finale{suffix}", localization, f"upcoming_finale{suffix}")
             create_collection_yaml(f"TSSK_TV_UPCOMING_FINALE_COLLECTION{suffix}.yml", finale_eps, config)
 
         if process_season_finale:
             create_overlay_yaml(f"TSSK_TV_SEASON_FINALE_OVERLAYS{suffix}.yml", season_finale_shows,
                                {"backdrop": config.get("backdrop_season_finale", {}),
-                                "text": config.get("text_season_finale", {})}, config, "backdrop_season_finale", localization)
+                                "text": config.get("text_season_finale", {})}, config,
+                               f"backdrop_season_finale{suffix}", localization, f"season_finale{suffix}")
             create_collection_yaml(f"TSSK_TV_SEASON_FINALE_COLLECTION{suffix}.yml", season_finale_shows, config)
 
         if process_final_episode:
             create_overlay_yaml(f"TSSK_TV_FINAL_EPISODE_OVERLAYS{suffix}.yml", final_episode_shows,
                                {"backdrop": config.get("backdrop_final_episode", {}),
-                                "text": config.get("text_final_episode", {})}, config, "backdrop_final_episode", localization)
+                                "text": config.get("text_final_episode", {})}, config,
+                               f"backdrop_final_episode{suffix}", localization, f"final_episode{suffix}")
             create_collection_yaml(f"TSSK_TV_FINAL_EPISODE_COLLECTION{suffix}.yml", final_episode_shows, config)
 
     if output_mode == 'combined' or len(instance_results) == 1:

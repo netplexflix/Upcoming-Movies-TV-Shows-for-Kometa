@@ -811,7 +811,8 @@ def main(config=None, localization=None, collector=None):
                                      "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
                                      "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                     config,
-                                    localization
+                                    localization,
+                                    instance_suffix=suffix
                                 )
 
                                 if tv_method > 0:
@@ -819,7 +820,8 @@ def main(config=None, localization=None, collector=None):
                                     new_shows_collection_file = kometa_folder / f"UMTK_TV_NEW_SHOWS_COLLECTION{suffix}.yml"
                                     create_new_shows_overlay_yaml(str(new_shows_overlay_file), result['new_shows'],
                                                                   {"backdrop": config.get("backdrop_new_show", {}),
-                                                                   "text": config.get("text_new_show", {})})
+                                                                   "text": config.get("text_new_show", {})},
+                                                                  instance_suffix=suffix)
                                     create_new_shows_collection_yaml(str(new_shows_collection_file), result['new_shows'], config)
 
                                 create_collection_yaml_tv(str(collection_file), result['future_shows'], result['aired_shows'], config)
@@ -1389,7 +1391,8 @@ def main(config=None, localization=None, collector=None):
                                      "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
                                      "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                     config,
-                                    localization
+                                    localization,
+                                    instance_suffix=suffix
                                 )
 
                                 create_collection_yaml_movies(str(collection_file), result['future_movies'], result['released_movies'], config)

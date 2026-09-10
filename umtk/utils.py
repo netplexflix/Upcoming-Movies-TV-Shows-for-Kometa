@@ -8,7 +8,7 @@ import time
 import requests
 import subprocess
 from datetime import datetime, timedelta, timezone
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
 
@@ -61,6 +61,43 @@ def sanitize_instance_name(name):
     that isn't alphanumeric or underscore.
     """
     return re.sub(r'[^a-zA-Z0-9_]', '', name.replace(' ', '_'))
+
+
+def audit_overlay_block_keys(kometa_folder):
+    """Warn about overlay block keys that appear in more than one generated file.
+
+    Kometa merges every overlay file applied to a library into one namespace, so a
+    duplicated block key means one definition silently overwrites the other and those
+    items lose their overlay. Advisory only: files mapped to different libraries can
+    legitimately share a key, so this reports rather than fails.
+    """
+    import yaml
+
+    key_to_files = {}
+    for path in sorted(Path(kometa_folder).glob("*OVERLAYS*.yml")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        overlays = data.get("overlays")
+        if not isinstance(overlays, dict):
+            continue
+        for key in overlays:
+            key_to_files.setdefault(key, []).append(path.name)
+
+    duplicates = {k: v for k, v in key_to_files.items() if len(v) > 1}
+    if not duplicates:
+        return duplicates
+
+    print(f"\n{ORANGE}Overlay block keys appearing in more than one file:{RESET}")
+    for key, files in sorted(duplicates.items()):
+        print(f"{ORANGE}  - '{key}' appears in {len(files)} files: {', '.join(files)}{RESET}")
+    print(f"{ORANGE}  If these files are applied to the same Plex library, Kometa will "
+          f"use only one definition and the rest will be ignored.{RESET}")
+    return duplicates
 
 
 def get_user_info():
