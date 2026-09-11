@@ -7,7 +7,7 @@ import sys
 import requests
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from .constants import VERSION, GREEN, ORANGE, RED, BLUE, RESET
 from .config_loader import load_config, load_localization, get_cookies_path, get_kometa_folder, get_video_folder
@@ -16,7 +16,7 @@ from .utils import (
     check_yt_dlp_installed, check_video_file,
     get_tag_ids_from_names,
     dedupe_by_key, sanitize_instance_name,
-    show_folder_name, movie_folder_name
+    resolve_show_dir, movie_folder_name
 )
 from .sonarr import process_sonarr_url, get_sonarr_series, get_sonarr_episodes
 from .radarr import process_radarr_url, get_radarr_movies
@@ -161,7 +161,7 @@ def main(config=None, localization=None, collector=None):
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     preferred_language = str(config.get('preferred_language', 'original')).lower()
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
-    append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "false")).lower() == "true"
     edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
 
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
@@ -416,9 +416,7 @@ def main(config=None, localization=None, collector=None):
                                     show_path = show.get('path')
                                     if show_path:
                                         if umtk_root_tv:
-                                            # Use PureWindowsPath to handle Windows paths from Sonarr
-                                            show_name = PureWindowsPath(show_path).name
-                                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                                            season_00_path = resolve_show_dir(umtk_root_tv, show) / "Season 00"
                                         else:
                                             season_00_path = Path(show_path) / "Season 00"
 
@@ -589,7 +587,7 @@ def main(config=None, localization=None, collector=None):
                             show_path = show.get('path')
 
                             if show_root_tv:
-                                season_00_path = Path(show_root_tv) / show_folder_name(show) / "Season 00"
+                                season_00_path = resolve_show_dir(show_root_tv, show) / "Season 00"
                             elif show_path:
                                 season_00_path = Path(show_path) / "Season 00"
                             else:

@@ -121,8 +121,8 @@ UMTK_OPTIONS = [
     {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (Newly Premiered Shows)", "description": "Days back to look for newly premiered shows", "section": "TV Shows Coming Soon"},
     {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows Coming Soon"},
     # Plex Metadata
-    {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles (Coming Soon)", "description": "Add the expected release/air date to the Plex sort titles of Coming Soon movies and shows.", "section": "Plex Metadata"},
-    {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Titles (Trending)", "description": "Add the list rank to the Plex sort titles of trending items.", "section": "Plex Metadata"},
+    {"key": "append_dates_to_sort_titles", "type": "bool", "default": False, "label": "Append Dates to Sort Titles (Coming Soon)", "description": "Add the expected release/air date to the Plex sort titles of Coming Soon movies and shows.", "section": "Plex Metadata"},
+    {"key": "add_rank_to_sort_title", "type": "bool", "default": False, "label": "Add Rank to Sort Titles (Trending)", "description": "Add the list rank to the Plex sort titles of trending items.", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
     # Coming Soon collections are a list-of-dicts managed via

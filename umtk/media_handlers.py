@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import (sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local,
-                    show_folder_name, movie_folder_name)
+                    resolve_show_dir, movie_folder_name)
 from .config_loader import get_cookies_path, get_video_folder
 from .sonarr import get_sonarr_episodes
 
@@ -227,7 +227,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     
     # Determine the target directory
     if umtk_root_tv:
-        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
+        parent_dir = resolve_show_dir(umtk_root_tv, show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -522,7 +522,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     show_path = show.get('path')
     
     if umtk_root_tv:
-        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
+        parent_dir = resolve_show_dir(umtk_root_tv, show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -530,7 +530,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             return False
         parent_dir = Path(show_path)
         season_00_path = parent_dir / "Season 00"
-        
+
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Coming.Soon{video_extension}"
     

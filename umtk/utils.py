@@ -181,13 +181,19 @@ def sanitize_filename(filename):
     return sanitized
 
 
-def show_folder_name(show):
-    """Folder name for a show's placeholder/trailer content.
+# Plex's TV Series agent reads an ID hint from the show folder name:
+# "Show (2020) {tvdb-123456}" (also tmdb-/imdb-). Sonarr's own folder naming can
+# produce the same tags, so detection has to cover all three.
+FOLDER_ID_RE = re.compile(r'\s*\{(tvdb|tmdb|imdb)-([^}]+)\}', re.IGNORECASE)
+
+
+def legacy_show_folder_name(show):
+    """Folder name for a show's content as UMTK named it before the ID tag.
 
     Sonarr's own folder name wins when the show is in a library; otherwise the
-    name is derived from the title and year. Single source of truth so content
-    creation and cleanup can never disagree about which folder belongs to a show
-    (a mismatch used to leave stale duplicates behind when a year changed).
+    name is derived from the title and year. Existing installs still have
+    folders with these names, so content creation reuses them and cleanup
+    recognizes them (see resolve_show_dir).
     """
     show_path = show.get('path')
     if show_path:
@@ -200,6 +206,59 @@ def show_folder_name(show):
     if show_year and not re.search(r'\(\d{4}\)\s*$', show_title):
         return sanitize_filename(f"{show_title} ({show_year})")
     return sanitize_filename(show_title)
+
+
+def show_id_tag(show):
+    """'{tvdb-123}' style folder tag for a show, or '' when it has no ID.
+
+    TVDB first: it's Sonarr's native ID and every show UMTK handles has been
+    resolved to one, so the tag stays consistent across folders.
+    """
+    for key, prefix in (('tvdbId', 'tvdb'), ('tmdbId', 'tmdb'), ('imdbId', 'imdb')):
+        if show.get(key):
+            return f"{{{prefix}-{show[key]}}}"
+    return ''
+
+
+def show_folder_name(show):
+    """Folder name for a show's placeholder/trailer content.
+
+    The legacy name plus an ID tag so Plex matches the right show, e.g.
+    "Show (2025) {tvdb-123456}". Single source of truth so content creation
+    and cleanup can never disagree about which folder belongs to a show (a
+    mismatch used to leave stale duplicates behind when a year changed).
+    A Sonarr folder that already carries a tag is used as is.
+    """
+    base = legacy_show_folder_name(show)
+    if FOLDER_ID_RE.search(base):
+        return base
+    tag = show_id_tag(show)
+    return f"{base} {tag}" if tag else base
+
+
+def parse_folder_ids(folder_name):
+    """IDs tagged in a folder name: "Show (2025) {tvdb-123}" -> {'tvdb': '123'}."""
+    return {m.group(1).lower(): m.group(2) for m in FOLDER_ID_RE.finditer(folder_name)}
+
+
+def strip_folder_ids(folder_name):
+    """Folder name without its ID tags, for deriving the title from it."""
+    return ' '.join(FOLDER_ID_RE.sub(' ', folder_name).split())
+
+
+def resolve_show_dir(umtk_root_tv, show):
+    """Folder under umtk_root_tv that holds (or will hold) a show's content.
+
+    New folders get the ID-tagged name. A folder created by a release before
+    the tag existed is reused as is, so updating never leaves a show with two
+    folders; cleanup retires the legacy folder once the show stops qualifying.
+    """
+    root = Path(umtk_root_tv)
+    new_dir = root / show_folder_name(show)
+    legacy_dir = root / legacy_show_folder_name(show)
+    if legacy_dir != new_dir and legacy_dir.exists() and not new_dir.exists():
+        return legacy_dir
+    return new_dir
 
 
 def movie_folder_name(movie, edition_tag):

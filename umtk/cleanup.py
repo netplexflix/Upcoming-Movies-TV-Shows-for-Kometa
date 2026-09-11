@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import (sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local,
-                    show_folder_name, movie_folder_name)
+                    show_folder_name, legacy_show_folder_name, parse_folder_ids,
+                    strip_folder_ids, movie_folder_name)
 from .sonarr import get_sonarr_episodes
 from .webhook import send_file_webhook
 
@@ -92,7 +93,16 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
     # list. A trending folder whose name isn't in here is a leftover from an
     # earlier run under a different title or year (MDBList's year for a show can
     # change between runs), so it must go even though its title still trends.
-    expected_trending_names = {show_folder_name(show) for show in current_trending_shows}
+    # Legacy (untagged) names count too: content creation keeps reusing a folder
+    # from before the ID tag rather than creating a tagged duplicate next to it.
+    expected_trending_names = set()
+    trending_tagged_by_legacy = {}
+    for show in current_trending_shows:
+        tagged_name = show_folder_name(show)
+        legacy_name = legacy_show_folder_name(show)
+        expected_trending_names.update((tagged_name, legacy_name))
+        if legacy_name != tagged_name:
+            trending_tagged_by_legacy[legacy_name] = tagged_name
 
     current_trending_normalized = {normalize_title(show['title']): show['title'] for show in current_trending_shows}
     
@@ -105,6 +115,9 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
     # Folder/path lookups across the whole group, retaining the owning instance
     # so per-series checks (Sonarr API call, exclude tags) hit the right instance.
     # On collision the first instance wins — any owner is enough to veto removal.
+    # Tagged folders ("Show (2025) {tvdb-123}") resolve through series_by_id;
+    # legacy folders from before the tag still resolve through Sonarr's folder name.
+    series_by_id = {}
     series_by_folder_name = {}
     series_by_path = {}
     for inst in sonarr_instances:
@@ -112,6 +125,9 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
             show_path = series.get('path')
             if not show_path:
                 continue
+            for key, prefix in (('tvdbId', 'tvdb'), ('tmdbId', 'tmdb'), ('imdbId', 'imdb')):
+                if series.get(key):
+                    series_by_id.setdefault((prefix, str(series[key])), (series, inst))
             folder_name = PureWindowsPath(show_path).name
             if folder_name not in series_by_folder_name:
                 series_by_folder_name[folder_name] = (series, inst)
@@ -162,22 +178,32 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
         is_trending = (season_00_path / ".trending").exists()
 
         folder_name = show_dir.name
+        untagged_name = strip_folder_ids(folder_name)
 
-        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', folder_name)
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', untagged_name)
         if title_match:
             show_title_from_folder = title_match.group(1).strip()
         else:
-            show_title_from_folder = folder_name
+            show_title_from_folder = untagged_name
 
         series = None
         owning_inst = None
+        matched_by_id = False
         if umtk_root_tv:
-            match = series_by_folder_name.get(folder_name)
+            match = None
+            for prefix, id_value in parse_folder_ids(folder_name).items():
+                match = series_by_id.get((prefix, id_value))
+                if match:
+                    matched_by_id = True
+                    break
+            if not match:
+                match = series_by_folder_name.get(folder_name)
             if match:
                 series, owning_inst = match
             if debug:
                 if series:
-                    print(f"{BLUE}[DEBUG] Found series for folder '{folder_name}': {series['title']} (instance: {owning_inst['name']}){RESET}")
+                    how = "ID tag" if matched_by_id else "folder name"
+                    print(f"{BLUE}[DEBUG] Found series for folder '{folder_name}' by {how}: {series['title']} (instance: {owning_inst['name']}){RESET}")
                 else:
                     print(f"{BLUE}[DEBUG] No series found for folder '{folder_name}'{RESET}")
         else:
@@ -236,6 +262,11 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                     if debug:
                         print(f"{BLUE}[DEBUG] Folder '{folder_name}' is not an expected trending folder{RESET}")
                         print(f"{BLUE}[DEBUG] Expected trending folders: {expected_trending_names}{RESET}")
+                elif (folder_name in trending_tagged_by_legacy
+                        and (show_dir.parent / trending_tagged_by_legacy[folder_name]).exists()):
+                    # Legacy folder whose ID-tagged twin exists: keep only the tagged one.
+                    should_remove = True
+                    removal_reason = "superseded by ID-tagged folder"
                 elif debug:
                     print(f"{BLUE}[DEBUG] Keeping trending content for {check_title} - still in trending list{RESET}")
             else:
@@ -247,7 +278,20 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                         print(f"{BLUE}[DEBUG] Folder name: {folder_name}{RESET}")
                         print(f"{BLUE}[DEBUG] Available folder mappings: {list(series_by_folder_name.keys())}{RESET}")
                 else:
-                    if series['title'] not in current_upcoming_titles:
+                    expected_name = show_folder_name(series)
+                    if matched_by_id and folder_name != expected_name:
+                        # Tagged folder named for a Sonarr folder that has since been
+                        # renamed; content creation makes the new one, so this would
+                        # otherwise linger as a duplicate.
+                        should_remove = True
+                        removal_reason = "folder name is outdated"
+                        if debug:
+                            print(f"{BLUE}[DEBUG] Folder '{folder_name}' no longer matches expected name '{expected_name}'{RESET}")
+                    elif folder_name != expected_name and (show_dir.parent / expected_name).exists():
+                        # Legacy folder whose ID-tagged twin exists: keep only the tagged one.
+                        should_remove = True
+                        removal_reason = "superseded by ID-tagged folder"
+                    elif series['title'] not in current_upcoming_titles:
                         try:
                             episodes = get_sonarr_episodes(owning_inst['url'], owning_inst['api_key'], series['id'])
                         except requests.exceptions.RequestException:
@@ -879,8 +923,17 @@ def cleanup_trending_root_tv(trending_root, trending_monitored,
     combined = (trending_monitored or []) + (trending_request_needed or [])
 
     # Compare against the exact folder names content creation would produce, so a
-    # title or year change leaves no orphaned duplicate behind.
-    expected_names = {show_folder_name(show) for show in combined}
+    # title or year change leaves no orphaned duplicate behind. Legacy (untagged)
+    # names count too: content creation keeps reusing a folder from before the ID
+    # tag rather than creating a tagged duplicate next to it.
+    expected_names = set()
+    tagged_by_legacy = {}
+    for show in combined:
+        tagged_name = show_folder_name(show)
+        legacy_name = legacy_show_folder_name(show)
+        expected_names.update((tagged_name, legacy_name))
+        if legacy_name != tagged_name:
+            tagged_by_legacy[legacy_name] = tagged_name
 
     if debug:
         print(f"{BLUE}[DEBUG] Scanning trending root for stale show folders: {trending_root} ({len(expected_names)} expected folders){RESET}")
@@ -904,13 +957,21 @@ def cleanup_trending_root_tv(trending_root, trending_monitored,
         if debug:
             print(f"{BLUE}[DEBUG] Found trending show folder: {folder_name}{RESET}")
 
+        untagged_name = strip_folder_ids(folder_name)
+        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', untagged_name)
+        show_title_from_folder = title_match.group(1).strip() if title_match else untagged_name
+
         if folder_name in expected_names:
+            tagged_name = tagged_by_legacy.get(folder_name)
+            if tagged_name and (root / tagged_name).exists():
+                # Legacy folder whose ID-tagged twin exists: keep only the tagged one.
+                if _remove_placeholder_folder(show_dir, show_title_from_folder,
+                                              "superseded by ID-tagged folder", debug, webhook_config):
+                    removed_count += 1
+                continue
             if debug:
                 print(f"{BLUE}[DEBUG] Keeping trending content for {folder_name} - still in trending list{RESET}")
             continue
-
-        title_match = re.match(r'^(.+?)\s*\((\d{4})\)', folder_name)
-        show_title_from_folder = title_match.group(1).strip() if title_match else folder_name
 
         if debug:
             print(f"{BLUE}[DEBUG] Folder '{folder_name}' is not an expected trending folder{RESET}")

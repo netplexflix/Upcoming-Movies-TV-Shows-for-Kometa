@@ -362,7 +362,7 @@ def reset_plex_sort_title(plex_url, plex_token, rating_key, original_title, debu
 def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_content,
                             mdblist_tv_items, config, debug=False, retry_count=0, max_retries=4):
     """Update TV show metadata directly in Plex"""
-    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    append_dates = str(config.get("append_dates_to_sort_titles", "false")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
     
@@ -589,7 +589,7 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
 def update_plex_movie_metadata(plex_url, plex_token, movie_libraries, all_movies_with_content,
                                mdblist_movies_items, config, debug=False, retry_count=0, max_retries=4):
     """Update movie metadata directly in Plex"""
-    append_dates = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    append_dates = str(config.get("append_dates_to_sort_titles", "false")).lower() == "true"
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
     
     if debug:

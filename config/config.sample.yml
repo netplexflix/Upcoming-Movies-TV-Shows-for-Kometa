@@ -67,8 +67,8 @@ plex_token: 'YOUR_PLEX_TOKEN'
 movie_libraries: 'Movies'
 tv_libraries: 'TV Shows'
 plex_library_scan: false
-append_dates_to_sort_titles: true
-add_rank_to_sort_title: true
+append_dates_to_sort_titles: false
+add_rank_to_sort_title: false
 edit_S00E00_episode_title: true
 metadata_retry_limit: 4
 
