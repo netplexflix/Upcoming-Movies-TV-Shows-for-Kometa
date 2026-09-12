@@ -1638,10 +1638,16 @@ const _pageSnapshots = {};
 const _watchedPages = new Set();
 let _currentSettingsPage = null;
 
-function _snapshotPage(pageId) {
+/* Tags in string-list controls aren't inputs, so they're captured explicitly. */
+function _pageState(pageId) {
     const el = document.getElementById('page-' + pageId);
-    const inputs = el.querySelectorAll('input, select, textarea');
-    _pageSnapshots[pageId] = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
+    const inputs = el.querySelectorAll('input, select, textarea, .string-tag');
+    return JSON.stringify([...inputs].map(i =>
+        i.type === 'checkbox' ? i.checked : (i.classList.contains('string-tag') ? i.textContent : i.value)));
+}
+
+function _snapshotPage(pageId) {
+    _pageSnapshots[pageId] = _pageState(pageId);
     _dirtyPages.delete(pageId);
     _updateUnsavedBanner();
 }
@@ -1654,12 +1660,15 @@ function _watchPage(pageId) {
 }
 
 function _checkDirty(pageId) {
-    const el = document.getElementById('page-' + pageId);
-    const inputs = el.querySelectorAll('input, select, textarea');
-    const current = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
-    if (current !== _pageSnapshots[pageId]) _dirtyPages.add(pageId);
+    if (_pageState(pageId) !== _pageSnapshots[pageId]) _dirtyPages.add(pageId);
     else _dirtyPages.delete(pageId);
     _updateUnsavedBanner();
+}
+
+/* For handlers that add/remove DOM rows without firing an input event. */
+function _checkDirtyFor(el) {
+    const page = el.closest('.page');
+    if (page) _checkDirty(page.id.replace(/^page-/, ''));
 }
 
 function _updateUnsavedBanner() {
@@ -1914,10 +1923,13 @@ function addTag(e) {
     tag.innerHTML = escapeHtml(val) + `<span class="remove-tag" onclick="removeTag(this)">&times;</span>`;
     container.insertBefore(tag, input);
     input.value = '';
+    _checkDirtyFor(container);
 }
 
 function removeTag(el) {
+    const container = el.closest('.string-list');
     el.closest('.string-tag').remove();
+    _checkDirtyFor(container);
 }
 
 function getStringListValues(opt, scopeEl) {
@@ -2698,7 +2710,7 @@ function onComingSoonTypeChange(idx, select) {
         entry.instances = (_comingSoonChoices.instances[entry.type] || []).slice();
     }
     renderComingSoonCollections();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function addComingSoonCollection() {
@@ -2712,7 +2724,7 @@ function addComingSoonCollection() {
         include_upcoming_finale: false,
     });
     renderComingSoonCollections();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function removeComingSoonCollection(idx) {
@@ -2721,12 +2733,12 @@ function removeComingSoonCollection(idx) {
     gatherComingSoonFromDOM();
     _comingSoonData.splice(idx, 1);
     renderComingSoonCollections();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function updateComingSoonField(idx, field, value) {
     if (_comingSoonData[idx]) _comingSoonData[idx][field] = value;
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function gatherComingSoonFromDOM() {
@@ -2843,7 +2855,7 @@ function onBuildInPlexToggle(idx, select) {
         }
     }
     gatherTrendingListsFromDOM();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function addTrendingList() {
@@ -2855,7 +2867,7 @@ function addTrendingList() {
         legacy_filenames: false,
     });
     renderTrendingLists();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function removeTrendingList(idx) {
@@ -2864,14 +2876,14 @@ function removeTrendingList(idx) {
     gatherTrendingListsFromDOM();
     _trendingListsData.splice(idx, 1);
     renderTrendingLists();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function updateTrendingListField(idx, field, value) {
     if (_trendingListsData[idx]) {
         _trendingListsData[idx][field] = value;
     }
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function gatherTrendingListsFromDOM() {
@@ -3341,7 +3353,9 @@ function toggleBlock(header) {
 }
 
 function removeBlockRow(btn) {
+    const section = btn.closest('.block-section');
     btn.closest('.block-row').remove();
+    _checkDirtyFor(section);
 }
 
 function addCustomVar(blockKey, prefix) {
@@ -3351,8 +3365,15 @@ function addCustomVar(blockKey, prefix) {
     div.innerHTML = `
         <input type="text" placeholder="Key" style="max-width:180px">
         <input type="text" placeholder="Value" style="flex:1">
-        <button class="btn-icon danger" onclick="this.closest('.custom-var-row').remove()" title="Remove">&times;</button>`;
+        <button class="btn-icon danger" onclick="removeCustomVar(this)" title="Remove">&times;</button>`;
     container.appendChild(div);
+    _checkDirtyFor(container);
+}
+
+function removeCustomVar(btn) {
+    const container = btn.closest('.custom-vars');
+    btn.closest('.custom-var-row').remove();
+    _checkDirtyFor(container);
 }
 
 function gatherBlocks(prefix) {
