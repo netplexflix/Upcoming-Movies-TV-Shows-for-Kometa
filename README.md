@@ -52,15 +52,22 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [Step 6: Keeping the Web UI alive (optional)](#2.6)
 - [🖥️ Web UI](#web-ui)
 - [⚙️ Configuration](#configuration)
-  - [General](#general)
-  - [Radarr/Sonarr Instances](#radarrsonarr-instances)
-  - [Instance Output Mode](#instance-output-mode)
-  - [Plex Configuration (for metadata edits)](#plex-configuration-for-metadata-edits)
-  - [Movie Settings](#movie-settings)
-  - [TV Show Settings](#tv-show-settings)
-  - [Trending](#trending)
-  - [Overlay & Collection Settings](#overlay--collection-settings)
-  - [TSSK Configuration (TV Show Status)](#tssk-configuration-tv-show-status)
+  - [Connections](#connections)
+    - [WebUI](#webui)
+    - [Plex](#plex-configuration-for-metadata-edits)
+    - [Scheduler](#scheduler)
+    - [Radarr / Sonarr Instances](#radarrsonarr-instances)
+    - [Instances](#instance-output-mode)
+  - [Settings](#settings)
+    - [General](#general)
+    - [Movies Coming Soon](#movie-settings)
+    - [TV Shows Coming Soon](#tv-show-settings)
+    - [Process TV Show Categories](#tssk-configuration-tv-show-status)
+    - [TV Show Timeframes](#tv-show-timeframes)
+    - [Trending](#trending)
+    - [Plex Collections](#plex-collections)
+    - [Plex Metadata](#plex-metadata)
+  - [YML Configurations](#overlay--collection-settings)
 - [🔔 Webhook on Placeholder Creation & Removal](#webhook-on-placeholder-creation)
 - [🗂️ Create your Coming Soon Collection](#create-coming-soon-collection)
 - [☄️ Add to Kometa Configuration](#add-to-kometa-configuration)
@@ -290,11 +297,11 @@ In server mode UMTK performs an initial run, then waits and re-runs on the confi
 
 UMTK includes a built-in web interface for configuration and monitoring, accessible at `http://localhost:2120` (or `http://your-ip:2120`).
 Features:
-- **Configuration**: Edit all UMTK and TSSK settings through the UI. Organized in tabs: Connections (WebUI/Plex/Radarr/Sonarr), UMTK settings, and TSSK settings.
+- **Configuration**: Edit all settings through the UI.
 - **Connection Testing**: Test your Plex, Radarr, and Sonarr connections directly from the UI with response time feedback.
 - **Scheduler Control**: View the current status (idle/running/stopped), trigger a "Run Now", pause or resume the schedule, and see next/last run times. The schedule itself can also be edited live from the Connections tab (switch between hours-interval and cron, and save — changes take effect without a container restart).
 - **Live Logs**: Monitor real-time application logs.
-- **Update Checker**: Check for new UMTK versions.
+- **Update Checker**: Check for new UMTK and yt-dlp versions.
 
 > [!TIP]
 > All settings can also be edited manually in the YAML config files if you prefer.
@@ -304,31 +311,46 @@ Features:
 <a id="configuration"></a>
 ## ⚙️ Configuration
 
-Rename `config.sample.yml` to `config.yml` and update your settings:
+Rename `config.sample.yml` to `config.yml` and update your settings, or use the [Web UI](#web-ui).<br>
+The sections below follow the Web UI tabs and their order, so you can read along while configuring.
 
-### General:
+> [!NOTE]
+> TSSK (TV Show Status) settings are stored in a separate `tssk_config.yml` (rename `tssk_config.sample.yml`, next to `config.yml`). The Web UI merges both files into one Settings page. Sonarr/Plex credentials and shared settings (`utc_offset`, `debug`, `simplify_next_week_dates`) are automatically read from the main `config.yml` — you do not need to duplicate them.
 
-- **enable_umtk:** Enable/disable the UMTK module — Coming Soon and Trending (default: `true`)
-- **enable_tssk:** Enable/disable the TSSK module — TV Show Status (default: `false`). See [TSSK Configuration](#tssk-configuration-tv-show-status) for settings.
-- **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-- **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-- **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
-- **preferred_language**: Preferred language for trailer downloads. UMTK appends the language name to the YouTube search and boosts videos whose title or channel matches the language. Default: `original` (no preference). Accepted values: `original`, `english`, `german`, `french`, `spanish`, `italian`, `japanese`, `korean`, `portuguese`, `russian`, `chinese`.
-- **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
-  - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
-- **debug:** Set to `true` to troubleshoot issues
-- **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
-- **simplify_next_week_dates:** Set to `true` to simplify dates to `today`, `tomorrow`, `friday` etc if the air date is within the coming week.
-- **skip_channels:** Blacklist YouTube channels that create fake trailers
+<a id="connections"></a>
+### Connections
 
-### Radarr/Sonarr Instances:
+<a id="webui"></a>
+#### WebUI:
 
-You can configure one or more Radarr and Sonarr instances. Each instance needs:
-- **name:** A unique name for this instance (e.g., "Radarr", "Radarr4K")
+- **webui_auth_enabled:** Require a password to access the Web UI (default: `true`). The password is set on first launch and can be changed with the **Change Password** button.
+
+<a id="plex-configuration-for-metadata-edits"></a>
+#### Plex:
+
+- **plex_url:** Your Plex URL
+- **plex_token:** [How to find your Plex Token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
+- **movie_libraries:** names of your movie libraries, comma separated
+- **tv_libraries:** names of your TV show libraries, comma separated
+- **plex_library_scan:** When set to `true`, UMTK asks Plex to scan the configured movie/TV libraries at the end of a run for library types where a new placeholder or trailer was written this run. Useful if your Plex isn't set to auto-scan for changes.
+
+<a id="scheduler"></a>
+#### Scheduler:
+
+- **schedule_type:** `hours` (run every X hours) or `cron` (cron expression). Default: `cron`
+- **schedule_hours:** Interval in hours when `schedule_type` is `hours` (default: `24`)
+- **schedule_cron:** Standard 5-field cron expression when `schedule_type` is `cron` (default: `0 2 * * *`). See [Scheduling (Docker)](#scheduling-with-cron-docker) for details and examples.
+
+<a id="radarrsonarr-instances"></a>
+#### Radarr / Sonarr Instances:
+
+You can configure one or more Radarr and Sonarr instances (`radarr_instances` / `sonarr_instances` in `config.yml`). Each instance has:
+- **name:** A unique friendly name for this instance (e.g., `Radarr`, `Radarr4K`)
 - **url:** Your Radarr/Sonarr URL (default: `http://localhost:7878` / `http://localhost:8989`)
 - **api_key:** Found in Settings → General → Security
-- **timeout:** Increase if needed for large libraries (default: `90`)
-- **exclude_tags:** Comma-separated tag names to exclude from processing
+- **timeout:** Request timeout in seconds. Increase if needed for large libraries (default: `90`)
+- **exclude_tags:** Comma-separated list of Radarr/Sonarr tags whose items should be skipped
+- **umtk_root:** Where UMTK will output the folders for this instance. Every instance can point at a different root so separate Arrs (e.g. 4K) write to separate folders. Docker users: use `/umtkmovies` or `/umtktv`.
 
 Example with multiple instances:
 ```yaml
@@ -338,17 +360,23 @@ radarr_instances:
     api_key: 'YOUR_API_KEY'
     timeout: 90
     exclude_tags: exclude, private
+    umtk_root: /umtkmovies
   - name: Radarr4K
     url: 'http://localhost:7879'
     api_key: 'YOUR_API_KEY'
     timeout: 90
     exclude_tags: exclude
+    umtk_root: /umtkmovies4k
 ```
 
 > [!NOTE]
 > Existing configs using the old flat format (`radarr_url`, `radarr_api_key`, etc.) will continue to work without changes. They are automatically converted to the new instance format at load time.
 
-### Instance Output Mode:
+> [!NOTE]
+> If you upgrade from an older UMTK release that used the global `umtk_root_movies` / `umtk_root_tv` keys, those values are still honored — they're automatically inherited by any instance (and the Trending roots below) that doesn't set its own. The WebUI will show a banner reminding you to migrate.
+
+<a id="instance-output-mode"></a>
+#### Instances:
 
 - **instance_output_mode:** Controls how data from multiple instances is written to YML files:
   - `combined` (default) — Data from all instances is merged into single YML files. Duplicate items (same TVDB/TMDB ID across instances) are deduplicated.
@@ -358,40 +386,43 @@ radarr_instances:
   - `false` (default) — Each instance is evaluated independently. Example: if a movie is already downloaded in your 1080p Radarr but the 4K version isn't available yet, the 4K instance still gets a "Coming Soon" placeholder and overlay.
   - `true` — An item that is already downloaded in **any** instance is treated as available everywhere, so no "Coming Soon" placeholder/overlay is created for instances where it's still missing. In the example above, the 4K instance would *not* get a placeholder because you already own the movie in 1080p.
 
-### Plex Configuration (for metadata edits):
+<a id="settings"></a>
+### Settings
 
-- **plex_url:** Your Plex URL
-- **plex_token:** [How to find your Plex Token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)
-- **movie_libraries:** names of your movie libraries, comma separated
-- **tv_libraries:** names of your TV show libraries, comma separated
-- **plex_library_scan:** When set to `true`, UMTK asks Plex to scan the configured movie/TV libraries at the end of a run for library types where a new placeholder or trailer was written this run. Useful if your Plex isn't set to auto-scan for changes.
-- **append_dates_to_sort_titles:** Release dates will be added to sort titles so you can sort in order of release date.
-- **add_rank_to_sort_title:** Will add the rank in front of the sort title so you can sort in order of rank
-- **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
-- **metadata_retry_limit:** How many times to retry, one minute apart, when items UMTK just created aren't in Plex yet. Applies to the metadata edits and to collections UMTK builds directly in Plex. Only used when UMTK actually wrote new placeholders/trailers that run.
+- **enable_umtk:** Enable/disable the UMTK module — Coming Soon and Trending (default: `true`)
+- **enable_tssk:** Enable/disable the TSSK module — TV Show Status (default: `false`)
 
-### Radarr / Sonarr Instance Settings:
+<a id="general"></a>
+#### General:
 
-Each Radarr and Sonarr instance has its own options configured under the **Connections** tab in the WebUI (or directly under `radarr_instances` / `sonarr_instances` in `config.yml`):
-
-- **name:** A friendly label for the instance (e.g. `Radarr`, `Radarr4K`).
-- **url:** The instance URL.
-- **api_key:** The instance API key.
-- **timeout:** Request timeout in seconds (default: `90`).
-- **exclude_tags:** Comma-separated list of Radarr/Sonarr tags whose items should be skipped.
-- **umtk_root:** Where UMTK will output the folders for this instance. Every instance can point at a different root so separate Arrs (e.g. 4K) write to separate folders.
+- **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
+- **preferred_language**: Preferred language for trailer downloads. UMTK appends the language name to the YouTube search and boosts videos whose title or channel matches the language. Default: `original` (no preference). Accepted values: `original`, `english`, `german`, `french`, `spanish`, `italian`, `japanese`, `korean`, `portuguese`, `russian`, `chinese`.
+- **skip_channels:** Blacklist YouTube channels that create fake trailers
+- **use_tvdb:** (TSSK) Change to `true` if you prefer TheTVDB statuses for returning and ended. (Note: TheTVDB does not have the 'canceled' status)
+- **skip_unmonitored:** (TSSK) Default `true` will skip a show if the upcoming season/episode is unmonitored.
+- **ignore_finales_tags:** (TSSK) Shows with these Sonarr tags will be ignored when checking for finales.
+- **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
+  - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
+- **simplify_next_week_dates:** Set to `true` to simplify dates to `today`, `tomorrow`, `friday` etc if the air date is within the coming week.
+- **cleanup:** Set to `true` (default) to automatically remove trailers/placeholders when actual content is downloaded or no longer valid
+- **debug:** Set to `true` to troubleshoot issues
 
 > [!NOTE]
-> If you upgrade from an older UMTK release that used the global `umtk_root_movies` / `umtk_root_tv` keys, those values are still honored — they're automatically inherited by any instance (and the Trending roots below) that doesn't set its own. The WebUI will show a banner reminding you to migrate.
+> For some shows, episodes are listed one at a time — usually one week ahead — in TheTVDB/Sonarr. Because of this, TSSK may wrongly think the last episode listed in the season is a finale.
+> You can give problematic shows like this a tag in Sonarr (and add that tag to `ignore_finales_tags`) so TSSK will ignore finales for that show and treat the current 'last' episode as a regular episode.
 
-### Movie Settings:
+<a id="movie-settings"></a>
+#### Movies Coming Soon:
 
 - **future_days_upcoming_movies:** How many days ahead to look for releases (default: `30`)
 - **past_days_upcoming_movies:** How many days in the past to look for releases (default: `0` means no limit)
 - **include_inCinemas:** Include cinema release dates (default: `false`, only digital/physical)
 - **future_only:** `false` (default) will include already-released but not-downloaded movies. `true` only looks at release dates in the future.
 
-### TV Show Settings:
+<a id="tv-show-settings"></a>
+#### TV Shows Coming Soon:
 
 - **future_days_upcoming_shows:** How many days ahead to look for premieres (default: `30`)
 - **recent_days_new_show:** How many days back to look for new shows (default: `7`)
@@ -402,19 +433,49 @@ Each Radarr and Sonarr instance has its own options configured under the **Conne
 > Example for TV:<br>
 > <img width="729" height="525" alt="Image" src="https://github.com/user-attachments/assets/8e3e4f4e-b6b7-4ea2-8238-3040a1ff30fe" />
 
-### Trending:
+<a id="tssk-configuration-tv-show-status"></a>
+#### Process TV Show Categories:
+
+Each TSSK (TV Show Status) category can be individually enabled or disabled. Set to `false` to disable:
+
+- **process_new_shows:** New shows that were added in the past x days
+- **process_new_season_soon:** Shows for which a new season is airing within x days
+- **process_new_season_started:** Shows for which a new season has been added which aired in the past x days
+- **process_upcoming_episode:** Shows with upcoming regular episodes within x days
+- **process_upcoming_finale:** Shows with upcoming season finales within x days
+- **process_season_finale:** Shows for which a season finale was added which aired in the past x days
+- **process_final_episode:** Shows for which a final episode was added which aired in the past x days
+- **process_returning_shows:** Returning shows
+- **process_ended_shows:** Ended shows
+- **process_canceled_shows:** Canceled shows
+
+<a id="tv-show-timeframes"></a>
+#### TV Show Timeframes:
+
+For each TSSK category, you can change the relevant timeframe:
+
+- **recent_days_new_show:** How many days in the past to look for new shows (default: `7`)
+- **future_days_new_season:** How many days into the future to look for new seasons (default: `31`)
+- **recent_days_new_season_started:** How many days in the past to look for started seasons (default: `7`)
+- **future_days_upcoming_episode:** How many days into the future for upcoming episodes (default: `31`)
+- **future_days_upcoming_finale:** How many days into the future for upcoming finales (default: `31`)
+- **recent_days_season_finale:** How many days in the past for aired season finales (default: `7`)
+- **recent_days_final_episode:** How many days in the past for aired final episodes (default: `7`)
+
+<a id="trending"></a>
+#### Trending:
+
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
 - **trending_lists:** a list of MDBList lists to process — add as many as you want. Each entry has:
   - **name:** the Plex collection name for this list (also used in the output filenames)
   - **type:** `movie` or `tv`
   - **method:** 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
-  - **url:** the MDBList list URL. You can create your own lists.
   - **limit:** how many items to pull from the list
+  - **url:** the MDBList list URL. You can create your own lists.
   - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
   - **build_in_plex:** `true` lets UMTK create and update this list's collection **directly in Plex**, with the items in MDBList rank order.
   - **plex_library:** which Plex library `build_in_plex` should build the collection in. Leave empty to use the first entry of `movie_libraries` / `tv_libraries`.
-  - **legacy_filenames:** used automatically for backwards compatibility. Do not use/change.
 
   Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
 
@@ -423,38 +484,37 @@ trending_lists:
   - name: Trending Movies
     type: movie
     method: 2
-    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
     limit: 10
+    url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
     root: /umtkmovies
-    legacy_filenames: true
   - name: Popular Movies
     type: movie
     method: 2
-    url: https://mdblist.com/lists/someuser/popular-movies
     limit: 20
+    url: https://mdblist.com/lists/someuser/popular-movies
     root: /umtkmovies
     build_in_plex: true
     plex_library: Movies
 ```
 
-#### Building collections directly in Plex
+##### Building collections directly in Plex
 
 By default UMTK writes a Kometa collection YAML per trending list and Kometa creates the collection in Plex. To get the items to show up in the right order, UMTK can edit sort_titles. This however changes how those items sort everywhere in Plex, not just inside the collection.
 
 Setting **`build_in_plex: true`** on a list makes UMTK build that collection directly in Plex instead, using Plex's own **Custom** collection order. On every run it creates the collection if it doesn't exist yet, adds items that joined the list, removes items that dropped off it, and re-orders the items as needed.
 
-
 > [!IMPORTANT]
 > UMTK still writes the Kometa collection YAML for the list, unchanged. If your Kometa config also builds that collection, both will manage it and overwrite each other's contents and order on every run. When you enable `build_in_plex`, remove the collection yml from your Kometa config and disable the sort_title edits if you previously used them.
 
-#### Coming Soon collections
+<a id="plex-collections"></a>
+#### Plex Collections:
 
 **`coming_soon_collections`** does the same for your upcoming movies and shows: UMTK builds these collections in Plex itself, ordered by expected release date (movies) or expected air date (shows), oldest first. Add as many as you want — one per Plex library, per Arr instance, or any mix. Each entry has:
 
 - **name:** the Plex collection name
 - **type:** `movie` or `tv`
 - **libraries:** which Plex libraries to build it in. The same collection is created in each one.
-- **instances:** which Radarr (movies) / Sonarr (tv) instances to take Coming Soon items from.
+- **instances:** which Radarr (movies) / Sonarr (tv) instances to take Coming Soon items from. For `tv`, leave it empty to build the collection from the TSSK categories below only.
 - **include_new_season_soon / include_upcoming_episode / include_upcoming_finale:** `tv` only. Also puts TSSK's shows from those categories in the collection, interleaved by air date. Requires TSSK enabled with the matching `process_` option on. TSSK's own collections and labels are not affected.
 
 ```yaml
@@ -477,17 +537,36 @@ coming_soon_collections:
 ```
 
 > [!IMPORTANT]
-> Same as above: UMTK keeps writing `UMTK_MOVIES_UPCOMING_COLLECTION.yml` / `UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml` for Kometa. Remove them from your Kometa config so both don't manage the same collection.
+> Same as above: UMTK keeps writing `UMTK_MOVIES_UPCOMING_COLLECTION.yml` / `UMTK_TV_UPCOMING_SHOWS_COLLECTION.yml` for Kometa. Remove them from your Kometa config so both don't manage the same collection, and optionally disable the sort_title edits below.
 
-### Overlay & Collection Settings:
+<a id="plex-metadata"></a>
+#### Plex Metadata:
 
-The remaining settings customize the output .yml files for Kometa.
+These options edit metadata directly in Plex and require `plex_url`, `plex_token` and the library names to be configured under [Connections](#connections). If you let UMTK build your collections directly in Plex (see above), the sort title edits are not necessary and should be turned off.
+
+- **edit_sort_titles:** (TSSK) Master toggle. Set to `true` to let TSSK prepend the relevant air date to Plex sort titles so you can sort shows by date. The sub-options pick which categories receive edits:
+  - **edit_sort_titles_new_season_soon:** Default `true`. Edit sort titles for shows in the New Season Soon category.
+  - **edit_sort_titles_upcoming_episode:** Default `false`. Edit sort titles for shows in the Upcoming Episode category.
+  - **edit_sort_titles_upcoming_finale:** Default `false`. Edit sort titles for shows in the Upcoming Finale category.
+- **append_dates_to_sort_titles:** Release dates will be added to the sort titles of Coming Soon movies and shows so you can sort in order of release date.
+- **add_rank_to_sort_title:** Will add the rank in front of the sort title of trending items so you can sort in order of rank
+- **edit_S00E00_episode_title:** Will name the S00E00 episodes as either `Trailer` or `Coming Soon` depending on whether a trailer was downloaded or placeholder file was used
+- **metadata_retry_limit:** How many times to retry, one minute apart, when items UMTK just created aren't in Plex yet. Applies to the metadata edits and to collections UMTK builds directly in Plex. Only used when UMTK actually wrote new placeholders/trailers that run.
+
+<a id="overlay--collection-settings"></a>
+### YML Configurations
+
+The remaining settings customize the output .yml files for Kometa. Coming Soon, New Shows & Trending blocks live in `config.yml`; TV Show Status blocks live in `tssk_config.yml`. Each category has its own collection and overlay blocks:
+
+- **Collection blocks:** Customize `collection_name`, `item_label`, `build_collection`, `sync_mode`, etc. You can enter any Kometa collection variables.
+- **Backdrop blocks:** Enable/disable the backdrop, set colors, size, and positioning. Supports both `back_color` (solid color) and `url` (image) backdrops.
+- **Text blocks:** Customize `use_text`, `date_format`, `capitalize_dates`, font color, size, and positioning.
 
 > [!TIP]
-> You can enter any Kometa variables in this block and they will be automatically added in the generated .yml files.</br>
+> You can enter any Kometa variables in these blocks and they will be automatically added in the generated .yml files.</br>
 
 > [!NOTE]
-> There are two different overlays:<br>
+> There are two different Coming Soon overlays:<br>
 >
 > - One for movies/shows with a release/air date in the future. This overlay will append the release date.<br>
 > - One for movies/shows that have already been released/aired but haven't been downloaded yet. Depending on your setup there could be some time between the official release date and when it's actually added to your Plex server. Since the release date is in the past it isn't printed. Instead you can state it's "coming soon". You can disable this category by setting `future_only` to `true`
@@ -497,6 +576,15 @@ The remaining settings customize the output .yml files for Kometa.
 > - **Request Needed** (`backdrop/text_trending_movies_request_needed`, `backdrop/text_trending_shows_request_needed`) — the item is not in any Radarr/Sonarr library, so a request is required.
 > - **Coming Soon** — the item IS monitored in Radarr/Sonarr *and* releases/airs within your upcoming day range, so it reuses the regular upcoming overlay.
 > - **Requested** (`backdrop/text_trending_movies_requested`, `backdrop/text_trending_shows_requested`) — the item IS monitored but its release/air date is outside the day range or not yet known. 
+
+> [!TIP]
+> **TV Show Status:** For `New Season Soon`, `New Season Started`, `Upcoming Finale` and `Season Finale` you can use `[#]` in the `use_text` field to display the season number. For example: `"SEASON [#] AIRS"`
+
+> [!TIP]
+> **TV Show Status:** `group` and `weight` are used to determine which overlays are applied when multiple are valid for the same show.
+> For example: You add a new show, for which season 2 just aired in full yesterday. In this case the following overlays would be valid: `new show`, `new season started` and `season finale`.
+> The overlay with the highest `weight` will be applied. If you prefer a different priority, adjust the weights accordingly.
+> You can also have multiple overlays applied at the same time by removing `group` and `weight`, in case you position them differently.
 
 > [!NOTE] 
 > **Date format options:**
@@ -513,80 +601,6 @@ The remaining settings customize the output .yml files for Kometa.
 > - `yyyy`: Full year (2025)
 >
 > Dividers can be `/`, `-` or a space
-
-<a id="tssk-configuration-tv-show-status"></a>
-### TSSK Configuration (TV Show Status):
-
-TSSK settings are stored in a separate config file. Rename `tssk_config.sample.yml` to `tssk_config.yml` in your config folder (next to `config.yml`).
-
-> [!NOTE]
-> Sonarr/Plex credentials and shared settings (`utc_offset`, `debug`, `simplify_next_week_dates`) are automatically read from the main `config.yml` — you do not need to duplicate them.
-
-#### TSSK General Settings:
-
-- **use_tvdb:** Change to `true` if you prefer TheTVDB statuses for returning and ended. (Note: TheTVDB does not have the 'canceled' status)
-- **skip_unmonitored:** Default `true` will skip a show if the upcoming season/episode is unmonitored.
-- **ignore_finales_tags:** Shows with these Sonarr tags will be ignored when checking for finales.
-
-#### TSSK Sort Title Edits:
-
-TSSK can edit sort titles directly in Plex, prepending the relevant air date so you can sort shows by date. The master toggle enables the feature; the sub-options pick which categories receive edits.
-
-- **edit_sort_titles:** Master toggle. Set to `true` to let TSSK edit Plex sort titles. Requires `plex_url`, `plex_token`, and `tv_libraries` to be configured.
-- **edit_sort_titles_new_season_soon:** Default `true`. Edit sort titles for shows in the New Season Soon category.
-- **edit_sort_titles_upcoming_episode:** Default `false`. Edit sort titles for shows in the Upcoming Episode category.
-- **edit_sort_titles_upcoming_finale:** Default `false`. Edit sort titles for shows in the Upcoming Finale category.
-
-> [!NOTE]
-> For some shows, episodes are listed one at a time — usually one week ahead — in TheTVDB/Sonarr. Because of this, TSSK may wrongly think the last episode listed in the season is a finale.
-> You can give problematic shows like this a tag in Sonarr (and add that tag to `ignore_finales_tags`) so TSSK will ignore finales for that show and treat the current 'last' episode as a regular episode.
-
-#### TSSK Categories:
-
-Each category can be individually enabled or disabled. Set to `false` to disable:
-
-- **process_new_shows:** New shows that were added in the past x days
-- **process_new_season_soon:** Shows for which a new season is airing within x days
-- **process_new_season_started:** Shows for which a new season has been added which aired in the past x days
-- **process_upcoming_episode:** Shows with upcoming regular episodes within x days
-- **process_upcoming_finale:** Shows with upcoming season finales within x days
-- **process_season_finale:** Shows for which a season finale was added which aired in the past x days
-- **process_final_episode:** Shows for which a final episode was added which aired in the past x days
-- **process_returning_shows:** Returning shows
-- **process_ended_shows:** Ended shows
-- **process_canceled_shows:** Canceled shows
-
-#### TSSK Timeframe Settings:
-
-For each category, you can change the relevant timeframe:
-
-- **recent_days_new_show:** How many days in the past to look for new shows (default: `7`)
-- **future_days_new_season:** How many days into the future to look for new seasons (default: `31`)
-- **recent_days_new_season_started:** How many days in the past to look for started seasons (default: `7`)
-- **future_days_upcoming_episode:** How many days into the future for upcoming episodes (default: `31`)
-- **future_days_upcoming_finale:** How many days into the future for upcoming finales (default: `31`)
-- **recent_days_season_finale:** How many days in the past for aired season finales (default: `7`)
-- **recent_days_final_episode:** How many days in the past for aired final episodes (default: `7`)
-
-#### TSSK Collection & Overlay Settings:
-
-Each category has its own collection and overlay blocks, following the same pattern as the UMTK overlay settings.
-
-- **Collection blocks:** Customize `collection_name`, `item_label`, `build_collection`, `sync_mode`, etc. You can enter any Kometa collection variables.
-- **Backdrop blocks:** Enable/disable the backdrop, set colors, size, and positioning. Supports both `back_color` (solid color) and `url` (image) backdrops.
-- **Text blocks:** Customize `use_text`, `date_format`, `capitalize_dates`, font color, size, and positioning.
-
-> [!TIP]
-> For `New Season Soon`, `New Season Started`, `Upcoming Finale` and `Season Finale` you can use `[#]` in the `use_text` field to display the season number. For example: `"SEASON [#] AIRS"`
-
-> [!TIP]
-> `group` and `weight` are used to determine which overlays are applied when multiple are valid for the same show.
-> For example: You add a new show, for which season 2 just aired in full yesterday. In this case the following overlays would be valid: `new show`, `new season started` and `season finale`.
-> The overlay with the highest `weight` will be applied. If you prefer a different priority, adjust the weights accordingly.
-> You can also have multiple overlays applied at the same time by removing `group` and `weight`, in case you position them differently.
-
-> [!NOTE]
-> The date format options are the same as listed above in the [Overlay & Collection Settings](#overlay--collection-settings) section.
 
 ---
 
@@ -688,7 +702,7 @@ Movies:
 > Only add the files for the categories you have enabled. All are optional and independently generated based on your config settings.
 
 > [!NOTE]
-> Extra trending lists (without `legacy_filenames`) each write their own pair of files, named after the list, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml` and `UMTK_MOVIES_TOP10_OVERLAYS_Popular_Movies.yml` — add those too.
+> Extra trending lists each write their own pair of files, named after the list, e.g. `UMTK_MOVIES_TRENDING_COLLECTION_Popular_Movies.yml` and `UMTK_MOVIES_TOP10_OVERLAYS_Popular_Movies.yml` — add those too.
 
 ---
 
@@ -804,6 +818,7 @@ When `include_inCinemas` is enabled, UMTK considers three release types:
 UMTK uses the earliest available date when multiple types exist.
 Keep `include_inCinemas` set to `false` to ignore cinema/theater release dates.
 
+<a id="scheduling-with-cron-docker"></a>
 ### Scheduling (Docker)
 
 UMTK supports two schedule modes — **every X hours** or a **cron expression** — and both can be edited live from the Web UI's Connections tab without restarting the container.

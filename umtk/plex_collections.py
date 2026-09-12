@@ -221,24 +221,6 @@ def set_collection_custom_sort(plex_url, plex_token, collection_rating_key, debu
     return False
 
 
-def trending_collection_name(config, lst):
-    """The Plex collection name for a trending list.
-
-    Must match the name create_trending_collection_yaml_* writes, otherwise UMTK
-    would build a second collection next to the one Kometa manages.
-    """
-    if lst.get('legacy_filenames'):
-        if lst.get('type') == 'movie':
-            block, default = 'collection_trending_movies', 'Trending Movies'
-        else:
-            block, default = 'collection_trending_shows', 'Trending Shows'
-        block_config = config.get(block)
-        if isinstance(block_config, dict):
-            return block_config.get('collection_name') or default
-        return default
-    return lst.get('name')
-
-
 def _first_library_name(value):
     """First entry of a comma-separated (or list) library setting."""
     if isinstance(value, str):
@@ -555,12 +537,16 @@ def _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
 
 
 def _trending_spec(lst, config):
-    """Turn a trending list into a spec for _sync_specs."""
+    """Turn a trending list into a spec for _sync_specs.
+
+    The list's Name is the Plex collection name - regardless of legacy_filenames,
+    which only decides which yml filenames the list writes.
+    """
     list_name = lst.get('name') or 'Unnamed list'
     expected_type = 'show' if lst.get('type') == 'tv' else 'movie'
 
     return {
-        'name': trending_collection_name(config, lst),
+        'name': list_name,
         'type': expected_type,
         'library_names': [(lst.get('plex_library') or '').strip()],
         'label': lambda _library_name, n=list_name: f"Trending list '{n}'",

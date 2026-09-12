@@ -2769,14 +2769,10 @@ function renderTrendingListCard(idx, lst) {
     const buildInPlex = String(lst.build_in_plex).toLowerCase() === 'true';
     const plexLibraryVal = escapeAttr(lst.plex_library || '');
     const libraryPlaceholder = escapeAttr(_defaultPlexLibraries[type] || (type === 'tv' ? 'TV Shows' : 'Movies'));
-    const legacyBadge = lst.legacy_filenames
-        ? `<span class="setting-desc" style="margin-right:8px" title="This list writes the classic UMTK trending filenames so existing Kometa configs keep working">classic filenames</span>`
-        : '';
     return `<div class="instance-card" data-trend-idx="${idx}">
         <div class="instance-card-header">
             <span class="instance-card-title">${escapeHtml(lst.name || 'New Trending List')}</span>
             <div class="instance-card-actions">
-                ${legacyBadge}
                 <button class="test-btn" onclick="testTrendingList(${idx})">Test</button>
                 <span class="test-result" id="test-trending-${idx}"></span>
                 <button class="btn-remove-instance" onclick="removeTrendingList(${idx})">Remove</button>
