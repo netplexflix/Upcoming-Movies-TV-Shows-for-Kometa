@@ -138,6 +138,25 @@ def _run_inner():
 
     collector = {}
 
+    # TSSK's config is needed before UMTK runs: New Season Placeholders use
+    # TSSK's New Season Soon window, and only make sense when TSSK will also
+    # produce that category (its overlays/collection mark the placed shows).
+    tssk_config = None
+    if enable_tssk:
+        try:
+            from tssk.config_loader import load_tssk_config
+            tssk_config = load_tssk_config()
+        except Exception as e:
+            print(f"{RED}Could not load tssk_config.yml: {e}{RESET}")
+
+    if str(config.get('new_season_placeholders', 'false')).lower() == 'true':
+        tssk_new_season_on = (tssk_config is not None and
+                              str(tssk_config.get('process_new_season_soon', 'true')).lower() == 'true')
+        if tssk_new_season_on:
+            from tssk.config_loader import get_future_days_new_season
+            config['future_days_new_season'] = get_future_days_new_season(tssk_config)
+        # Left unset otherwise: umtk.main reports the option as skipped.
+
     # ---- Run UMTK ----
     if enable_umtk:
         try:
@@ -156,10 +175,8 @@ def _run_inner():
         print(f"{BLUE}{'=' * 50}{RESET}")
 
         try:
-            from tssk.config_loader import load_tssk_config
             from tssk.main import run_tssk
 
-            tssk_config = load_tssk_config()
             if tssk_config is None:
                 print(f"{RED}TSSK skipped: could not load tssk_config.yml{RESET}")
                 tssk_success = False

@@ -59,9 +59,10 @@ def find_new_season_shows(sonarr_url, api_key, all_series, tag_mapping, future_d
                 'title': series['title'],
                 'seasonNumber': next_future['seasonNumber'],
                 'airDate': air_date_str_yyyy_mm_dd,
-                'tvdbId': tvdb_id
+                'tvdbId': tvdb_id,
+                'tmdbId': series.get('tmdbId')
             }
-            
+
             if skip_unmonitored:
                 episode_monitored = next_future.get("monitored", True)
                 
@@ -91,6 +92,7 @@ def find_new_season_shows(sonarr_url, api_key, all_series, tag_mapping, future_d
                 'seasonNumber': next_future['seasonNumber'],
                 'airDate': air_date_str_yyyy_mm_dd,
                 'tvdbId': tvdb_id,
+                'tmdbId': series.get('tmdbId'),
                 'reason': "New show (Season 1)"  # Add reason for skipping
             }
             
@@ -173,7 +175,8 @@ def find_upcoming_regular_episodes(sonarr_url, api_key, all_series, future_days_
             'seasonNumber': season_num,
             'episodeNumber': episode_num,
             'airDate': air_date_str_yyyy_mm_dd,
-            'tvdbId': tvdb_id
+            'tvdbId': tvdb_id,
+            'tmdbId': series.get('tmdbId')
         }
         
         if skip_unmonitored:
@@ -266,7 +269,8 @@ def find_upcoming_finales(sonarr_url, api_key, all_series, future_days_upcoming_
             'seasonNumber': season_num,
             'episodeNumber': episode_num,
             'airDate': air_date_str_yyyy_mm_dd,
-            'tvdbId': tvdb_id
+            'tvdbId': tvdb_id,
+            'tmdbId': series.get('tmdbId')
         }
         
         if skip_unmonitored:
@@ -381,7 +385,8 @@ def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_seas
                     'seasonNumber': season_num,
                     'episodeNumber': max_episode_num,
                     'airDate': air_date_str_yyyy_mm_dd,
-                    'tvdbId': tvdb_id
+                    'tvdbId': tvdb_id,
+                    'tmdbId': series.get('tmdbId')
                 }
                 
                 matched_shows.append(show_dict)
@@ -502,7 +507,8 @@ def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_fina
                 'seasonNumber': max_season,
                 'episodeNumber': max_episode_num,
                 'airDate': air_date_str_yyyy_mm_dd,
-                'tvdbId': tvdb_id
+                'tvdbId': tvdb_id,
+                'tmdbId': series.get('tmdbId')
             }
             
             matched_shows.append(show_dict)
@@ -589,7 +595,8 @@ def find_new_season_started(sonarr_url, api_key, all_series, recent_days_new_sea
                 'seasonNumber': max_season_with_downloads,
                 'episodeNumber': first_episode.get('episodeNumber'),
                 'airDate': air_date_str_yyyy_mm_dd,
-                'tvdbId': tvdb_id
+                'tvdbId': tvdb_id,
+                'tmdbId': series.get('tmdbId')
             }
             
             matched_shows.append(show_dict)

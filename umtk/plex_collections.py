@@ -13,6 +13,7 @@ from .plex_integration import get_plex_libraries, get_plex_library_items, _plex_
 # Plex library/collection type ids and the 'Collection Order' advanced setting.
 PLEX_TYPE_MOVIE = 1
 PLEX_TYPE_SHOW = 2
+PLEX_TYPE_COLLECTION = 18
 COLLECTION_SORT_CUSTOM = 2
 
 # Plex needs a moment to index placeholders/trailers UMTK just wrote, so items
@@ -54,7 +55,7 @@ def get_plex_machine_identifier(plex_url, plex_token, debug=False):
 
 
 def get_section_collections(plex_url, plex_token, library_key, debug=False):
-    """All collections in a library section as [{'ratingKey', 'title'}]."""
+    """All collections in a library section as [{'ratingKey', 'title', 'titleSort'}]."""
     try:
         url = f"{plex_url.rstrip('/')}/library/sections/{library_key}/collections"
 
@@ -68,7 +69,9 @@ def get_section_collections(plex_url, plex_token, library_key, debug=False):
         # Depending on the PMS version collections come back under Metadata or Directory.
         entries = container.get('Metadata') or container.get('Directory') or []
 
-        collections = [{'ratingKey': str(e.get('ratingKey')), 'title': e.get('title', '')}
+        # Plex omits titleSort when it equals the title.
+        collections = [{'ratingKey': str(e.get('ratingKey')), 'title': e.get('title', ''),
+                        'titleSort': e.get('titleSort') or e.get('title', '')}
                        for e in entries if e.get('ratingKey')]
 
         if debug:
@@ -221,6 +224,43 @@ def set_collection_custom_sort(plex_url, plex_token, collection_rating_key, debu
     return False
 
 
+def set_collection_sort_title(plex_url, plex_token, library_key, collection_rating_key,
+                              sort_title, debug=False):
+    """Set (and lock) a collection's sort title.
+
+    The section-scoped edit is what python-plexapi (and so Kometa) uses for
+    collections; the metadata path is the one update_plex_sort_title() uses for
+    items and is kept as a fallback, as in set_collection_custom_sort().
+    """
+    base = plex_url.rstrip('/')
+    sort_params = {"titleSort.value": sort_title, "titleSort.locked": 1}
+    attempts = [
+        (f"{base}/library/sections/{library_key}/all",
+         {"type": PLEX_TYPE_COLLECTION, "id": collection_rating_key, **sort_params}),
+        (f"{base}/library/metadata/{collection_rating_key}", sort_params),
+    ]
+
+    for url, params in attempts:
+        try:
+            if debug:
+                print(f"{BLUE}[DEBUG] Setting collection sort title - URL: {url}, "
+                      f"params: {params}{RESET}")
+
+            response = request_with_retry('PUT', url, headers=_headers(plex_token),
+                                          params=params, timeout=30)
+            if response.ok:
+                return True
+            if debug:
+                print(f"{BLUE}[DEBUG] {url} returned {response.status_code}{RESET}")
+        except requests.exceptions.RequestException as e:
+            if debug:
+                print(f"{BLUE}[DEBUG] {url} failed: {str(e)}{RESET}")
+
+    print(f"{ORANGE}Could not set the sort title of collection "
+          f"{collection_rating_key}{RESET}")
+    return False
+
+
 def _first_library_name(value):
     """First entry of a comma-separated (or list) library setting."""
     if isinstance(value, str):
@@ -274,7 +314,7 @@ def _resolve_items(lst, by_tmdb, by_tvdb):
             rating_key = by_tmdb.get(str(tmdb_id))
 
         if not rating_key:
-            missing.append(item.get('title', 'Unknown'))
+            missing.append(_missing_label(item, ('tvdb_id', 'tmdb_id') if is_tv else ('tmdb_id',)))
             continue
         if rating_key in seen:
             continue
@@ -393,11 +433,13 @@ def _library_items(plex_url, plex_token, library_key, library_items_cache, debug
 
 
 def _sync_collection(plex_url, plex_token, machine_id, library_key, library_name,
-                     expected_type, collection_name, desired, debug=False):
+                     expected_type, collection_name, desired, debug=False,
+                     sort_title=None):
     """Create the collection or bring an existing one in line with 'desired'.
 
     'desired' is the wanted ratingKeys in the wanted order. Adds what joined,
-    removes what left, forces Custom order and reorders in place.
+    removes what left, forces Custom order and reorders in place. A 'sort_title'
+    is applied when it differs from what Plex has; None leaves it alone.
     """
     collections = get_section_collections(plex_url, plex_token, library_key, debug)
     existing = _find_collection(collections, collection_name)
@@ -431,6 +473,12 @@ def _sync_collection(plex_url, plex_token, machine_id, library_key, library_name
                 removed += 1
 
     set_collection_custom_sort(plex_url, plex_token, collection_rating_key, debug)
+
+    if sort_title and (created or existing.get('titleSort') != sort_title):
+        if set_collection_sort_title(plex_url, plex_token, library_key,
+                                     collection_rating_key, sort_title, debug):
+            print(f"{GREEN}Set sort title of Plex collection '{collection_name}' "
+                  f"({library_name}) to '{sort_title}'{RESET}")
 
     moves = _apply_order(plex_url, plex_token, collection_rating_key, desired,
                          created, debug)
@@ -533,7 +581,14 @@ def _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
 
         _sync_collection(plex_url, plex_token, machine_id, target['library']['key'],
                          target['library_name'], spec['type'], spec['name'],
-                         target['desired'], debug)
+                         target['desired'], debug, sort_title=spec.get('sort_title'))
+
+
+def _custom_sort_title(entry):
+    """The sort title an entry asks for, or None when it doesn't opt in."""
+    if not _is_true(entry.get('edit_sort_title')):
+        return None
+    return (entry.get('sort_title') or '').strip() or None
 
 
 def _trending_spec(lst, config):
@@ -548,9 +603,11 @@ def _trending_spec(lst, config):
     return {
         'name': list_name,
         'type': expected_type,
-        'library_names': [(lst.get('plex_library') or '').strip()],
+        # No library picked -> _resolve_library falls back to the first configured one.
+        'library_names': _name_list(lst.get('plex_libraries')) or [None],
         'label': lambda _library_name, n=list_name: f"Trending list '{n}'",
         'resolve': lambda by_tmdb, by_tvdb, l=lst: _resolve_items(l, by_tmdb, by_tvdb),
+        'sort_title': _custom_sort_title(lst),
     }
 
 
@@ -606,17 +663,36 @@ def _sorted_by_date(items, date_key):
     return sorted(items, key=lambda i: str(i.get(date_key) or _NO_DATE))
 
 
-def _resolve_by_id(items, index, id_key):
-    """Map date-sorted item dicts to Plex ratingKeys, preserving order."""
+def _missing_label(item, id_keys):
+    """'Title [tvdb 123, tmdb 456]' so a miss can be checked against Plex's GUIDs."""
+    # Keys are 'tvdbId' (Sonarr/Radarr) or 'tvdb_id' (MDBList); label with the source name.
+    ids = [f"{key[:4]} {item[key]}" for key in id_keys if item.get(key)]
+    title = item.get('title', 'Unknown')
+    return f"{title} [{', '.join(ids)}]" if ids else title
+
+
+def _resolve_by_ids(items, lookups):
+    """Map date-sorted item dicts to Plex ratingKeys, preserving order.
+
+    'lookups' is an ordered list of (item_key, index) pairs; the first index
+    that knows the item's id wins. TV passes TVDB first and TMDB second so a
+    show Plex only linked to TMDB (no tvdb:// GUID) is still found.
+    """
     rating_keys = []
     seen = set()
     missing = []
+    id_keys = [key for key, _ in lookups]
 
     for item in items:
-        id_value = item.get(id_key)
-        rating_key = index.get(str(id_value)) if id_value else None
+        rating_key = None
+        for id_key, index in lookups:
+            id_value = item.get(id_key)
+            if id_value:
+                rating_key = index.get(str(id_value))
+            if rating_key:
+                break
         if not rating_key:
-            missing.append(item.get('title', 'Unknown'))
+            missing.append(_missing_label(item, id_keys))
             continue
         if rating_key in seen:
             continue
@@ -686,7 +762,6 @@ def _coming_soon_spec(entry, config, collector, debug=False):
     """Turn one coming_soon_collections entry into a spec for _sync_specs."""
     name = entry.get('name')
     expected_type = 'show' if entry.get('type') == 'tv' else 'movie'
-    id_key = 'tvdbId' if expected_type == 'show' else 'tmdbId'
 
     if not name:
         print(f"{ORANGE}Coming Soon collection without a name - skipping{RESET}")
@@ -714,8 +789,11 @@ def _coming_soon_spec(entry, config, collector, debug=False):
 
     def resolve(by_tmdb, by_tvdb):
         # ratingKeys are per library, so this runs once per target library.
-        index = by_tvdb if id_key == 'tvdbId' else by_tmdb
-        return _resolve_by_id(items, index, id_key)
+        if expected_type == 'show':
+            lookups = [('tvdbId', by_tvdb), ('tmdbId', by_tmdb)]
+        else:
+            lookups = [('tmdbId', by_tmdb)]
+        return _resolve_by_ids(items, lookups)
 
     return {
         'name': name,
@@ -723,6 +801,7 @@ def _coming_soon_spec(entry, config, collector, debug=False):
         'library_names': library_names,
         'label': lambda library_name, n=name: f"Coming Soon '{n}' ({library_name})",
         'resolve': resolve,
+        'sort_title': _custom_sort_title(entry),
     }
 
 

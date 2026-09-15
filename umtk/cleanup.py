@@ -43,7 +43,8 @@ def _title_in_trending(check_title, trending_items, debug=False):
 def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                        future_days_upcoming_shows=30, utc_offset=0, future_only_tv=False,
                        trending_monitored=None, trending_request_needed=None,
-                       globally_available_ids=None, webhook_config=None):
+                       globally_available_ids=None, webhook_config=None,
+                       new_season_days=None, globally_downloaded_ids=None):
     """Cleanup TV show trailers or placeholders for a group of Sonarr instances
     that share a placeholder root.
 
@@ -51,6 +52,8 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
       name, url, api_key, all_series, exclude_tag_ids, umtk_root_tv.
     Within a group every instance shares the same umtk_root_tv (or the group
     has a single instance with umtk_root_tv=None falling back to series paths).
+    new_season_days: the New Season Placeholders window when that option is on,
+    so those placeholders count as current content too.
     """
     from .finders import find_upcoming_shows
 
@@ -71,15 +74,16 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
     current_upcoming_titles = set()
     for inst in sonarr_instances:
         try:
-            current_future_shows, current_aired_shows = find_upcoming_shows(
+            current_future_shows, current_aired_shows, current_new_season_shows = find_upcoming_shows(
                 inst['all_series'], inst['url'], inst['api_key'], future_days_upcoming_shows,
                 utc_offset, debug, inst.get('exclude_tag_ids'), future_only_tv,
-                globally_available_ids
+                globally_available_ids, new_season_days, globally_downloaded_ids
             )
         except requests.exceptions.RequestException:
             print(f"{RED}Error during TV cleanup - Sonarr connection failed for instance '{inst['name']}'. Skipping cleanup for this group.{RESET}")
             return
-        current_upcoming_titles.update(show['title'] for show in current_future_shows + current_aired_shows)
+        current_upcoming_titles.update(
+            show['title'] for show in current_future_shows + current_aired_shows + current_new_season_shows)
     
     current_trending_shows = []
     if trending_monitored:
@@ -314,7 +318,12 @@ def cleanup_tv_content(sonarr_instances, tv_method, debug=False,
                             removal_reason = "show is no longer monitored"
                         elif s01e01 and not s01e01.get('monitored', False):
                             should_remove = True
-                            removal_reason = "S01E01 is no longer monitored"
+                            # A new season placeholder's S01E01 was never monitored;
+                            # it goes once the show has real episodes.
+                            if any(ep.get('hasFile', False) for ep in episodes):
+                                removal_reason = "show now has downloaded episodes"
+                            else:
+                                removal_reason = "S01E01 is no longer monitored"
                         elif owning_exclude_tags and any(tag in series.get('tags', []) for tag in owning_exclude_tags):
                             should_remove = True
                             removal_reason = "show has excluded tags"

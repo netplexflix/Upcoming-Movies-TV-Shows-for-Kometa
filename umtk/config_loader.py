@@ -128,7 +128,7 @@ def normalize_trending(config):
                 'limit': config.get('mdblist_movies_limit', 10),
                 'root': config.get('trending_root_movies', ''),
                 'build_in_plex': False,
-                'plex_library': '',
+                'plex_libraries': [],
                 'legacy_filenames': True,
             },
             {
@@ -139,7 +139,7 @@ def normalize_trending(config):
                 'limit': config.get('mdblist_tv_limit', 10),
                 'root': config.get('trending_root_tv', ''),
                 'build_in_plex': False,
-                'plex_library': '',
+                'plex_libraries': [],
                 'legacy_filenames': True,
             },
         ]
@@ -156,7 +156,14 @@ def normalize_trending(config):
         lst.setdefault('url', '')
         lst.setdefault('limit', 10)
         lst.setdefault('build_in_plex', False)
-        lst.setdefault('plex_library', '')
+        # plex_libraries superseded the single plex_library string; a config
+        # written before the change still names one library that way.
+        if 'plex_libraries' in lst:
+            lst['plex_libraries'] = _as_name_list(lst.get('plex_libraries'))
+        else:
+            lst['plex_libraries'] = _as_name_list(lst.pop('plex_library', ''))
+        lst.setdefault('edit_sort_title', False)
+        lst.setdefault('sort_title', '')
         lst.setdefault('legacy_filenames', False)
         if not lst.get('root'):
             fallback = ('trending_root_movies' if lst.get('type') == 'movie'
@@ -240,6 +247,8 @@ def normalize_coming_soon(config):
             entry['instances'] = _instance_names(config, entry.get('type'))
         for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
             entry.setdefault(f'include_{flag}', False)
+        entry.setdefault('edit_sort_title', False)
+        entry.setdefault('sort_title', '')
 
     return config
 

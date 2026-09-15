@@ -1557,15 +1557,15 @@ let _dashLoaded = false, _connLoaded = false, _configsLoaded = false, _logLoaded
 /* Settings page layout. Section membership, labels and descriptions come from
    the server (routes.py UMTK_OPTIONS / TSSK_OPTIONS); only the ordering lives
    here. Sections are emitted in this order even when they hold no flat options
-   (Plex Collections), so the card-based editors land in the right place. */
+   (Coming Soon Collections), so the card-based editors land in the right place. */
 const SETTINGS_SECTION_ORDER = [
     'General',
     'Movies Coming Soon',
     'TV Shows Coming Soon',
     'Process TV Show Categories',
     'TV Show Timeframes',
-    'Trending',
-    'Plex Collections',
+    'Trending Collections',
+    'Coming Soon Collections',
     'Plex Metadata',
 ];
 
@@ -1573,7 +1573,7 @@ const SETTINGS_SECTION_ORDER = [
    section, so a newly added option can never silently disappear from the UI. */
 const SETTINGS_KEY_ORDER = [
     /* General - processing method */
-    'movies', 'tv', 'method_fallback', 'preferred_language', 'skip_channels',
+    'movies', 'tv', 'new_season_placeholders', 'method_fallback', 'preferred_language', 'skip_channels',
     /* General - TV show status source & filters */
     'use_tvdb', 'skip_unmonitored', 'ignore_finales_tags',
     /* General - global */
@@ -1593,14 +1593,18 @@ const SETTINGS_KEY_ORDER = [
 
 /* Intro text rendered directly under a section's <h2>. */
 const SECTION_DESCRIPTIONS = {
-    'Plex Collections': 'Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date. Make sure to remove the matching collection yml from your Kometa config, and optionally disable sort_title edits.',
+    'Coming Soon Collections': 'Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date. Make sure to remove the matching collection yml from your Kometa config, and optionally disable sort_title edits.',
     'Plex Metadata': 'If you let UMTK directly create your collections, these edits are not necessary and should be turned off.',
 };
 
 /* Extra controls rendered inside a section's <h2>. */
 const SECTION_BUTTONS = {
-    'Trending': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`,
+    'Trending Collections': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`,
 };
+
+/* Default names for new Coming Soon collections (twin of COMING_SOON_DEFAULT_NAMES
+   in umtk/config_loader.py). A card still carrying one of these follows its Type. */
+const COMING_SOON_DEFAULT_NAMES = { movie: 'Movies Coming Soon', tv: 'TV Shows Coming Soon' };
 
 /* The two master toggles, hoisted above the first section. */
 const ENABLE_KEYS = ['enable_umtk', 'enable_tssk'];
@@ -1971,9 +1975,9 @@ let _instanceData = { radarr_instances: [], sonarr_instances: [] };
 
 /* ── Trending list editor state ───────────────────────────────────────── */
 let _trendingListsData = [];
-/* First configured Plex movie/TV library, used to pre-fill the 'Build in Plex'
-   library fields on the trending cards and the Coming Soon settings. */
-let _defaultPlexLibraries = { movie: '', tv: '' };
+/* Configured Plex movie/TV libraries offered as 'Build in Plex' checkboxes on
+   the trending cards, served by the API like the Coming Soon choices below. */
+let _trendingLibraryChoices = { movie: [], tv: [] };
 
 /* ── Coming Soon collections editor state ─────────────────────────────── */
 let _comingSoonData = [];
@@ -2453,7 +2457,7 @@ async function fetchConfigs() {
             if (listsRes.ok) {
                 const listsData = await listsRes.json();
                 _trendingListsData = listsData.trending_lists || [];
-                _defaultPlexLibraries = listsData.default_libraries || { movie: '', tv: '' };
+                _trendingLibraryChoices = listsData.libraries || { movie: [], tv: [] };
             }
         } catch (e) { /* silent */ }
         try {
@@ -2534,8 +2538,8 @@ function renderSettingsPage() {
     }
     container.innerHTML = html;
 
-    /* Trending list cards live below the universal Trending options */
-    const trendingOpts = document.getElementById('section-opts-trending');
+    /* Trending list cards live below the universal Trending Collections options */
+    const trendingOpts = document.getElementById('section-opts-trending-collections');
     if (trendingOpts) {
         const wrap = document.createElement('div');
         wrap.className = 'instance-section';
@@ -2573,7 +2577,7 @@ function wireSettingsGating() {
            whole, and its rows are then left alone so the opacity doesn't stack. */
         container.querySelectorAll('.settings-section[data-section]').forEach(sec => {
             const rows = [...sec.querySelectorAll('.setting-item[data-cfg]')];
-            /* Sections without flat options (Plex Collections) follow UMTK. */
+            /* Sections without flat options (Coming Soon Collections) follow UMTK. */
             const secOff = rows.length ? rows.every(r => !enabled[r.dataset.cfg]) : !enabled.umtk;
             sec.classList.toggle('section-disabled', secOff);
 
@@ -2612,10 +2616,10 @@ function renderWebhookPage() {
 
 /* ── Coming Soon collections management ───────────────────────────────── */
 
-/* The Plex Collections section has no flat settings of its own, so
+/* The Coming Soon Collections section has no flat settings of its own, so
    renderSettingsPage() emits an empty shell for it - fill it in here. */
 function renderComingSoonSection() {
-    const optsDiv = document.getElementById('section-opts-plex-collections');
+    const optsDiv = document.getElementById('section-opts-coming-soon-collections');
     if (!optsDiv) return;
     optsDiv.innerHTML = `<div class="instance-cards" id="coming-soon-cards"></div>
         <button class="btn-add-instance" onclick="addComingSoonCollection()">+ Add Collection</button>`;
@@ -2628,16 +2632,35 @@ function renderComingSoonCollections() {
     container.innerHTML = _comingSoonData.map((c, idx) => renderComingSoonCard(idx, c)).join('');
 }
 
-/* A checkbox per available library / instance. Checkboxes (unlike the tag
-   control) are picked up by the page snapshot, so dirty tracking just works. */
-function comingSoonCheckboxes(idx, field, available, selected, emptyText) {
+/* A checkbox per available library / instance, tagged with the card editor's
+   field attribute (data-cs-field / data-trend-field). Checkboxes (unlike the
+   tag control) are picked up by the page snapshot, so dirty tracking just works. */
+function pickCheckboxes(attr, field, available, selected, emptyText, disabled = false) {
     if (!available.length) {
         return `<span class="setting-desc">${escapeHtml(emptyText)}</span>`;
     }
     return available.map(nm => `<label class="custom-var-check">
-        <input type="checkbox" data-cs-field="${field}" value="${escapeAttr(nm)}"${selected.includes(nm) ? ' checked' : ''}>
+        <input type="checkbox" ${attr}="${field}" value="${escapeAttr(nm)}"${selected.includes(nm) ? ' checked' : ''}${disabled ? ' disabled' : ''}>
         <span>${escapeHtml(nm)}</span>
     </label>`).join('');
+}
+
+/* The opt-in sort title of a Plex-built collection: a checkbox, and the Sort
+   Title field it reveals. Shared by the trending and Coming Soon cards. */
+function sortTitleFields(attr, entry, disabled = false) {
+    const editSort = String(entry.edit_sort_title).toLowerCase() === 'true';
+    const off = disabled ? ' disabled' : '';
+    return `<div class="instance-field">
+                <label>Edit Sort Title</label>
+                <label class="custom-var-check">
+                    <input type="checkbox" ${attr}="edit_sort_title"${editSort ? ' checked' : ''}${off} onchange="onEditSortTitleToggle(this)">
+                    <span>Set a custom sort title in Plex</span>
+                </label>
+            </div>
+            <div class="instance-field full-width" data-sort-title-row${editSort ? '' : ' style="display:none"'}>
+                <label>Sort Title</label>
+                <input type="text" ${attr}="sort_title" value="${escapeAttr(entry.sort_title || '')}"${off}>
+            </div>`;
 }
 
 function renderComingSoonCard(idx, c) {
@@ -2676,7 +2699,7 @@ function renderComingSoonCard(idx, c) {
         <div class="instance-fields">
             <div class="instance-field">
                 <label>Name</label>
-                <input type="text" data-cs-field="name" value="${nameVal}" placeholder="e.g. Movies Coming Soon" oninput="updateComingSoonField(${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Collection';">
+                <input type="text" data-cs-field="name" value="${nameVal}" placeholder="e.g. ${COMING_SOON_DEFAULT_NAMES[type]}" oninput="updateComingSoonField(${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Collection';">
             </div>
             <div class="instance-field">
                 <label>Type</label>
@@ -2687,24 +2710,29 @@ function renderComingSoonCard(idx, c) {
             </div>
             <div class="instance-field full-width">
                 <label>Plex Libraries</label>
-                <div class="cs-check-group">${comingSoonCheckboxes(idx, 'libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`)}</div>
+                <div class="cs-check-group">${pickCheckboxes('data-cs-field', 'libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`)}</div>
             </div>
             <div class="instance-field full-width">
                 <label>${arrLabel} Instances</label>
-                <div class="cs-check-group">${comingSoonCheckboxes(idx, 'instances', instances, pickedInstances, `No ${arrLabel} instances configured — add them on the Connections page.`)}</div>
+                <div class="cs-check-group">${pickCheckboxes('data-cs-field', 'instances', instances, pickedInstances, `No ${arrLabel} instances configured — add them on the Connections page.`)}</div>
                 ${type === 'tv' ? '<span class="setting-desc">Untick all of them to build this collection from the TSSK categories below only.</span>' : ''}
             </div>${tsskFields}
+            ${sortTitleFields('data-cs-field', c)}
         </div>
     </div>`;
 }
 
 /* Switching type changes which libraries, instances and extra fields apply, so
-   re-render the cards with that type's choices pre-selected. */
+   re-render the cards with that type's choices pre-selected. A name the user
+   hasn't touched (still one of the defaults) follows the type. */
 function onComingSoonTypeChange(idx, select) {
     gatherComingSoonFromDOM();
     const entry = _comingSoonData[idx];
     if (entry) {
         entry.type = select.value === 'tv' ? 'tv' : 'movie';
+        if (Object.values(COMING_SOON_DEFAULT_NAMES).includes((entry.name || '').trim())) {
+            entry.name = COMING_SOON_DEFAULT_NAMES[entry.type];
+        }
         const libraries = _comingSoonChoices.libraries[entry.type] || [];
         entry.libraries = libraries.slice(0, 1);
         entry.instances = (_comingSoonChoices.instances[entry.type] || []).slice();
@@ -2717,13 +2745,29 @@ function addComingSoonCollection() {
     gatherComingSoonFromDOM();
     const libraries = _comingSoonChoices.libraries.movie || [];
     _comingSoonData.push({
-        name: 'Movies Coming Soon', type: 'movie',
+        name: COMING_SOON_DEFAULT_NAMES.movie, type: 'movie',
         libraries: libraries.slice(0, 1),
         instances: (_comingSoonChoices.instances.movie || []).slice(),
         include_new_season_soon: false, include_upcoming_episode: false,
         include_upcoming_finale: false,
+        edit_sort_title: false, sort_title: '',
     });
     renderComingSoonCollections();
+    _checkDirty('settings');
+}
+
+/* Ticking 'Edit Sort Title' reveals the Sort Title field, seeded with the
+   card's Name when empty; unticking hides it but keeps the value. Works for
+   both the trending and the Coming Soon cards. */
+function onEditSortTitleToggle(checkbox) {
+    const card = checkbox.closest('.instance-card');
+    const row = card.querySelector('[data-sort-title-row]');
+    const input = row.querySelector('input');
+    const nameInput = card.querySelector('[data-trend-field="name"], [data-cs-field="name"]');
+    row.style.display = checkbox.checked ? '' : 'none';
+    if (checkbox.checked && !input.value.trim()) input.value = nameInput ? nameInput.value : '';
+    if (card.dataset.trendIdx !== undefined) gatherTrendingListsFromDOM();
+    else gatherComingSoonFromDOM();
     _checkDirty('settings');
 }
 
@@ -2779,8 +2823,8 @@ function renderTrendingListCard(idx, lst) {
     const method = [0, 1, 2].includes(Number(lst.method)) ? Number(lst.method) : 0;
     const rootPlaceholder = type === 'tv' ? '/umtktv' : '/umtkmovies';
     const buildInPlex = String(lst.build_in_plex).toLowerCase() === 'true';
-    const plexLibraryVal = escapeAttr(lst.plex_library || '');
-    const libraryPlaceholder = escapeAttr(_defaultPlexLibraries[type] || (type === 'tv' ? 'TV Shows' : 'Movies'));
+    const libraries = _trendingLibraryChoices[type] || [];
+    const pickedLibraries = Array.isArray(lst.plex_libraries) ? lst.plex_libraries : [];
     return `<div class="instance-card" data-trend-idx="${idx}">
         <div class="instance-card-header">
             <span class="instance-card-title">${escapeHtml(lst.name || 'New Trending List')}</span>
@@ -2797,7 +2841,7 @@ function renderTrendingListCard(idx, lst) {
             </div>
             <div class="instance-field">
                 <label>Type</label>
-                <select data-trend-field="type">
+                <select data-trend-field="type" onchange="onTrendingTypeChange(${idx}, this)">
                     <option value="movie"${type === 'movie' ? ' selected' : ''}>Movies</option>
                     <option value="tv"${type === 'tv' ? ' selected' : ''}>TV</option>
                 </select>
@@ -2829,9 +2873,10 @@ function renderTrendingListCard(idx, lst) {
                     <option value="true"${buildInPlex ? ' selected' : ''}>True</option>
                 </select>
             </div>
-            <div class="instance-field">
-                <label>Plex Library</label>
-                <input type="text" data-trend-field="plex_library" value="${plexLibraryVal}" placeholder="${libraryPlaceholder}"${buildInPlex ? '' : ' disabled'}>
+            ${sortTitleFields('data-trend-field', lst, !buildInPlex)}
+            <div class="instance-field full-width">
+                <label>Plex Libraries</label>
+                <div class="cs-check-group">${pickCheckboxes('data-trend-field', 'plex_libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`, !buildInPlex)}</div>
             </div>
             <div class="instance-field full-width">
                 <span class="setting-desc">Let UMTK create and update this collection directly in Plex in rank order.<br>Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits</span>
@@ -2840,21 +2885,33 @@ function renderTrendingListCard(idx, lst) {
     </div>`;
 }
 
-/* Setting 'Build in Plex' to True enables the library field and seeds it with
-   the first configured library of the list's current type. */
+/* Setting 'Build in Plex' to True enables the library checkboxes and the sort
+   title controls, ticking the first configured library of the list's current
+   type when none is picked yet. */
 function onBuildInPlexToggle(idx, select) {
     const enabled = select.value === 'true';
     const card = select.closest('.instance-card');
-    const libraryInput = card.querySelector('[data-trend-field="plex_library"]');
-    const typeSelect = card.querySelector('[data-trend-field="type"]');
-    if (libraryInput) {
-        libraryInput.disabled = !enabled;
-        if (enabled && !libraryInput.value) {
-            const type = typeSelect && typeSelect.value === 'tv' ? 'tv' : 'movie';
-            libraryInput.value = _defaultPlexLibraries[type] || '';
-        }
+    card.querySelectorAll('[data-trend-field="plex_libraries"], [data-trend-field="edit_sort_title"], [data-trend-field="sort_title"]')
+        .forEach(el => { el.disabled = !enabled; });
+    if (enabled) {
+        const boxes = [...card.querySelectorAll('[data-trend-field="plex_libraries"]')];
+        if (boxes.length && !boxes.some(b => b.checked)) boxes[0].checked = true;
     }
     gatherTrendingListsFromDOM();
+    _checkDirty('settings');
+}
+
+/* Switching type changes which libraries apply, so re-render the cards with
+   that type's first library pre-selected (when the list builds in Plex). */
+function onTrendingTypeChange(idx, select) {
+    gatherTrendingListsFromDOM();
+    const lst = _trendingListsData[idx];
+    if (lst) {
+        lst.type = select.value === 'tv' ? 'tv' : 'movie';
+        const libraries = _trendingLibraryChoices[lst.type] || [];
+        lst.plex_libraries = lst.build_in_plex ? libraries.slice(0, 1) : [];
+    }
+    renderTrendingLists();
     _checkDirty('settings');
 }
 
@@ -2863,7 +2920,8 @@ function addTrendingList() {
     const count = _trendingListsData.length + 1;
     _trendingListsData.push({
         name: `Trending List ${count}`, type: 'movie', method: 0,
-        url: '', limit: 10, root: '', build_in_plex: false, plex_library: '',
+        url: '', limit: 10, root: '', build_in_plex: false, plex_libraries: [],
+        edit_sort_title: false, sort_title: '',
         legacy_filenames: false,
     });
     renderTrendingLists();
@@ -2894,11 +2952,15 @@ function gatherTrendingListsFromDOM() {
         if (!lst) return;
         card.querySelectorAll('[data-trend-field]').forEach(input => {
             const field = input.dataset.trendField;
-            if (field === 'method') lst[field] = parseInt(input.value) || 0;
+            if (field === 'plex_libraries') return;  /* handled below */
+            if (input.type === 'checkbox') lst[field] = input.checked;
+            else if (field === 'method') lst[field] = parseInt(input.value) || 0;
             else if (field === 'limit') lst[field] = parseInt(input.value) || 10;
             else if (field === 'build_in_plex') lst[field] = input.value === 'true';
             else lst[field] = input.value;
         });
+        const boxes = card.querySelectorAll('[data-trend-field="plex_libraries"]');
+        if (boxes.length) lst.plex_libraries = Array.from(boxes).filter(b => b.checked).map(b => b.value);
     });
 }
 

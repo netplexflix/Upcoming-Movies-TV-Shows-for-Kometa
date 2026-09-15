@@ -64,8 +64,8 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [TV Shows Coming Soon](#tv-show-settings)
     - [Process TV Show Categories](#tssk-configuration-tv-show-status)
     - [TV Show Timeframes](#tv-show-timeframes)
-    - [Trending](#trending)
-    - [Plex Collections](#plex-collections)
+    - [Trending Collections](#trending)
+    - [Coming Soon Collections](#plex-collections)
     - [Plex Metadata](#plex-metadata)
   - [YML Configurations](#overlay--collection-settings)
 - [🔔 Webhook on Placeholder Creation & Removal](#webhook-on-placeholder-creation)
@@ -397,6 +397,7 @@ radarr_instances:
 
 - **movies**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 - **tv**: 0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+- **new_season_placeholders**: Default `false`. When `true`, UMTK also creates a placeholder/trailer (per the `tv` method) for shows you have **no episodes of** whose next monitored season (season 2 or later) premieres within TSSK's `future_days_new_season`. This puts TSSK's `New Season Soon` shows in Plex, so they can show up in a [Coming Soon collection](#plex-collections) with `include_new_season_soon` and get TSSK's New Season overlay. Requires TSSK to be enabled with `process_new_season_soon` on; the placeholder is removed by cleanup once the show has downloaded episodes or stops qualifying.
 - **method_fallback**: When set to `true`: If trailer downloading fails, UMTK will automatically fallback to using the placeholder method.
 - **preferred_language**: Preferred language for trailer downloads. UMTK appends the language name to the YouTube search and boosts videos whose title or channel matches the language. Default: `original` (no preference). Accepted values: `original`, `english`, `german`, `french`, `spanish`, `italian`, `japanese`, `korean`, `portuguese`, `russian`, `chinese`.
 - **skip_channels:** Blacklist YouTube channels that create fake trailers
@@ -463,7 +464,7 @@ For each TSSK category, you can change the relevant timeframe:
 - **recent_days_final_episode:** How many days in the past for aired final episodes (default: `7`)
 
 <a id="trending"></a>
-#### Trending:
+#### Trending Collections:
 
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
@@ -475,7 +476,8 @@ For each TSSK category, you can change the relevant timeframe:
   - **url:** the MDBList list URL. You can create your own lists.
   - **root:** root folder for items that aren't in any Radarr/Sonarr library (`Request Needed` items). Docker users: use `/umtkmovies` or `/umtktv`.
   - **build_in_plex:** `true` lets UMTK create and update this list's collection **directly in Plex**, with the items in MDBList rank order.
-  - **plex_library:** which Plex library `build_in_plex` should build the collection in. Leave empty to use the first entry of `movie_libraries` / `tv_libraries`.
+  - **plex_libraries:** which Plex libraries `build_in_plex` should build the collection in (the WebUI offers your configured `movie_libraries` / `tv_libraries` as checkboxes; the same collection is created in each one). Leave empty to use the first configured library of the list's type. The old single-value `plex_library` key is still read.
+  - **edit_sort_title / sort_title:** `build_in_plex` only. Set `edit_sort_title: true` to have UMTK set the collection's sort title in Plex to `sort_title` (the WebUI pre-fills it with the list name). Leave it `false` and UMTK never touches the collection's sort title.
 
   Additional lists inherit the `collection_trending_movies` / `collection_trending_shows` settings (`build_collection`, `sync_mode`, labels, …). Their `item_label` and `non_item_remove_label` automatically get the list name appended (e.g. `UMTKTrending_Popular_Movies`) so different lists' labels don't conflict with each other.
 
@@ -494,7 +496,9 @@ trending_lists:
     url: https://mdblist.com/lists/someuser/popular-movies
     root: /umtkmovies
     build_in_plex: true
-    plex_library: Movies
+    plex_libraries: [Movies, 4K Movies]
+    edit_sort_title: true
+    sort_title: "!02 Popular Movies"
 ```
 
 ##### Building collections directly in Plex
@@ -507,7 +511,7 @@ Setting **`build_in_plex: true`** on a list makes UMTK build that collection dir
 > UMTK still writes the Kometa collection YAML for the list, unchanged. If your Kometa config also builds that collection, both will manage it and overwrite each other's contents and order on every run. When you enable `build_in_plex`, remove the collection yml from your Kometa config and disable the sort_title edits if you previously used them.
 
 <a id="plex-collections"></a>
-#### Plex Collections:
+#### Coming Soon Collections:
 
 **`coming_soon_collections`** does the same for your upcoming movies and shows: UMTK builds these collections in Plex itself, ordered by expected release date (movies) or expected air date (shows), oldest first. Add as many as you want — one per Plex library, per Arr instance, or any mix. Each entry has:
 
@@ -515,7 +519,8 @@ Setting **`build_in_plex: true`** on a list makes UMTK build that collection dir
 - **type:** `movie` or `tv`
 - **libraries:** which Plex libraries to build it in. The same collection is created in each one.
 - **instances:** which Radarr (movies) / Sonarr (tv) instances to take Coming Soon items from. For `tv`, leave it empty to build the collection from the TSSK categories below only.
-- **include_new_season_soon / include_upcoming_episode / include_upcoming_finale:** `tv` only. Also puts TSSK's shows from those categories in the collection, interleaved by air date. Requires TSSK enabled with the matching `process_` option on. TSSK's own collections and labels are not affected.
+- **include_new_season_soon / include_upcoming_episode / include_upcoming_finale:** `tv` only. Also puts TSSK's shows from those categories in the collection, interleaved by air date. Requires TSSK enabled with the matching `process_` option on. TSSK's own collections and labels are not affected. Shows in those categories that you don't have any episodes of yet only exist in Plex when [`new_season_placeholders`](#general) is on.
+- **edit_sort_title / sort_title:** set `edit_sort_title: true` to have UMTK set the collection's sort title in Plex to `sort_title` (the WebUI pre-fills it with the collection name). Leave it `false` and UMTK never touches the collection's sort title.
 
 ```yaml
 coming_soon_collections:
@@ -534,6 +539,8 @@ coming_soon_collections:
     include_new_season_soon: true
     include_upcoming_episode: false
     include_upcoming_finale: true
+    edit_sort_title: true
+    sort_title: "!01 TV Shows Coming Soon"
 ```
 
 > [!IMPORTANT]

@@ -92,6 +92,7 @@ UMTK_OPTIONS = [
     {"key": "enable_umtk", "type": "bool", "default": True, "label": "Enable UMTK", "description": "Enable Upcoming Movies & TV Shows processing", "section": "General"},
     {"key": "movies", "type": "select", "default": 2, "label": "Movie Method", "description": "Choose how to handle upcoming movies", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "General"},
     {"key": "tv", "type": "select", "default": 2, "label": "TV Method", "description": "Choose how to handle upcoming TV shows", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "General"},
+    {"key": "new_season_placeholders", "type": "bool", "default": False, "label": "New Season Placeholders", "description": "Also create a placeholder/trailer for shows you have no episodes of yet when a later season (not season 1) is monitored and premieres within TSSK's Future Days (New Season). Puts TSSK's New Season Soon shows in Plex so they can appear in your Coming Soon collections. Requires TSSK with New Season Soon enabled.", "section": "General"},
     {"key": "method_fallback", "type": "bool", "default": True, "label": "Method Fallback", "description": "Try placeholder if trailer download fails", "section": "General"},
     {"key": "preferred_language", "type": "select", "default": "original", "label": "Preferred Language", "description": "Preferred language for trailer downloads (appends language to YouTube search and boosts matching results)", "section": "General", "options": [
         {"value": "original", "label": "Original"},
@@ -127,10 +128,10 @@ UMTK_OPTIONS = [
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
     # Coming Soon collections are a list-of-dicts managed via
     # /api/config/coming_soon_collections, so they have no flat options here.
-    # Trending (per-list settings live in trending_lists, managed via
+    # Trending Collections (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
-    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
-    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending", "sensitive": True},
+    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending Collections"},
+    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending Collections", "sensitive": True},
 ]
 
 TSSK_OPTIONS = [
@@ -717,10 +718,18 @@ def register_routes(app):
         """Every entry of a comma-separated Plex library setting."""
         return [n.strip() for n in str(value or '').split(',') if n.strip()]
 
-    def _first_library(value):
-        """First entry of a comma-separated Plex library setting."""
-        names = _library_names(value)
-        return names[0] if names else ''
+    def _available_libraries(config):
+        """The configured Plex libraries per media type, as the card editors offer them."""
+        return {
+            'movie': _library_names(config.get('movie_libraries')),
+            'tv': _library_names(config.get('tv_libraries')),
+        }
+
+    def _picked(values, available):
+        """Keep the submitted names that still exist, in configured order."""
+        wanted = {str(v).strip() for v in values if str(v).strip()} \
+            if isinstance(values, (list, tuple)) else set()
+        return [name for name in available if name in wanted]
 
     @app.route("/api/config/trending_lists")
     def api_config_trending_lists():
@@ -728,13 +737,11 @@ def register_routes(app):
         # Apply normalization to handle the legacy flat trending format
         from umtk.config_loader import normalize_instances, normalize_trending
         config = normalize_trending(normalize_instances(config))
+        # The card editor's library checkboxes come from here so the page doesn't
+        # depend on the Connections page having been loaded.
         return jsonify({
             "trending_lists": config.get('trending_lists', []),
-            # Used to pre-fill 'Build in Plex' with the first relevant library.
-            "default_libraries": {
-                "movie": _first_library(config.get('movie_libraries')),
-                "tv": _first_library(config.get('tv_libraries')),
-            },
+            "libraries": _available_libraries(config),
         })
 
     @app.route("/api/config/trending_lists", methods=["POST"])
@@ -748,6 +755,7 @@ def register_routes(app):
         if not isinstance(new_lists, list):
             return jsonify({"ok": False, "error": "trending_lists must be a list"}), 400
 
+        available_libraries = _available_libraries(config)
         names_seen = set()
         legacy_seen = set()
         cleaned = []
@@ -787,9 +795,16 @@ def register_routes(app):
                 return jsonify({"ok": False, "error": f"Trending list '{name}' is missing an MDBList URL"}), 400
 
             build_in_plex = str(lst.get('build_in_plex', False)).lower() == 'true'
-            plex_library = (lst.get('plex_library') or '').strip()
-            if build_in_plex and not plex_library:
-                return jsonify({"ok": False, "error": f"Trending list '{name}': choose a Plex library to build the collection in"}), 400
+            plex_libraries = _picked(lst.get('plex_libraries'), available_libraries[list_type])
+            if build_in_plex and not plex_libraries:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': select at least one Plex library to build the collection in"}), 400
+
+            # The sort title only matters for collections UMTK builds itself, so
+            # like plex_libraries it is only checked when build_in_plex is on.
+            edit_sort_title = str(lst.get('edit_sort_title', False)).lower() == 'true'
+            sort_title = (lst.get('sort_title') or '').strip()
+            if build_in_plex and edit_sort_title and not sort_title:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': enter a sort title or untick 'Edit Sort Title'"}), 400
 
             legacy = bool(lst.get('legacy_filenames'))
             if legacy:
@@ -805,7 +820,9 @@ def register_routes(app):
                 'limit': limit,
                 'root': (lst.get('root') or '').strip(),
                 'build_in_plex': build_in_plex,
-                'plex_library': plex_library,
+                'plex_libraries': plex_libraries,
+                'edit_sort_title': edit_sort_title,
+                'sort_title': sort_title,
                 'legacy_filenames': legacy,
             })
 
@@ -833,10 +850,7 @@ def register_routes(app):
         # card editor gets its library/instance choices from here.
         return jsonify({
             "coming_soon_collections": config.get('coming_soon_collections', []),
-            "libraries": {
-                "movie": _library_names(config.get('movie_libraries')),
-                "tv": _library_names(config.get('tv_libraries')),
-            },
+            "libraries": _available_libraries(config),
             "instances": {
                 "movie": _instance_names(config, 'radarr_instances'),
                 "tv": _instance_names(config, 'sonarr_instances'),
@@ -854,20 +868,11 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "coming_soon_collections must be a list"}), 400
 
         normalized = normalize_instances(dict(config))
-        available_libraries = {
-            'movie': _library_names(config.get('movie_libraries')),
-            'tv': _library_names(config.get('tv_libraries')),
-        }
+        available_libraries = _available_libraries(config)
         available_instances = {
             'movie': _instance_names(normalized, 'radarr_instances'),
             'tv': _instance_names(normalized, 'sonarr_instances'),
         }
-
-        def _picked(values, available):
-            """Keep the submitted names that still exist, in configured order."""
-            wanted = {str(v).strip() for v in values if str(v).strip()} \
-                if isinstance(values, (list, tuple)) else set()
-            return [name for name in available if name in wanted]
 
         seen_targets = set()
         cleaned = []
@@ -897,11 +902,18 @@ def register_routes(app):
 
             instances = _picked(entry.get('instances'), available_instances[coll_type])
 
+            edit_sort_title = str(entry.get('edit_sort_title', False)).lower() == 'true'
+            sort_title = (entry.get('sort_title') or '').strip()
+            if edit_sort_title and not sort_title:
+                return jsonify({"ok": False, "error": f"Collection '{name}': enter a sort title or untick 'Edit Sort Title'"}), 400
+
             cleaned_entry = {
                 'name': name,
                 'type': coll_type,
                 'libraries': libraries,
                 'instances': instances,
+                'edit_sort_title': edit_sort_title,
+                'sort_title': sort_title,
             }
             if coll_type == 'tv':
                 for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):

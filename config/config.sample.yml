@@ -5,6 +5,7 @@ enable_umtk: false
 enable_tssk: false
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+new_season_placeholders: false # Also create placeholders/trailers for shows you have no episodes of whose next monitored season (not season 1) premieres within TSSK's future_days_new_season. Requires TSSK with New Season Soon enabled.
 method_fallback: true
 preferred_language: original  # original, english, german, french, spanish, italian, japanese, korean, portuguese, russian, chinese
 utc_offset: +1
@@ -100,7 +101,9 @@ trending_lists:
     limit: 10
     root: /umtkmovies
     build_in_plex: false
-    plex_library: ''
+    plex_libraries: []
+    edit_sort_title: false
+    sort_title: ''
     legacy_filenames: true
   - name: Trending Shows
     type: tv
@@ -109,9 +112,11 @@ trending_lists:
     limit: 10
     root: /umtktv
     build_in_plex: false
-    plex_library: ''
+    plex_libraries: []
+    edit_sort_title: false
+    sort_title: ''
     legacy_filenames: true
-  
+
 ################################################################################
 ##########              COMING SOON COLLECTIONS (PLEX):               ##########
 ################################################################################
@@ -123,11 +128,14 @@ trending_lists:
 #   instances: which Radarr/Sonarr instances to draw Coming Soon items from.
 #   include_*: tv only - also add TSSK's New Season Soon / Upcoming Episode /
 #              Upcoming Finale shows to the collection
+#   edit_sort_title / sort_title: optionally set the collection's sort title in Plex
 coming_soon_collections: []
 #  - name: Movies Coming Soon
 #    type: movie
 #    libraries: [Movies]
 #    instances: [Radarr]
+#    edit_sort_title: false
+#    sort_title: ''
 #  - name: TV Shows Coming Soon
 #    type: tv
 #    libraries: [TV Shows]
@@ -135,6 +143,8 @@ coming_soon_collections: []
 #    include_new_season_soon: true
 #    include_upcoming_episode: false
 #    include_upcoming_finale: false
+#    edit_sort_title: true
+#    sort_title: '!01 TV Shows Coming Soon'
 
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########

@@ -62,14 +62,22 @@ def _title_matches(video_title: str, content_title: str) -> bool:
     return base in vt
 
 
-def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None, preferred_language='original'):
-    """Return the best matching trailer info from YouTube (dict) or None."""
+def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None, preferred_language='original', season=None):
+    """Return the best matching trailer info from YouTube (dict) or None.
+
+    'season' targets that season's trailer first (New Season Placeholders); the
+    generic terms stay as fallbacks."""
     search_terms = [
         f"{content_title} {year} official trailer" if year else f"{content_title} official trailer",
         f"{content_title} {year} trailer" if year else f"{content_title} trailer",
         f"{content_title} trailer",
         f"{content_title} teaser",
     ]
+    if season:
+        search_terms = [
+            f"{content_title} season {season} official trailer",
+            f"{content_title} season {season} trailer",
+        ] + search_terms
     # Deduplicate while preserving order
     search_terms = list(dict.fromkeys(search_terms))
 

@@ -10,7 +10,8 @@ from umtk.utils import dedupe_by_key, sanitize_instance_name
 from .constants import IS_DOCKER, GREEN, ORANGE, BLUE, RED, RESET
 from .config_loader import (
     ensure_output_directory,
-    get_config_section
+    get_config_section,
+    get_future_days_new_season
 )
 from .sonarr import (
     process_sonarr_url,
@@ -76,7 +77,7 @@ def run_tssk(config, localization=None, collector=None):
 
     # Get category-specific future_days values, with fallback to main future_days
     future_days = config.get('future_days', 14)
-    future_days_new_season = config.get('future_days_new_season', future_days)
+    future_days_new_season = get_future_days_new_season(config)
     future_days_upcoming_episode = config.get('future_days_upcoming_episode', future_days)
     future_days_upcoming_finale = config.get('future_days_upcoming_finale', future_days)
 

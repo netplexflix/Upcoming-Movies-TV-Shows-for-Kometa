@@ -54,6 +54,22 @@ def dedupe_by_key(items_lists, key):
     return result
 
 
+def tmdb_to_tvdb_aliases(shows, tmdb_key='tmdbId', tvdb_key='tvdbId'):
+    """{str(tmdb): str(tvdb)} for every show dict carrying both ids.
+
+    Lets a Plex show that only has a tmdb:// GUID (no tvdb://) be matched to
+    the TVDB id Sonarr knows it by. Keys default to the Sonarr spelling; pass
+    'tmdb_id'/'tvdb_id' for MDBList items.
+    """
+    aliases = {}
+    for show in shows or []:
+        tmdb_id = show.get(tmdb_key)
+        tvdb_id = show.get(tvdb_key)
+        if tmdb_id and tvdb_id:
+            aliases.setdefault(str(tmdb_id), str(tvdb_id))
+    return aliases
+
+
 def sanitize_instance_name(name):
     """Convert an instance name to a safe filename suffix.
 
