@@ -8,7 +8,7 @@ import time
 import requests
 import subprocess
 from datetime import datetime, timedelta, timezone
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
 
@@ -54,6 +54,22 @@ def dedupe_by_key(items_lists, key):
     return result
 
 
+def tmdb_to_tvdb_aliases(shows, tmdb_key='tmdbId', tvdb_key='tvdbId'):
+    """{str(tmdb): str(tvdb)} for every show dict carrying both ids.
+
+    Lets a Plex show that only has a tmdb:// GUID (no tvdb://) be matched to
+    the TVDB id Sonarr knows it by. Keys default to the Sonarr spelling; pass
+    'tmdb_id'/'tvdb_id' for MDBList items.
+    """
+    aliases = {}
+    for show in shows or []:
+        tmdb_id = show.get(tmdb_key)
+        tvdb_id = show.get(tvdb_key)
+        if tmdb_id and tvdb_id:
+            aliases.setdefault(str(tmdb_id), str(tvdb_id))
+    return aliases
+
+
 def sanitize_instance_name(name):
     """Convert an instance name to a safe filename suffix.
 
@@ -61,6 +77,43 @@ def sanitize_instance_name(name):
     that isn't alphanumeric or underscore.
     """
     return re.sub(r'[^a-zA-Z0-9_]', '', name.replace(' ', '_'))
+
+
+def audit_overlay_block_keys(kometa_folder):
+    """Warn about overlay block keys that appear in more than one generated file.
+
+    Kometa merges every overlay file applied to a library into one namespace, so a
+    duplicated block key means one definition silently overwrites the other and those
+    items lose their overlay. Advisory only: files mapped to different libraries can
+    legitimately share a key, so this reports rather than fails.
+    """
+    import yaml
+
+    key_to_files = {}
+    for path in sorted(Path(kometa_folder).glob("*OVERLAYS*.yml")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        overlays = data.get("overlays")
+        if not isinstance(overlays, dict):
+            continue
+        for key in overlays:
+            key_to_files.setdefault(key, []).append(path.name)
+
+    duplicates = {k: v for k, v in key_to_files.items() if len(v) > 1}
+    if not duplicates:
+        return duplicates
+
+    print(f"\n{ORANGE}Overlay block keys appearing in more than one file:{RESET}")
+    for key, files in sorted(duplicates.items()):
+        print(f"{ORANGE}  - '{key}' appears in {len(files)} files: {', '.join(files)}{RESET}")
+    print(f"{ORANGE}  If these files are applied to the same Plex library, Kometa will "
+          f"use only one definition and the rest will be ignored.{RESET}")
+    return duplicates
 
 
 def get_user_info():
@@ -144,13 +197,19 @@ def sanitize_filename(filename):
     return sanitized
 
 
-def show_folder_name(show):
-    """Folder name for a show's placeholder/trailer content.
+# Plex's TV Series agent reads an ID hint from the show folder name:
+# "Show (2020) {tvdb-123456}" (also tmdb-/imdb-). Sonarr's own folder naming can
+# produce the same tags, so detection has to cover all three.
+FOLDER_ID_RE = re.compile(r'\s*\{(tvdb|tmdb|imdb)-([^}]+)\}', re.IGNORECASE)
+
+
+def legacy_show_folder_name(show):
+    """Folder name for a show's content as UMTK named it before the ID tag.
 
     Sonarr's own folder name wins when the show is in a library; otherwise the
-    name is derived from the title and year. Single source of truth so content
-    creation and cleanup can never disagree about which folder belongs to a show
-    (a mismatch used to leave stale duplicates behind when a year changed).
+    name is derived from the title and year. Existing installs still have
+    folders with these names, so content creation reuses them and cleanup
+    recognizes them (see resolve_show_dir).
     """
     show_path = show.get('path')
     if show_path:
@@ -163,6 +222,59 @@ def show_folder_name(show):
     if show_year and not re.search(r'\(\d{4}\)\s*$', show_title):
         return sanitize_filename(f"{show_title} ({show_year})")
     return sanitize_filename(show_title)
+
+
+def show_id_tag(show):
+    """'{tvdb-123}' style folder tag for a show, or '' when it has no ID.
+
+    TVDB first: it's Sonarr's native ID and every show UMTK handles has been
+    resolved to one, so the tag stays consistent across folders.
+    """
+    for key, prefix in (('tvdbId', 'tvdb'), ('tmdbId', 'tmdb'), ('imdbId', 'imdb')):
+        if show.get(key):
+            return f"{{{prefix}-{show[key]}}}"
+    return ''
+
+
+def show_folder_name(show):
+    """Folder name for a show's placeholder/trailer content.
+
+    The legacy name plus an ID tag so Plex matches the right show, e.g.
+    "Show (2025) {tvdb-123456}". Single source of truth so content creation
+    and cleanup can never disagree about which folder belongs to a show (a
+    mismatch used to leave stale duplicates behind when a year changed).
+    A Sonarr folder that already carries a tag is used as is.
+    """
+    base = legacy_show_folder_name(show)
+    if FOLDER_ID_RE.search(base):
+        return base
+    tag = show_id_tag(show)
+    return f"{base} {tag}" if tag else base
+
+
+def parse_folder_ids(folder_name):
+    """IDs tagged in a folder name: "Show (2025) {tvdb-123}" -> {'tvdb': '123'}."""
+    return {m.group(1).lower(): m.group(2) for m in FOLDER_ID_RE.finditer(folder_name)}
+
+
+def strip_folder_ids(folder_name):
+    """Folder name without its ID tags, for deriving the title from it."""
+    return ' '.join(FOLDER_ID_RE.sub(' ', folder_name).split())
+
+
+def resolve_show_dir(umtk_root_tv, show):
+    """Folder under umtk_root_tv that holds (or will hold) a show's content.
+
+    New folders get the ID-tagged name. A folder created by a release before
+    the tag existed is reused as is, so updating never leaves a show with two
+    folders; cleanup retires the legacy folder once the show stops qualifying.
+    """
+    root = Path(umtk_root_tv)
+    new_dir = root / show_folder_name(show)
+    legacy_dir = root / legacy_show_folder_name(show)
+    if legacy_dir != new_dir and legacy_dir.exists() and not new_dir.exists():
+        return legacy_dir
+    return new_dir
 
 
 def movie_folder_name(movie, edition_tag):

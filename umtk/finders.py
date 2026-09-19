@@ -10,31 +10,167 @@ from .utils import convert_utc_to_local
 from .sonarr import get_sonarr_episodes, sonarr_series_lookup
 
 
+def _show_dict(series, air_date):
+    """The show entry content creation, YML generation and Plex updates work with."""
+    return {
+        'title': series['title'],
+        'tvdbId': series.get('tvdbId'),
+        'tmdbId': series.get('tmdbId'),
+        'path': series.get('path', ''),
+        'imdbId': series.get('imdbId', ''),
+        'year': series.get('year', None),
+        'airDate': air_date.date().isoformat()
+    }
+
+
+def _premiere_bucket(series, episodes, cutoff_date, now_local, utc_offset, future_only_tv, debug=False):
+    """Classify a show by its S01E01: ('future' | 'aired', show_dict) or (None, None)."""
+    # Find S01E01 specifically
+    first_episode = None
+
+    for ep in episodes:
+        if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
+            first_episode = ep
+            break
+
+    if not first_episode:
+        if debug:
+            print(f"{ORANGE}[DEBUG] No Season 1 Episode 1 found for {series['title']}{RESET}")
+        return None, None
+
+    # Skip if S01E01 is not monitored
+    if not first_episode.get('monitored', False):
+        if debug:
+            print(f"{ORANGE}[DEBUG] S01E01 not monitored for {series['title']}{RESET}")
+        return None, None
+
+    # Skip if S01E01 is already downloaded
+    if first_episode.get('hasFile', False):
+        if debug:
+            print(f"{ORANGE}[DEBUG] S01E01 already downloaded for {series['title']} - skipping{RESET}")
+        return None, None
+
+    air_date_str = first_episode.get('airDateUtc')
+    if not air_date_str:
+        if debug:
+            print(f"{ORANGE}[DEBUG] No air date found for {series['title']} S01E01{RESET}")
+        return None, None
+
+    air_date = convert_utc_to_local(air_date_str, utc_offset)
+
+    if debug:
+        print(f"{BLUE}[DEBUG] {series['title']} air date: {air_date}, within range: {air_date <= cutoff_date}{RESET}")
+
+    # Check if air date is within our range
+    if air_date > cutoff_date:
+        return None, None
+
+    # Categorize based on whether it has aired or not
+    if air_date >= now_local:
+        if debug:
+            print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
+        return 'future', _show_dict(series, air_date)
+    if not future_only_tv:  # Only add aired shows if future_only_tv is false
+        if debug:
+            print(f"{GREEN}[DEBUG] Added to aired shows: {series['title']}{RESET}")
+        return 'aired', _show_dict(series, air_date)
+    if debug:
+        print(f"{ORANGE}[DEBUG] Skipping aired show due to future_only_tv=True: {series['title']}{RESET}")
+    return None, None
+
+
+def _new_season_premiere(series, episodes, cutoff_date, now_local, utc_offset,
+                         globally_downloaded_ids=None, debug=False):
+    """A show with nothing downloaded whose next episode is a monitored season
+    premiere (season > 1) airing by cutoff_date - the New Season Placeholders
+    case. Mirrors TSSK's find_new_season_shows so both agree on the show.
+    Returns the show dict (with 'seasonNumber' and 'new_season') or None."""
+    # Downloaded anywhere -> the show is already in Plex, nothing to place.
+    if globally_downloaded_ids and series.get('tvdbId') in globally_downloaded_ids:
+        if debug:
+            print(f"{ORANGE}[DEBUG] {series['title']} has episodes downloaded in another instance - no new season placeholder{RESET}")
+        return None
+    if any(ep.get('hasFile', False) for ep in episodes):
+        if debug:
+            print(f"{ORANGE}[DEBUG] {series['title']} has downloaded episodes - no new season placeholder{RESET}")
+        return None
+
+    future_episodes = []
+    for ep in episodes:
+        if ep.get('seasonNumber', 0) == 0:  # Skip specials
+            continue
+        air_date_str = ep.get('airDateUtc')
+        if not air_date_str:
+            continue
+        air_date = convert_utc_to_local(air_date_str, utc_offset)
+        if air_date > now_local:
+            future_episodes.append((ep, air_date))
+
+    if not future_episodes:
+        return None
+
+    future_episodes.sort(key=lambda x: x[1])
+    next_episode, air_date = future_episodes[0]
+    season_number = next_episode.get('seasonNumber', 0)
+
+    if not (season_number > 1 and next_episode.get('episodeNumber') == 1 and air_date <= cutoff_date):
+        if debug:
+            print(f"{ORANGE}[DEBUG] {series['title']}: next episode S{season_number:02d}E{next_episode.get('episodeNumber', 0):02d} on {air_date} is not a season premiere within range{RESET}")
+        return None
+
+    season_monitored = next((s.get('monitored', True) for s in series.get('seasons', [])
+                             if s.get('seasonNumber') == season_number), True)
+    if not next_episode.get('monitored', True) or not season_monitored:
+        if debug:
+            print(f"{ORANGE}[DEBUG] {series['title']}: season {season_number} is not monitored - no new season placeholder{RESET}")
+        return None
+
+    if debug:
+        print(f"{GREEN}[DEBUG] Added to new season shows: {series['title']} (season {season_number}){RESET}")
+    show_dict = _show_dict(series, air_date)
+    show_dict['seasonNumber'] = season_number
+    show_dict['new_season'] = True
+    return show_dict
+
+
 def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_shows,
                         utc_offset=0, debug=False, exclude_tags=None, future_only_tv=False,
-                        globally_available_ids=None):
-    """Find shows with upcoming episodes that have their first episode airing within specified days"""
+                        globally_available_ids=None, new_season_days=None,
+                        globally_downloaded_ids=None):
+    """Find shows with upcoming episodes that have their first episode airing within specified days.
+
+    With new_season_days set, shows that don't qualify by their S01E01 but have
+    nothing downloaded and a monitored season premiere (season > 1) within that
+    many days are returned as a third list (New Season Placeholders), reusing
+    the episodes fetched for the S01E01 check.
+
+    Returns (future_shows, aired_shows, new_season_shows)."""
     future_shows = []
     aired_shows = []
-    
+    new_season_shows = []
+
     cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_upcoming_shows)
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
-    
+    new_season_cutoff = (datetime.now(timezone.utc) + timedelta(days=new_season_days)
+                         if new_season_days is not None else None)
+
     if debug:
         print(f"{BLUE}[DEBUG] Cutoff date: {cutoff_date}, Now local: {now_local}{RESET}")
         print(f"{BLUE}[DEBUG] Future only TV: {future_only_tv}{RESET}")
+        if new_season_cutoff:
+            print(f"{BLUE}[DEBUG] New season placeholder cutoff date: {new_season_cutoff}{RESET}")
         print(f"{BLUE}[DEBUG] Found {len(all_series)} total series in Sonarr{RESET}")
-   
+
     for series in all_series:
         if debug:
             print(f"{BLUE}[DEBUG] Processing show: {series['title']} (status: {series.get('status')}, monitored: {series.get('monitored', True)}){RESET}")
-        
+
         # Always skip unmonitored shows
         if not series.get('monitored', True):
             if debug:
                 print(f"{ORANGE}[DEBUG] Skipping unmonitored show: {series['title']}{RESET}")
             continue
-        
+
         # Check for excluded tags
         if exclude_tags:
             series_tags = series.get('tags', [])
@@ -53,73 +189,23 @@ def find_upcoming_shows(all_series, sonarr_url, api_key, future_days_upcoming_sh
             episodes = get_sonarr_episodes(sonarr_url, api_key, series['id'])
         except requests.exceptions.RequestException:
             raise
-        
+
         if debug:
             print(f"{BLUE}[DEBUG] Found {len(episodes)} episodes for {series['title']}{RESET}")
-        
-        # Find S01E01 specifically
-        first_episode = None
-        
-        for ep in episodes:
-            if ep.get('seasonNumber') == 1 and ep.get('episodeNumber') == 1:
-                first_episode = ep
-                break
-        
-        if not first_episode:
-            if debug:
-                print(f"{ORANGE}[DEBUG] No Season 1 Episode 1 found for {series['title']}{RESET}")
-            continue
-        
-        # Skip if S01E01 is not monitored
-        if not first_episode.get('monitored', False):
-            if debug:
-                print(f"{ORANGE}[DEBUG] S01E01 not monitored for {series['title']}{RESET}")
-            continue
-        
-        # Skip if S01E01 is already downloaded
-        if first_episode.get('hasFile', False):
-            if debug:
-                print(f"{ORANGE}[DEBUG] S01E01 already downloaded for {series['title']} - skipping{RESET}")
-            continue
-        
-        air_date_str = first_episode.get('airDateUtc')
-        if not air_date_str:
-            if debug:
-                print(f"{ORANGE}[DEBUG] No air date found for {series['title']} S01E01{RESET}")
-            continue
-        
-        air_date = convert_utc_to_local(air_date_str, utc_offset)
-        
-        if debug:
-            print(f"{BLUE}[DEBUG] {series['title']} air date: {air_date}, within range: {air_date <= cutoff_date}{RESET}")
-        
-        # Check if air date is within our range
-        if air_date <= cutoff_date:
-            tvdb_id = series.get('tvdbId')
-            air_date_str_yyyy_mm_dd = air_date.date().isoformat()
-            
-            show_dict = {
-                'title': series['title'],
-                'tvdbId': tvdb_id,
-                'path': series.get('path', ''),
-                'imdbId': series.get('imdbId', ''),
-                'year': series.get('year', None),
-                'airDate': air_date_str_yyyy_mm_dd
-            }
-            
-            # Categorize based on whether it has aired or not
-            if air_date >= now_local:
-                future_shows.append(show_dict)
-                if debug:
-                    print(f"{GREEN}[DEBUG] Added to future shows: {series['title']}{RESET}")
-            elif not future_only_tv:  # Only add aired shows if future_only_tv is false
-                aired_shows.append(show_dict)
-                if debug:
-                    print(f"{GREEN}[DEBUG] Added to aired shows: {series['title']}{RESET}")
-            elif debug:
-                print(f"{ORANGE}[DEBUG] Skipping aired show due to future_only_tv=True: {series['title']}{RESET}")
-    
-    return future_shows, aired_shows
+
+        bucket, show_dict = _premiere_bucket(series, episodes, cutoff_date, now_local,
+                                             utc_offset, future_only_tv, debug)
+        if bucket == 'future':
+            future_shows.append(show_dict)
+        elif bucket == 'aired':
+            aired_shows.append(show_dict)
+        elif new_season_cutoff is not None:
+            show_dict = _new_season_premiere(series, episodes, new_season_cutoff, now_local,
+                                             utc_offset, globally_downloaded_ids, debug)
+            if show_dict:
+                new_season_shows.append(show_dict)
+
+    return future_shows, aired_shows, new_season_shows
 
 
 def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_offset=0, debug=False):
@@ -182,12 +268,13 @@ def find_new_shows(all_series, sonarr_url, api_key, recent_days_new_show, utc_of
             show_dict = {
                 'title': series['title'],
                 'tvdbId': tvdb_id,
+                'tmdbId': series.get('tmdbId'),
                 'path': series.get('path', ''),
                 'imdbId': series.get('imdbId', ''),
                 'year': series.get('year', None),
                 'airDate': air_date_str_yyyy_mm_dd
             }
-            
+
             new_shows.append(show_dict)
             
             if debug:
@@ -341,10 +428,17 @@ def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
     For each item:
       - If its TVDB ID already matches a series in one of the Sonarr libraries,
         it's authoritative and left alone.
-      - Otherwise Sonarr's metadata proxy is asked to resolve it, by IMDb then
-        TMDB then TVDB ID. On a hit the item's tvdb_id and year are rewritten to
-        Sonarr's canonical values. A free-text title search is deliberately NOT
-        attempted — a fuzzy match risks binding to the wrong series.
+      - Otherwise Sonarr's metadata proxy is asked to resolve it, by TVDB first
+        (an exact lookup — a live ID is kept as-is, a merged one comes back as
+        the surviving record), then IMDb, then TMDB. On a hit the item's tvdb_id
+        and year are rewritten to Sonarr's canonical values. A free-text title
+        search is deliberately NOT attempted — a fuzzy match risks binding to
+        the wrong series.
+      - IMDb/TMDB results are only accepted when the returned series actually
+        carries the ID that was asked for. SkyHook's 'tmdb:<n>' search also
+        matches a series whose *TVDB* ID is <n> (e.g. tmdb:285322 returns TVDB
+        285322 'Beppes good night' instead of 'Below', whose TMDB ID it is), so
+        an unchecked result would bind to an unrelated show.
 
     The title is deliberately left alone: it feeds the placeholder *file* name,
     so rewriting it would orphan the existing file and create a duplicate
@@ -379,31 +473,42 @@ def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
 
             cache_key = (tvdb_id, tmdb_id, imdb_id)
             if cache_key in resolution_cache:
-                resolved = resolution_cache[cache_key]
+                resolved, resolved_via = resolution_cache[cache_key]
             else:
-                resolved = None
-                for term in (f"imdb:{imdb_id}" if imdb_id else None,
-                             f"tmdb:{tmdb_id}" if tmdb_id else None,
-                             f"tvdb:{tvdb_id}" if tvdb_id else None):
+                resolved, resolved_via = None, None
+                # (term, predicate a result must satisfy to count as a hit)
+                lookups = (
+                    (f"tvdb:{tvdb_id}" if tvdb_id else None,
+                     lambda s: bool(s.get('tvdbId'))),
+                    (f"imdb:{imdb_id}" if imdb_id else None,
+                     lambda s: bool(s.get('tvdbId')) and s.get('imdbId') == imdb_id),
+                    (f"tmdb:{tmdb_id}" if tmdb_id else None,
+                     lambda s: bool(s.get('tvdbId')) and str(s.get('tmdbId')) == tmdb_id),
+                )
+                for term, accepts in lookups:
                     if not term:
                         continue
                     results = sonarr_series_lookup(primary['url'], primary['api_key'],
                                                    term, primary.get('timeout') or 90)
-                    match = next((s for s in results if s.get('tvdbId')), None)
+                    match = next((s for s in results if accepts(s)), None)
                     if match:
                         if debug:
                             print(f"{BLUE}[DEBUG] Resolved trending show '{title}' via {term} "
                                   f"-> TVDB {match['tvdbId']}{RESET}")
-                        resolved = match
+                        resolved, resolved_via = match, term
                         break
-                resolution_cache[cache_key] = resolved
+                    elif results and debug:
+                        print(f"{BLUE}[DEBUG] Ignored {len(results)} result(s) for '{title}' via {term}: "
+                              f"none carry the queried ID{RESET}")
+                resolution_cache[cache_key] = (resolved, resolved_via)
 
             if resolved:
                 new_tvdb = str(resolved['tvdbId'])
                 if new_tvdb != tvdb_id:
                     print(f"{ORANGE}Corrected trending show '{title}' ({item.get('year')}): "
                           f"TVDB {tvdb_id or 'none'} -> {new_tvdb} "
-                          f"'{resolved.get('title', title)}' ({resolved.get('year')}){RESET}")
+                          f"'{resolved.get('title', title)}' ({resolved.get('year')}) "
+                          f"via {resolved_via}{RESET}")
                 item['tvdb_id'] = resolved['tvdbId']
                 if resolved.get('year'):
                     item['year'] = resolved['year']

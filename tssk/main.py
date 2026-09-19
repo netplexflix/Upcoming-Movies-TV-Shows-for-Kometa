@@ -10,7 +10,8 @@ from umtk.utils import dedupe_by_key, sanitize_instance_name
 from .constants import IS_DOCKER, GREEN, ORANGE, BLUE, RED, RESET
 from .config_loader import (
     ensure_output_directory,
-    get_config_section
+    get_config_section,
+    get_future_days_new_season
 )
 from .sonarr import (
     process_sonarr_url,
@@ -39,9 +40,12 @@ from .yaml_generators import (
 from .plex_integration import update_plex_sort_titles
 
 
-def run_tssk(config, localization=None):
+def run_tssk(config, localization=None, collector=None):
     """
     Run TSSK processing with the given config dict.
+
+    collector: optional dict the caller passes in to receive this run's upcoming
+    categories, so UMTK can merge them into its Coming Soon Plex collection.
 
     Config should contain both TSSK-specific settings and shared credentials
     (sonarr_instances, plex_url, plex_token, etc.) already merged in.
@@ -73,7 +77,7 @@ def run_tssk(config, localization=None):
 
     # Get category-specific future_days values, with fallback to main future_days
     future_days = config.get('future_days', 14)
-    future_days_new_season = config.get('future_days_new_season', future_days)
+    future_days_new_season = get_future_days_new_season(config)
     future_days_upcoming_episode = config.get('future_days_upcoming_episode', future_days)
     future_days_upcoming_finale = config.get('future_days_upcoming_finale', future_days)
 
@@ -298,37 +302,43 @@ def run_tssk(config, localization=None):
         if process_new_season_soon:
             create_overlay_yaml(f"TSSK_TV_NEW_SEASON_OVERLAYS{suffix}.yml", matched_shows,
                                {"backdrop": config.get("backdrop_new_season", config.get("backdrop", {})),
-                                "text": config.get("text_new_season", config.get("text", {}))}, config, "backdrop_new_season", localization)
+                                "text": config.get("text_new_season", config.get("text", {}))}, config,
+                               f"backdrop_new_season{suffix}", localization, f"new_season{suffix}")
             create_collection_yaml(f"TSSK_TV_NEW_SEASON_COLLECTION{suffix}.yml", matched_shows, config)
 
         if process_new_season_started:
             create_overlay_yaml(f"TSSK_TV_NEW_SEASON_STARTED_OVERLAYS{suffix}.yml", new_season_started_shows,
                                {"backdrop": config.get("backdrop_new_season_started", {}),
-                                "text": config.get("text_new_season_started", {})}, config, "backdrop_new_season_started", localization)
+                                "text": config.get("text_new_season_started", {})}, config,
+                               f"backdrop_new_season_started{suffix}", localization, f"new_season_started{suffix}")
             create_collection_yaml(f"TSSK_TV_NEW_SEASON_STARTED_COLLECTION{suffix}.yml", new_season_started_shows, config)
 
         if process_upcoming_episode:
             create_overlay_yaml(f"TSSK_TV_UPCOMING_EPISODE_OVERLAYS{suffix}.yml", upcoming_eps,
                                {"backdrop": config.get("backdrop_upcoming_episode", {}),
-                                "text": config.get("text_upcoming_episode", {})}, config, "backdrop_upcoming_episode", localization)
+                                "text": config.get("text_upcoming_episode", {})}, config,
+                               f"backdrop_upcoming_episode{suffix}", localization, f"upcoming_episode{suffix}")
             create_collection_yaml(f"TSSK_TV_UPCOMING_EPISODE_COLLECTION{suffix}.yml", upcoming_eps, config)
 
         if process_upcoming_finale:
             create_overlay_yaml(f"TSSK_TV_UPCOMING_FINALE_OVERLAYS{suffix}.yml", finale_eps,
                                {"backdrop": config.get("backdrop_upcoming_finale", {}),
-                                "text": config.get("text_upcoming_finale", {})}, config, "backdrop_upcoming_finale", localization)
+                                "text": config.get("text_upcoming_finale", {})}, config,
+                               f"backdrop_upcoming_finale{suffix}", localization, f"upcoming_finale{suffix}")
             create_collection_yaml(f"TSSK_TV_UPCOMING_FINALE_COLLECTION{suffix}.yml", finale_eps, config)
 
         if process_season_finale:
             create_overlay_yaml(f"TSSK_TV_SEASON_FINALE_OVERLAYS{suffix}.yml", season_finale_shows,
                                {"backdrop": config.get("backdrop_season_finale", {}),
-                                "text": config.get("text_season_finale", {})}, config, "backdrop_season_finale", localization)
+                                "text": config.get("text_season_finale", {})}, config,
+                               f"backdrop_season_finale{suffix}", localization, f"season_finale{suffix}")
             create_collection_yaml(f"TSSK_TV_SEASON_FINALE_COLLECTION{suffix}.yml", season_finale_shows, config)
 
         if process_final_episode:
             create_overlay_yaml(f"TSSK_TV_FINAL_EPISODE_OVERLAYS{suffix}.yml", final_episode_shows,
                                {"backdrop": config.get("backdrop_final_episode", {}),
-                                "text": config.get("text_final_episode", {})}, config, "backdrop_final_episode", localization)
+                                "text": config.get("text_final_episode", {})}, config,
+                               f"backdrop_final_episode{suffix}", localization, f"final_episode{suffix}")
             create_collection_yaml(f"TSSK_TV_FINAL_EPISODE_COLLECTION{suffix}.yml", final_episode_shows, config)
 
     if output_mode == 'combined' or len(instance_results) == 1:
@@ -350,6 +360,17 @@ def run_tssk(config, localization=None):
                                   result['upcoming_eps'], result['finale_eps'],
                                   result['season_finale_shows'], result['final_episode_shows'])
             print(f"{GREEN}TSSK YAML files created for instance '{result['name']}'{RESET}")
+
+    # Hand caller the three upcoming categories (merged across instances) so UMTK can optionally merge them in its Coming Soon Plex collection.
+    # Grouped per instance so a Coming Soon collection can be restricted to the
+    # Sonarr instances it was configured for; deduping happens per collection.
+    if collector is not None:
+        for collector_key, result_key in (('tssk_new_season_soon', 'matched_shows'),
+                                          ('tssk_upcoming_episode', 'upcoming_eps'),
+                                          ('tssk_upcoming_finale', 'finale_eps')):
+            collector[collector_key] = [
+                {'instance': r['name'], 'items': r[result_key]} for r in instance_results
+            ]
 
     # Update Plex sort titles (uses merged data from all instances)
     merged_all_series_for_plex = dedupe_by_key([r['all_series'] for r in instance_results], 'tvdbId')

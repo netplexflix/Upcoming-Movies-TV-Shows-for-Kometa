@@ -4,6 +4,7 @@ import requests
 
 from .constants import GREEN, ORANGE, BLUE, RED, RESET
 from .utils import sanitize_show_title, debug_print
+from umtk.utils import tmdb_to_tvdb_aliases
 
 
 TSSK_SUFFIX = "(TSSK)"
@@ -40,26 +41,35 @@ def get_plex_libraries(plex_url, plex_token, config):
         return {}
 
 
-def _plex_item_ids(plex_item):
-    """All TVDB IDs of a Plex item, tolerating pre-multi-ID callers."""
-    ids = [str(i) for i in (plex_item.get('tvdbIds') or []) if i]
-    if not ids and plex_item.get('tvdbId'):
-        ids = [str(plex_item['tvdbId'])]
+def _plex_item_ids(plex_item, list_key='tvdbIds', scalar_key='tvdbId'):
+    """All IDs of one type for a Plex item, tolerating pre-multi-ID callers."""
+    ids = [str(i) for i in (plex_item.get(list_key) or []) if i]
+    if not ids and plex_item.get(scalar_key):
+        ids = [str(plex_item[scalar_key])]
     return ids
 
 
-def _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids):
+def _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids, tmdb_to_tvdb=None):
     """Pick which of a Plex item's TVDB IDs to match on.
 
     An item can carry several TVDB GUIDs (a show matched to two TVDB entries,
     say). Prefer the one TSSK is actually targeting so the item isn't treated as
     unknown - and its sort title reset - just because Plex listed the other ID
     first; fall back to the first ID when none of them are targeted.
+
+    'tmdb_to_tvdb' (see tmdb_to_tvdb_aliases) lets a show Plex only linked to
+    TMDB - no tvdb:// GUID at all - still resolve to the TVDB id Sonarr knows
+    it by, through its TMDB GUID.
     """
     ids = _plex_item_ids(plex_item)
     for candidate in ids:
         if candidate in valid_tvdb_ids:
             return candidate
+    if tmdb_to_tvdb:
+        for tmdb_id in _plex_item_ids(plex_item, 'tmdbIds', 'tmdbId'):
+            alias = tmdb_to_tvdb.get(tmdb_id)
+            if alias and alias in valid_tvdb_ids:
+                return alias
     return ids[0] if ids else None
 
 
@@ -232,6 +242,10 @@ def update_plex_sort_titles(plex_url, plex_token, tv_libraries, matched_shows, a
         if tvdb_id and air_date and title:
             valid_tvdb_ids[str(tvdb_id)] = show
 
+    # A show Plex only linked to TMDB (no tvdb:// GUID) is matched through the
+    # TMDB id Sonarr carries alongside the TVDB id we key on.
+    tmdb_to_tvdb = tmdb_to_tvdb_aliases(valid_tvdb_ids.values())
+
     debug_print(f"{BLUE}[DEBUG] Valid TVDB IDs for sort title: {list(valid_tvdb_ids.keys())}{RESET}", config)
 
     # Build Plex item index by TVDB ID. Register every TVDB ID an item carries,
@@ -246,7 +260,7 @@ def update_plex_sort_titles(plex_url, plex_token, tv_libraries, matched_shows, a
     reset_sort_titles = 0
 
     for plex_item in all_plex_items:
-        tvdb_id = _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids)
+        tvdb_id = _resolve_plex_tvdb_id(plex_item, valid_tvdb_ids, tmdb_to_tvdb)
         rating_key = plex_item.get('ratingKey')
         current_sort_title = plex_item.get('titleSort', '')
         original_title = plex_item.get('title', '')

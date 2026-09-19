@@ -7,7 +7,7 @@ import sys
 import requests
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from .constants import VERSION, GREEN, ORANGE, RED, BLUE, RESET
 from .config_loader import load_config, load_localization, get_cookies_path, get_kometa_folder, get_video_folder
@@ -16,7 +16,7 @@ from .utils import (
     check_yt_dlp_installed, check_video_file,
     get_tag_ids_from_names,
     dedupe_by_key, sanitize_instance_name,
-    show_folder_name, movie_folder_name
+    resolve_show_dir, movie_folder_name
 )
 from .sonarr import process_sonarr_url, get_sonarr_series, get_sonarr_episodes
 from .radarr import process_radarr_url, get_radarr_movies
@@ -42,6 +42,7 @@ from .yaml_generators import (
     create_top10_overlay_yaml_movies, create_top10_overlay_yaml_tv
 )
 from .plex_integration import update_plex_tv_metadata, update_plex_movie_metadata, trigger_plex_library_scan
+from .plex_collections import sync_trending_collections
 
 
 def _same_root(a, b):
@@ -103,7 +104,13 @@ def _dedupe_legacy_filenames_flag(trending_lists):
                 seen = True
 
 
-def main(config=None, localization=None):
+def main(config=None, localization=None, collector=None):
+    """Run UMTK.
+
+    collector: optional dict the caller passes in to receive this run's upcoming
+    movies/shows. UMTK.py uses it to build the Coming Soon Plex collections after
+    TSSK has also run, since those can merge in TSSK's upcoming categories.
+    """
     start_time = datetime.now()
 
     # Add Docker detection message
@@ -154,8 +161,13 @@ def main(config=None, localization=None):
     method_fallback = str(config.get("method_fallback", "false")).lower() == "true"
     preferred_language = str(config.get('preferred_language', 'original')).lower()
     add_rank_to_sort_title = str(config.get("add_rank_to_sort_title", "false")).lower() == "true"
-    append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "true")).lower() == "true"
+    append_dates_to_sort_titles = str(config.get("append_dates_to_sort_titles", "false")).lower() == "true"
     edit_episode_titles = str(config.get("edit_S00E00_episode_title", "false")).lower() == "true"
+    # New Season Placeholders piggyback on TSSK's New Season Soon category: the
+    # orchestrator (UMTK.py) only injects future_days_new_season when TSSK runs
+    # with that category on, so a missing window means the option is skipped.
+    new_season_placeholders = str(config.get("new_season_placeholders", "false")).lower() == "true"
+    new_season_days = config.get('future_days_new_season') if new_season_placeholders else None
 
     print(f"TV processing method: {tv_method} ({'Disabled' if tv_method == 0 else 'Trailer' if tv_method == 1 else 'Placeholder'})")
     print(f"Movie processing method: {movie_method} ({'Disabled' if movie_method == 0 else 'Trailer' if movie_method == 1 else 'Placeholder'})")
@@ -163,7 +175,15 @@ def main(config=None, localization=None):
         lst_method = lst.get('method', 0)
         method_label = 'Disabled' if lst_method == 0 else 'Trailer' if lst_method == 1 else 'Placeholder'
         root_info = f" - root: {lst['root']}" if lst.get('root') and lst_method > 0 else ""
-        print(f"Trending list '{lst.get('name')}' ({'Movies' if lst.get('type') == 'movie' else 'TV'}): {lst_method} ({method_label}){root_info}")
+        plex_info = ""
+        if str(lst.get('build_in_plex', False)).lower() == "true" and lst_method > 0:
+            target = ', '.join(lst.get('plex_libraries') or []) or 'first configured library'
+            plex_info = f" - Plex collection in: {target}"
+        print(f"Trending list '{lst.get('name')}' ({'Movies' if lst.get('type') == 'movie' else 'TV'}): {lst_method} ({method_label}){root_info}{plex_info}")
+    if new_season_placeholders and new_season_days is None:
+        print(f"{ORANGE}New season placeholders: enabled but skipped - requires TSSK with the New Season Soon category enabled{RESET}")
+    else:
+        print(f"New season placeholders: {new_season_placeholders}")
     print(f"Method fallback: {method_fallback}")
     print(f"Preferred trailer language: {preferred_language}")
     print(f"Append dates to sort titles: {append_dates_to_sort_titles}")
@@ -264,6 +284,8 @@ def main(config=None, localization=None):
                 print(f"future_days_upcoming_shows: {future_days_upcoming_shows}")
                 print(f"recent_days_new_show: {recent_days_new_show}")
                 print(f"future_only_tv: {future_only_tv}")
+                if new_season_days is not None:
+                    print(f"future_days_new_season (new season placeholders): {new_season_days}")
                 print()
 
                 # Fetch MDBList items once per trending list (not per-instance)
@@ -287,6 +309,9 @@ def main(config=None, localization=None):
                             tv_trending_lists, ('tvdb_id', 'tmdb_id', 'imdb_id'))
 
                 globally_available_show_ids = set()
+                # Shows with any episode file in any instance - a new season
+                # placeholder is only for shows nobody has anything of.
+                globally_downloaded_show_ids = set()
                 series_cache = {}
                 if cross_instance_availability and len(sonarr_instances) > 1 and tv_method > 0:
                     print(f"{BLUE}Cross-instance availability: scanning Sonarr instances for downloaded premieres...{RESET}")
@@ -303,6 +328,7 @@ def main(config=None, localization=None):
                                 # No files at all -> S01E01 can't have one; skip the episode fetch
                                 if series.get('statistics', {}).get('episodeFileCount', 0) == 0:
                                     continue
+                                globally_downloaded_show_ids.add(tvdb_id)
                                 episodes = get_sonarr_episodes(pre_url, instance['api_key'], series['id'], pre_timeout)
                                 s01e01 = next((e for e in episodes if e.get('seasonNumber') == 1 and e.get('episodeNumber') == 1), None)
                                 if s01e01 and s01e01.get('hasFile'):
@@ -350,14 +376,16 @@ def main(config=None, localization=None):
 
                         future_shows = []
                         aired_shows = []
+                        new_season_shows = []
                         new_shows = []
                         inst_shows_with_content = []
 
                         if tv_method > 0:
-                            future_shows, aired_shows = find_upcoming_shows(
+                            future_shows, aired_shows, new_season_shows = find_upcoming_shows(
                                 all_series, sonarr_url, sonarr_api_key, future_days_upcoming_shows,
                                 utc_offset, debug, exclude_sonarr_tag_ids, future_only_tv,
-                                globally_available_show_ids
+                                globally_available_show_ids, new_season_days,
+                                globally_downloaded_show_ids
                             )
 
                             if future_shows:
@@ -376,6 +404,14 @@ def main(config=None, localization=None):
                             else:
                                 print(f"{ORANGE}Aired shows excluded due to future_only_tv=True.{RESET}")
 
+                            if new_season_days is not None:
+                                if new_season_shows:
+                                    print(f"\n{GREEN}Found {len(new_season_shows)} shows with a new season premiering within {new_season_days} days that aren't downloaded yet:{RESET}")
+                                    for show in new_season_shows:
+                                        print(f"- {show['title']}" + (f" ({show['year']})" if show['year'] else "") + f" - Season {show['seasonNumber']} premieres: {show['airDate']}")
+                                else:
+                                    print(f"{ORANGE}No shows found with a new season premiering within {new_season_days} days that need a placeholder.{RESET}")
+
                             # Find new shows
                             print(f"\n{BLUE}Finding new shows with S01E01 downloaded...{RESET}")
                             new_shows = find_new_shows(
@@ -390,7 +426,7 @@ def main(config=None, localization=None):
                                 print(f"{ORANGE}No new shows found with S01E01 aired within the past {recent_days_new_show} days.{RESET}")
 
                             # Process TV content based on method
-                            all_shows = future_shows + aired_shows
+                            all_shows = future_shows + aired_shows + new_season_shows
                             if all_shows:
                                 print(f"\n{BLUE}Processing content for upcoming shows...{RESET}")
                                 successful = 0
@@ -405,9 +441,7 @@ def main(config=None, localization=None):
                                     show_path = show.get('path')
                                     if show_path:
                                         if umtk_root_tv:
-                                            # Use PureWindowsPath to handle Windows paths from Sonarr
-                                            show_name = PureWindowsPath(show_path).name
-                                            season_00_path = Path(umtk_root_tv) / show_name / "Season 00"
+                                            season_00_path = resolve_show_dir(umtk_root_tv, show) / "Season 00"
                                         else:
                                             season_00_path = Path(show_path) / "Season 00"
 
@@ -434,13 +468,17 @@ def main(config=None, localization=None):
                                     success = False
 
                                     if tv_method == 1:  # Trailer
+                                        # A new season's trailer carries that season's
+                                        # year, not the show's, so search by season instead.
+                                        is_new_season = show.get('new_season', False)
                                         trailer_info = search_trailer_on_youtube(
                                             show['title'],
-                                            show.get('year'),
+                                            None if is_new_season else show.get('year'),
                                             show.get('imdbId'),
                                             debug,
                                             skip_channels,
                                             preferred_language=preferred_language,
+                                            season=show.get('seasonNumber') if is_new_season else None,
                                         )
 
                                         if trailer_info:
@@ -485,6 +523,10 @@ def main(config=None, localization=None):
                             'name': instance_name,
                             'future_shows': future_shows,
                             'aired_shows': aired_shows,
+                            # Kept apart from future/aired on purpose: these are
+                            # TSSK's New Season Soon shows, which supply their
+                            # overlays/collections; UMTK only puts them in Plex.
+                            'new_season_shows': new_season_shows,
                             'new_shows': new_shows,
                             # Trending fields are populated after the per-instance loop by the
                             # global trending pass.
@@ -578,7 +620,7 @@ def main(config=None, localization=None):
                             show_path = show.get('path')
 
                             if show_root_tv:
-                                season_00_path = Path(show_root_tv) / show_folder_name(show) / "Season 00"
+                                season_00_path = resolve_show_dir(show_root_tv, show) / "Season 00"
                             elif show_path:
                                 season_00_path = Path(show_path) / "Season 00"
                             else:
@@ -693,7 +735,9 @@ def main(config=None, localization=None):
                                 future_days_upcoming_shows, utc_offset, future_only_tv,
                                 trending_tv_monitored, trending_tv_request_needed,
                                 globally_available_show_ids,
-                                webhook_config=config
+                                webhook_config=config,
+                                new_season_days=new_season_days,
+                                globally_downloaded_ids=globally_downloaded_show_ids
                             )
                         except (ConnectionError, requests.exceptions.RequestException) as e:
                             names = ", ".join(i['name'] for i in group)
@@ -734,6 +778,17 @@ def main(config=None, localization=None):
 
                     # Generate TV YML files
                     if tv_method > 0 or tv_trending_lists:
+                        # Hand the caller this run's shows grouped per instance,
+                        # so a Coming Soon collection can be restricted to the
+                        # instances it was configured for. Deduping happens per
+                        # collection, once the groups have been filtered.
+                        if collector is not None:
+                            collector['upcoming_shows'] = [
+                                {'instance': r['name'],
+                                 'items': r['future_shows'] + r['aired_shows']}
+                                for r in tv_instance_results
+                            ]
+
                         if output_mode == 'combined' or len(tv_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_shows'] for r in tv_instance_results], 'tvdbId')
                             merged_aired = dedupe_by_key([r['aired_shows'] for r in tv_instance_results], 'tvdbId')
@@ -789,7 +844,8 @@ def main(config=None, localization=None):
                                      "backdrop_trending_requested": config.get("backdrop_trending_shows_requested") or config.get("backdrop_upcoming_shows_aired", {}),
                                      "text_trending_requested": config.get("text_trending_shows_requested") or config.get("text_upcoming_shows_aired", {})},
                                     config,
-                                    localization
+                                    localization,
+                                    instance_suffix=suffix
                                 )
 
                                 if tv_method > 0:
@@ -797,7 +853,8 @@ def main(config=None, localization=None):
                                     new_shows_collection_file = kometa_folder / f"UMTK_TV_NEW_SHOWS_COLLECTION{suffix}.yml"
                                     create_new_shows_overlay_yaml(str(new_shows_overlay_file), result['new_shows'],
                                                                   {"backdrop": config.get("backdrop_new_show", {}),
-                                                                   "text": config.get("text_new_show", {})})
+                                                                   "text": config.get("text_new_show", {})},
+                                                                  instance_suffix=suffix)
                                     create_new_shows_collection_yaml(str(new_shows_collection_file), result['new_shows'], config)
 
                                 create_collection_yaml_tv(str(collection_file), result['future_shows'], result['aired_shows'], config)
@@ -1313,6 +1370,14 @@ def main(config=None, localization=None):
 
                     # Generate Movie YML files
                     if movie_method > 0 or movie_trending_lists:
+                        # See the TV note above - grouped per instance.
+                        if collector is not None:
+                            collector['upcoming_movies'] = [
+                                {'instance': r['name'],
+                                 'items': r['future_movies'] + r['released_movies']}
+                                for r in movie_instance_results
+                            ]
+
                         if output_mode == 'combined' or len(movie_instance_results) == 1:
                             merged_future = dedupe_by_key([r['future_movies'] for r in movie_instance_results], 'tmdbId')
                             merged_released = dedupe_by_key([r['released_movies'] for r in movie_instance_results], 'tmdbId')
@@ -1359,7 +1424,8 @@ def main(config=None, localization=None):
                                      "backdrop_trending_requested": config.get("backdrop_trending_movies_requested") or config.get("backdrop_upcoming_movies_released", {}),
                                      "text_trending_requested": config.get("text_trending_movies_requested") or config.get("text_upcoming_movies_released", {})},
                                     config,
-                                    localization
+                                    localization,
+                                    instance_suffix=suffix
                                 )
 
                                 create_collection_yaml_movies(str(collection_file), result['future_movies'], result['released_movies'], config)
@@ -1456,6 +1522,26 @@ def main(config=None, localization=None):
             )
         elif debug and process_movies:
             print(f"{ORANGE}[DEBUG] Plex movie metadata updates skipped - missing plex_url, plex_token, or movie_libraries{RESET}")
+
+        # Build trending collections straight in Plex for the lists that opted in.
+        # Runs last so any library scan and the metadata pass' wait-for-items
+        # retry have already given Plex a chance to pick new files up.
+        plex_collection_lists = [l for l in (movie_trending_lists + tv_trending_lists)
+                                 if str(l.get('build_in_plex', False)).lower() == "true"
+                                 and l.get('_items')]
+        # Only worth waiting on Plex when UMTK actually wrote something this run;
+        # otherwise a missing item is missing for good and waiting just stalls.
+        new_files_written = new_tv_files_written + new_movie_files_written
+        if collector is not None:
+            collector['new_files_written'] = new_files_written
+        if plex_collection_lists and plex_url and plex_token:
+            print(f"\n{BLUE}{'=' * 50}{RESET}")
+            print(f"{BLUE}Building trending collections in Plex...{RESET}")
+            print(f"{BLUE}{'=' * 50}{RESET}\n")
+            sync_trending_collections(plex_url, plex_token, plex_collection_lists, config,
+                                      debug, wait_for_items=new_files_written > 0)
+        elif plex_collection_lists and debug:
+            print(f"{ORANGE}[DEBUG] Plex collection building skipped - missing plex_url or plex_token{RESET}")
 
         # Calculate and display runtime
         end_time = datetime.now()

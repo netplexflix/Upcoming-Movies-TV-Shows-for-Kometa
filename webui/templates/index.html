@@ -538,6 +538,29 @@ select { min-width: 120px; }
     width: 100%;
 }
 
+/* Multi-pick rows (Coming Soon libraries / instances / TSSK categories) */
+.cs-check-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 2px 0;
+}
+
+.custom-var-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.custom-var-check input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
 .btn-add-instance {
     background: none;
     border: 1px dashed var(--border);
@@ -1358,8 +1381,9 @@ select { min-width: 120px; }
     <div class="nav-links">
         <a href="#" data-page="dashboard" class="active">Dashboard</a>
         <a href="#" data-page="connections">Connections</a>
-        <a href="#" data-page="umtk">UMTK Settings</a>
-        <a href="#" data-page="tssk">TSSK Settings</a>
+        <a href="#" data-page="settings">Settings</a>
+        <a href="#" data-page="yml">YML Configurations</a>
+        <a href="#" data-page="webhooks">Webhooks</a>
         <a href="#" data-page="log">Log</a>
     </div>
     <button class="btn-logout" id="btn-logout" onclick="doLogout()" style="display:none">Logout</button>
@@ -1377,7 +1401,7 @@ select { min-width: 120px; }
 <!-- ── Legacy root migration banner ───────────────────────────────────── -->
 <div id="legacy-root-banner" class="legacy-banner" style="display:none">
     <div class="legacy-banner-text">
-        <strong>Settings moved:</strong> <code>umtk_root_movies</code> / <code>umtk_root_tv</code> are now per-instance — set them under each Radarr/Sonarr instance on the Connections tab. Dedicated trending roots are now set per trending list in UMTK Settings → Trending. Your legacy values are still being applied automatically; update the new fields and then remove the old keys from <code>config.yml</code>.
+        <strong>Settings moved:</strong> <code>umtk_root_movies</code> / <code>umtk_root_tv</code> are now per-instance — set them under each Radarr/Sonarr instance on the Connections tab. Dedicated trending roots are now set per trending list in Settings → Trending. Your legacy values are still being applied automatically; update the new fields and then remove the old keys from <code>config.yml</code>.
     </div>
     <div class="legacy-banner-actions">
         <button class="btn btn-secondary btn-sm" onclick="dismissLegacyBanner()">Dismiss</button>
@@ -1468,26 +1492,38 @@ select { min-width: 120px; }
     </div>
 </div>
 
-<!-- ── UMTK Settings ──────────────────────────────────────────────────── -->
-<div id="page-umtk" class="page">
-    <h1 class="page-title">UMTK Settings</h1>
-    <div id="umtk-sections"></div>
-    <h2 style="font-size:18px;font-weight:600;margin:28px 0 16px;color:var(--text-primary)">Collection & Overlay Blocks</h2>
-    <div id="umtk-blocks"></div>
-    <div id="umtk-webhook"></div>
+<!-- ── Settings (UMTK + TSSK merged) ──────────────────────────────────── -->
+<div id="page-settings" class="page">
+    <h1 class="page-title">Settings</h1>
+    <div id="settings-sections"></div>
     <div class="settings-actions">
-        <button class="btn" onclick="saveUmtk()">Save UMTK Settings</button>
+        <button class="btn" onclick="saveSettings()">Save Settings</button>
     </div>
 </div>
 
-<!-- ── TSSK Settings ──────────────────────────────────────────────────── -->
-<div id="page-tssk" class="page">
-    <h1 class="page-title">TSSK Settings</h1>
-    <div id="tssk-sections"></div>
-    <h2 style="font-size:18px;font-weight:600;margin:28px 0 16px;color:var(--text-primary)">Collection & Overlay Blocks</h2>
-    <div id="tssk-blocks"></div>
+<!-- ── YML Configurations (blocks from both configs) ───────────────────── -->
+<div id="page-yml" class="page">
+    <h1 class="page-title">YML Configurations</h1>
+
+    <h2 style="font-size:18px;font-weight:600;margin:0 0 4px;color:var(--text-primary)">Coming Soon, New Shows &amp; Trending</h2>
+    <div class="setting-desc" style="margin-bottom:16px">Written to <code>config.yml</code></div>
+    <div id="yml-umtk-blocks"></div>
+
+    <h2 style="font-size:18px;font-weight:600;margin:32px 0 4px;color:var(--text-primary)">TV Show Status</h2>
+    <div class="setting-desc" style="margin-bottom:16px">Written to <code>tssk_config.yml</code></div>
+    <div id="yml-tssk-blocks"></div>
+
     <div class="settings-actions">
-        <button class="btn" onclick="saveTssk()">Save TSSK Settings</button>
+        <button class="btn" onclick="saveYml()">Save YML Configurations</button>
+    </div>
+</div>
+
+<!-- ── Webhooks ────────────────────────────────────────────────────────── -->
+<div id="page-webhooks" class="page">
+    <h1 class="page-title">Webhooks</h1>
+    <div id="webhook-sections"></div>
+    <div class="settings-actions">
+        <button class="btn" onclick="saveWebhooks()">Save Webhooks</button>
     </div>
 </div>
 
@@ -1516,7 +1552,63 @@ let connData = [];
 let umtkData = { options: [], blocks: {} };
 let tsskData = { options: [], blocks: {} };
 let logLines = [];
-let _dashLoaded = false, _connLoaded = false, _umtkLoaded = false, _tsskLoaded = false, _logLoaded = false;
+let _dashLoaded = false, _connLoaded = false, _configsLoaded = false, _logLoaded = false;
+
+/* Settings page layout. Section membership, labels and descriptions come from
+   the server (routes.py UMTK_OPTIONS / TSSK_OPTIONS); only the ordering lives
+   here. Sections are emitted in this order even when they hold no flat options
+   (Coming Soon Collections), so the card-based editors land in the right place. */
+const SETTINGS_SECTION_ORDER = [
+    'General',
+    'Movies Coming Soon',
+    'TV Shows Coming Soon',
+    'Process TV Show Categories',
+    'TV Show Timeframes',
+    'MDBList Collections',
+    'Coming Soon Collections',
+    'Plex Metadata',
+];
+
+/* Row order within a section. Keys not listed here sort last within their own
+   section, so a newly added option can never silently disappear from the UI. */
+const SETTINGS_KEY_ORDER = [
+    /* General - processing method */
+    'movies', 'tv', 'new_season_placeholders', 'method_fallback', 'preferred_language', 'skip_channels',
+    /* General - TV show status source & filters */
+    'use_tvdb', 'skip_unmonitored', 'ignore_finales_tags',
+    /* General - global */
+    'utc_offset', 'simplify_next_week_dates', 'cleanup', 'debug',
+    /* Movies Coming Soon */
+    'future_days_upcoming_movies', 'past_days_upcoming_movies', 'include_inCinemas', 'future_only',
+    /* TV Shows Coming Soon */
+    'future_days_upcoming_shows', 'recent_days_new_show', 'future_only_tv',
+    /* Trending */
+    'label_request_needed', 'mdblist_api_key',
+    /* Plex Metadata */
+    'edit_sort_titles', 'edit_sort_titles_new_season_soon',
+    'edit_sort_titles_upcoming_episode', 'edit_sort_titles_upcoming_finale',
+    'append_dates_to_sort_titles', 'add_rank_to_sort_title',
+    'edit_S00E00_episode_title', 'metadata_retry_limit',
+];
+
+/* Intro text rendered directly under a section's <h2>. */
+const SECTION_DESCRIPTIONS = {
+    'MDBList Collections': 'Let UMTK create and update collections directly in Plex based on your chosen MDBLists, in list order. Can be used for Trending lists, Seasonal collections, Your personal recommendations, etc. Placeholders will be created for items on these lists that are currently missing. List rank overlays are generated for each item which can be optionally processed by Kometa.',
+    'Coming Soon Collections': 'Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date.',
+    'Plex Metadata': 'If you let UMTK directly create your collections, these edits are not necessary and should be turned off.',
+};
+
+/* Extra controls rendered inside a section's <h2>. */
+const SECTION_BUTTONS = {
+    'MDBList Collections': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`,
+};
+
+/* Default names for new Coming Soon collections (twin of COMING_SOON_DEFAULT_NAMES
+   in umtk/config_loader.py). A card still carrying one of these follows its Type. */
+const COMING_SOON_DEFAULT_NAMES = { movie: 'Movies Coming Soon', tv: 'TV Shows Coming Soon' };
+
+/* The two master toggles, hoisted above the first section. */
+const ENABLE_KEYS = ['enable_umtk', 'enable_tssk'];
 
 /* Known block keys and their input types */
 const BLOCK_KEY_TYPES = {
@@ -1545,16 +1637,22 @@ const BLOCK_KEY_HINTS = {
 };
 
 /* ── Dirty-state tracking ───────────────────────────────────────────────── */
-const _settingsPages = new Set(['connections', 'umtk', 'tssk']);
+const _settingsPages = new Set(['connections', 'settings', 'yml', 'webhooks']);
 const _dirtyPages = new Set();
 const _pageSnapshots = {};
 const _watchedPages = new Set();
 let _currentSettingsPage = null;
 
-function _snapshotPage(pageId) {
+/* Tags in string-list controls aren't inputs, so they're captured explicitly. */
+function _pageState(pageId) {
     const el = document.getElementById('page-' + pageId);
-    const inputs = el.querySelectorAll('input, select, textarea');
-    _pageSnapshots[pageId] = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
+    const inputs = el.querySelectorAll('input, select, textarea, .string-tag');
+    return JSON.stringify([...inputs].map(i =>
+        i.type === 'checkbox' ? i.checked : (i.classList.contains('string-tag') ? i.textContent : i.value)));
+}
+
+function _snapshotPage(pageId) {
+    _pageSnapshots[pageId] = _pageState(pageId);
     _dirtyPages.delete(pageId);
     _updateUnsavedBanner();
 }
@@ -1567,12 +1665,15 @@ function _watchPage(pageId) {
 }
 
 function _checkDirty(pageId) {
-    const el = document.getElementById('page-' + pageId);
-    const inputs = el.querySelectorAll('input, select, textarea');
-    const current = JSON.stringify([...inputs].map(i => i.type === 'checkbox' ? i.checked : i.value));
-    if (current !== _pageSnapshots[pageId]) _dirtyPages.add(pageId);
+    if (_pageState(pageId) !== _pageSnapshots[pageId]) _dirtyPages.add(pageId);
     else _dirtyPages.delete(pageId);
     _updateUnsavedBanner();
+}
+
+/* For handlers that add/remove DOM rows without firing an input event. */
+function _checkDirtyFor(el) {
+    const page = el.closest('.page');
+    if (page) _checkDirty(page.id.replace(/^page-/, ''));
 }
 
 function _updateUnsavedBanner() {
@@ -1586,14 +1687,14 @@ function _updateUnsavedBanner() {
 
 function bannerSave() {
     if (_currentSettingsPage === 'connections') saveConnections();
-    else if (_currentSettingsPage === 'umtk') saveUmtk();
-    else if (_currentSettingsPage === 'tssk') saveTssk();
+    else if (_currentSettingsPage === 'settings') saveSettings();
+    else if (_currentSettingsPage === 'yml') saveYml();
+    else if (_currentSettingsPage === 'webhooks') saveWebhooks();
 }
 
 function bannerDiscard() {
     if (_currentSettingsPage === 'connections') fetchConnections();
-    else if (_currentSettingsPage === 'umtk') fetchUmtk();
-    else if (_currentSettingsPage === 'tssk') fetchTssk();
+    else fetchConfigs();
 }
 
 window.addEventListener('beforeunload', e => {
@@ -1621,8 +1722,7 @@ document.querySelectorAll('.nav-links a').forEach(a => {
 
         if (page === 'dashboard' && !_dashLoaded) loadDashboard();
         if (page === 'connections' && !_connLoaded) fetchConnections();
-        if (page === 'umtk' && !_umtkLoaded) fetchUmtk();
-        if (page === 'tssk' && !_tsskLoaded) fetchTssk();
+        if (['settings', 'yml', 'webhooks'].includes(page) && !_configsLoaded) fetchConfigs();
         if (page === 'log' && !_logLoaded) fetchLog();
     });
 });
@@ -1762,12 +1862,18 @@ async function fetchUpdateStatus() {
 }
 
 /* ── Helper: create setting control ────────────────────────────────────── */
+/* `opt._cfg` ('umtk' / 'tssk') is stamped by fetchConfigs() and emitted as a
+   data-cfg attribute. It is what keeps the two configs apart now that their
+   settings share a page: `recent_days_new_show` exists in BOTH config.yml and
+   tssk_config.yml, so data-key alone is no longer a unique selector.
+   Connections options carry no _cfg and render exactly as before. */
 function createSettingHTML(opt) {
     const key = opt.key;
     const val = opt.value;
+    const cfg = opt._cfg ? ` data-cfg="${opt._cfg}"` : '';
     if (opt.type === 'bool') {
         return `<label class="toggle">
-            <input type="checkbox" data-key="${key}" ${val ? 'checked' : ''}>
+            <input type="checkbox" data-key="${key}"${cfg} ${val ? 'checked' : ''}>
             <span class="toggle-slider"></span>
         </label>`;
     }
@@ -1775,35 +1881,42 @@ function createSettingHTML(opt) {
         const opts = (opt.options || []).map(o =>
             `<option value="${o.value}" ${val == o.value ? 'selected' : ''}>${o.label}</option>`
         ).join('');
-        return `<select data-key="${key}">${opts}</select>`;
+        return `<select data-key="${key}"${cfg}>${opts}</select>`;
     }
     if (opt.type === 'int') {
-        return `<input type="number" data-key="${key}" value="${val != null ? val : ''}" step="1">`;
+        return `<input type="number" data-key="${key}"${cfg} value="${val != null ? val : ''}" step="1">`;
     }
     if (opt.type === 'float') {
-        return `<input type="number" data-key="${key}" value="${val != null ? val : ''}" step="0.5">`;
+        return `<input type="number" data-key="${key}"${cfg} value="${val != null ? val : ''}" step="0.5">`;
     }
     if (opt.type === 'string') {
         const inputType = opt.sensitive ? 'password' : 'text';
-        return `<input type="${inputType}" data-key="${key}" value="${escapeAttr(val || '')}" style="min-width:220px">`;
+        return `<input type="${inputType}" data-key="${key}"${cfg} value="${escapeAttr(val || '')}" style="min-width:220px">`;
     }
     if (opt.type === 'string_list') {
         const items = Array.isArray(val) ? val : (val ? [val] : []);
         const tags = items.map(v =>
-            `<span class="string-tag">${escapeHtml(v)}<span class="remove-tag" onclick="removeTag(this, '${key}')">&times;</span></span>`
+            `<span class="string-tag">${escapeHtml(v)}<span class="remove-tag" onclick="removeTag(this)">&times;</span></span>`
         ).join('');
-        return `<div class="string-list" data-key="${key}">
+        return `<div class="string-list" data-key="${key}"${cfg}>
             ${tags}
-            <input type="text" class="add-tag-input" placeholder="Add..." onkeydown="addTag(event, '${key}')">
+            <input type="text" class="add-tag-input" placeholder="Add..." onkeydown="addTag(event)">
         </div>`;
     }
-    return `<input type="text" data-key="${key}" value="${escapeAttr(val || '')}" style="min-width:200px">`;
+    return `<input type="text" data-key="${key}"${cfg} value="${escapeAttr(val || '')}" style="min-width:200px">`;
+}
+
+/* Attribute selector for one option's control, scoped to its config file. */
+function optSelector(opt) {
+    return opt._cfg
+        ? `[data-cfg="${opt._cfg}"][data-key="${opt.key}"]`
+        : `[data-key="${opt.key}"]`;
 }
 
 function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-function addTag(e, key) {
+function addTag(e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const input = e.target;
@@ -1812,17 +1925,20 @@ function addTag(e, key) {
     const container = input.closest('.string-list');
     const tag = document.createElement('span');
     tag.className = 'string-tag';
-    tag.innerHTML = escapeHtml(val) + `<span class="remove-tag" onclick="removeTag(this, '${key}')">&times;</span>`;
+    tag.innerHTML = escapeHtml(val) + `<span class="remove-tag" onclick="removeTag(this)">&times;</span>`;
     container.insertBefore(tag, input);
     input.value = '';
+    _checkDirtyFor(container);
 }
 
-function removeTag(el, key) {
+function removeTag(el) {
+    const container = el.closest('.string-list');
     el.closest('.string-tag').remove();
+    _checkDirtyFor(container);
 }
 
-function getStringListValues(key) {
-    const container = document.querySelector(`.string-list[data-key="${key}"]`);
+function getStringListValues(opt, scopeEl) {
+    const container = (scopeEl || document).querySelector(`.string-list${optSelector(opt)}`);
     if (!container) return [];
     return Array.from(container.querySelectorAll('.string-tag')).map(t =>
         t.textContent.replace(/\u00d7$/, '').trim()
@@ -1833,26 +1949,23 @@ function getStringListValues(key) {
 function gatherOptionValues(optionsList, scopeEl) {
     const data = {};
     optionsList.forEach(opt => {
+        if (opt.type === 'string_list') {
+            data[opt.key] = getStringListValues(opt, scopeEl);
+            return;
+        }
+        const el = scopeEl.querySelector(optSelector(opt));
+        if (!el) return;
         if (opt.type === 'bool') {
-            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
-            if (el) data[opt.key] = el.checked;
+            data[opt.key] = el.checked;
         } else if (opt.type === 'select') {
-            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
-            if (el) {
-                const v = el.value;
-                data[opt.key] = isNaN(v) ? v : Number(v);
-            }
+            const v = el.value;
+            data[opt.key] = isNaN(v) ? v : Number(v);
         } else if (opt.type === 'int') {
-            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
-            if (el) data[opt.key] = parseInt(el.value, 10) || 0;
+            data[opt.key] = parseInt(el.value, 10) || 0;
         } else if (opt.type === 'float') {
-            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
-            if (el) data[opt.key] = parseFloat(el.value) || 0;
-        } else if (opt.type === 'string_list') {
-            data[opt.key] = getStringListValues(opt.key);
+            data[opt.key] = parseFloat(el.value) || 0;
         } else {
-            const el = scopeEl.querySelector(`[data-key="${opt.key}"]`);
-            if (el) data[opt.key] = el.value;
+            data[opt.key] = el.value;
         }
     });
     return data;
@@ -1863,6 +1976,15 @@ let _instanceData = { radarr_instances: [], sonarr_instances: [] };
 
 /* ── Trending list editor state ───────────────────────────────────────── */
 let _trendingListsData = [];
+/* Configured Plex movie/TV libraries offered as 'Build in Plex' checkboxes on
+   the trending cards, served by the API like the Coming Soon choices below. */
+let _trendingLibraryChoices = { movie: [], tv: [] };
+
+/* ── Coming Soon collections editor state ─────────────────────────────── */
+let _comingSoonData = [];
+/* Libraries / Arr instances to choose from, served by the API so this page
+   doesn't have to depend on the Connections page having been opened. */
+let _comingSoonChoices = { libraries: { movie: [], tv: [] }, instances: { movie: [], tv: [] } };
 
 /* ── Connections page ──────────────────────────────────────────────────── */
 async function fetchConnections() {
@@ -2316,32 +2438,109 @@ async function saveConnections() {
     } catch (e) { showToast('Failed to save', 'error'); }
 }
 
-/* ── UMTK Settings page ───────────────────────────────────────────────── */
-async function fetchUmtk() {
+/* ── Settings / YML / Webhooks pages ──────────────────────────────────── */
+
+/* One loader for all three pages: the UMTK and TSSK endpoints each return both
+   flat options and collection/overlay blocks, so a single pass populates them
+   all. Every option gets stamped with the config file it belongs to. */
+async function fetchConfigs() {
     try {
-        const res = await apiFetch('/api/config/umtk');
-        if (!res.ok) return;
-        umtkData = await res.json();
+        const umtkRes = await apiFetch('/api/config/umtk');
+        const tsskRes = await apiFetch('/api/config/tssk');
+        if (!umtkRes.ok || !tsskRes.ok) return;
+        umtkData = await umtkRes.json();
+        tsskData = await tsskRes.json();
+        (umtkData.options || []).forEach(o => o._cfg = 'umtk');
+        (umtkData.webhook || []).forEach(o => o._cfg = 'umtk');
+        (tsskData.options || []).forEach(o => o._cfg = 'tssk');
         try {
             const listsRes = await apiFetch('/api/config/trending_lists');
             if (listsRes.ok) {
                 const listsData = await listsRes.json();
                 _trendingListsData = listsData.trending_lists || [];
+                _trendingLibraryChoices = listsData.libraries || { movie: [], tv: [] };
             }
         } catch (e) { /* silent */ }
-        _umtkLoaded = true;
-        renderUmtkSettings();
-        _snapshotPage('umtk');
-        _watchPage('umtk');
-    } catch (e) { showToast('Failed to load UMTK settings', 'error'); }
+        try {
+            const csRes = await apiFetch('/api/config/coming_soon_collections');
+            if (csRes.ok) {
+                const csData = await csRes.json();
+                _comingSoonData = csData.coming_soon_collections || [];
+                _comingSoonChoices = {
+                    libraries: csData.libraries || { movie: [], tv: [] },
+                    instances: csData.instances || { movie: [], tv: [] },
+                };
+            }
+        } catch (e) { /* silent */ }
+        _configsLoaded = true;
+        renderSettingsPage();
+        renderYmlPage();
+        renderWebhookPage();
+        ['settings', 'yml', 'webhooks'].forEach(p => { _snapshotPage(p); _watchPage(p); });
+    } catch (e) { showToast('Failed to load settings', 'error'); }
 }
 
-function renderUmtkSettings() {
-    renderOptionSections(umtkData.options, document.getElementById('umtk-sections'), 'enable_umtk', {
-        'Trending': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`
+function renderSettingsPage() {
+    const container = document.getElementById('settings-sections');
+    const merged = [...(umtkData.options || []), ...(tsskData.options || [])];
+
+    /* Master toggles are hoisted above the sections. */
+    const enableOpts = ENABLE_KEYS.map(k => merged.find(o => o.key === k)).filter(Boolean);
+    const rows = merged.filter(o => !ENABLE_KEYS.includes(o.key));
+
+    /* Group by the section the server assigned, then order both the sections
+       and the rows within them. Unknown sections/keys sort last so nothing
+       added later can silently vanish from the page. */
+    const sections = {};
+    rows.forEach(opt => {
+        const name = opt.section || 'Other';
+        (sections[name] = sections[name] || []).push(opt);
     });
-    /* Trending list cards live below the universal Trending options */
-    const trendingOpts = document.getElementById('section-opts-trending-enable_umtk');
+    const rank = (list, v) => { const i = list.indexOf(v); return i === -1 ? list.length : i; };
+    const sectionNames = [...new Set([...SETTINGS_SECTION_ORDER, ...Object.keys(sections)])]
+        .filter(n => SETTINGS_SECTION_ORDER.includes(n) || sections[n]);
+
+    let html = '';
+    if (enableOpts.length) {
+        html += `<div class="settings-section">`;
+        enableOpts.forEach(opt => {
+            html += `<div class="setting-item" data-cfg="${opt._cfg}" data-enable-row="1">
+                <div class="setting-info">
+                    <div class="setting-label" style="font-size:16px;font-weight:600">${escapeHtml(opt.label)}</div>
+                    <div class="setting-desc">${escapeHtml(opt.description || '')}</div>
+                </div>
+                <div class="setting-control">${createSettingHTML(opt)}</div>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    for (const name of sectionNames) {
+        const opts = (sections[name] || []).slice()
+            .sort((a, b) => rank(SETTINGS_KEY_ORDER, a.key) - rank(SETTINGS_KEY_ORDER, b.key));
+        const desc = SECTION_DESCRIPTIONS[name]
+            ? `<div class="setting-desc" style="margin-bottom:12px">${escapeHtml(SECTION_DESCRIPTIONS[name])}</div>` : '';
+        html += `<div class="settings-section" data-section="${escapeAttr(name)}">
+            <h2>${escapeHtml(name)}${SECTION_BUTTONS[name] || ''}</h2>
+            ${desc}
+            <div id="section-opts-${sectionSlug(name)}">`;
+        opts.forEach(opt => {
+            const indent = opt.indent_under ? ' style="padding-left:28px"' : '';
+            const parent = opt.indent_under ? ` data-indent-under="${opt.indent_under}"` : '';
+            html += `<div class="setting-item" data-cfg="${opt._cfg}" data-key-row="${opt.key}"${parent}${indent}>
+                <div class="setting-info">
+                    <div class="setting-label">${escapeHtml(opt.label)}</div>
+                    <div class="setting-desc">${escapeHtml(opt.description || '')}</div>
+                </div>
+                <div class="setting-control">${createSettingHTML(opt)}</div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+    container.innerHTML = html;
+
+    /* Trending list cards live below the universal MDBList Collections options */
+    const trendingOpts = document.getElementById('section-opts-mdblist-collections');
     if (trendingOpts) {
         const wrap = document.createElement('div');
         wrap.className = 'instance-section';
@@ -2350,11 +2549,259 @@ function renderUmtkSettings() {
         trendingOpts.appendChild(wrap);
         renderTrendingLists();
     }
-    renderBlocks(umtkData.blocks, document.getElementById('umtk-blocks'), 'umtk');
-    renderOptionSections(umtkData.webhook || [], document.getElementById('umtk-webhook'), null);
+    renderComingSoonSection();
+    wireSettingsGating();
+}
+
+function sectionSlug(name) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/* Enable UMTK / Enable TSSK grey out only the rows belonging to their own
+   config file, because General and Plex Metadata mix rows from both. A whole
+   section is greyed when every row in it is disabled - which is also what
+   covers the trending / coming-soon card editors, since the sections holding
+   them are UMTK-only. The three indented sort-title toggles additionally
+   follow their parent toggle. */
+function wireSettingsGating() {
+    const container = document.getElementById('settings-sections');
+    if (!container) return;
+
+    const apply = () => {
+        const enabled = {};
+        ENABLE_KEYS.forEach(k => {
+            const el = container.querySelector(`[data-key="${k}"]`);
+            enabled[k === 'enable_tssk' ? 'tssk' : 'umtk'] = el ? el.checked : true;
+        });
+
+        /* Sections first: a section whose every row is disabled is greyed as a
+           whole, and its rows are then left alone so the opacity doesn't stack. */
+        container.querySelectorAll('.settings-section[data-section]').forEach(sec => {
+            const rows = [...sec.querySelectorAll('.setting-item[data-cfg]')];
+            /* Sections without flat options (Coming Soon Collections) follow UMTK. */
+            const secOff = rows.length ? rows.every(r => !enabled[r.dataset.cfg]) : !enabled.umtk;
+            sec.classList.toggle('section-disabled', secOff);
+
+            rows.forEach(row => {
+                let off = !secOff && !enabled[row.dataset.cfg];
+                const parentKey = row.dataset.indentUnder;
+                if (!secOff && !off && parentKey) {
+                    const p = container.querySelector(`[data-key="${parentKey}"]`);
+                    off = !!(p && !p.checked);
+                }
+                row.classList.toggle('section-disabled', off);
+            });
+        });
+    };
+
+    [...ENABLE_KEYS, 'edit_sort_titles'].forEach(k => {
+        const el = container.querySelector(`[data-key="${k}"]`);
+        if (el) el.addEventListener('change', apply);
+    });
+    apply();
+}
+
+function renderYmlPage() {
+    renderBlocks(umtkData.blocks, document.getElementById('yml-umtk-blocks'), 'umtk');
+    renderBlocks(tsskData.blocks, document.getElementById('yml-tssk-blocks'), 'tssk');
+}
+
+function renderWebhookPage() {
+    renderOptionSections(umtkData.webhook || [], document.getElementById('webhook-sections'));
     /* Wire the preset dropdown to pre-fill the webhook fields. */
-    const presetSel = document.querySelector('#umtk-webhook [data-key="webhook_preset"]');
+    const presetSel = document.querySelector('#webhook-sections [data-key="webhook_preset"]');
     if (presetSel) presetSel.addEventListener('change', () => applyWebhookPreset(presetSel.value));
+}
+
+
+
+/* ── Coming Soon collections management ───────────────────────────────── */
+
+/* The Coming Soon Collections section has no flat settings of its own, so
+   renderSettingsPage() emits an empty shell for it - fill it in here. */
+function renderComingSoonSection() {
+    const optsDiv = document.getElementById('section-opts-coming-soon-collections');
+    if (!optsDiv) return;
+    optsDiv.innerHTML = `<div class="instance-cards" id="coming-soon-cards"></div>
+        <button class="btn-add-instance" onclick="addComingSoonCollection()">+ Add Collection</button>`;
+    renderComingSoonCollections();
+}
+
+function renderComingSoonCollections() {
+    const container = document.getElementById('coming-soon-cards');
+    if (!container) return;
+    container.innerHTML = _comingSoonData.map((c, idx) => renderComingSoonCard(idx, c)).join('');
+}
+
+/* A checkbox per available library / instance, tagged with the card editor's
+   field attribute (data-cs-field / data-trend-field). Checkboxes (unlike the
+   tag control) are picked up by the page snapshot, so dirty tracking just works. */
+function pickCheckboxes(attr, field, available, selected, emptyText, disabled = false) {
+    if (!available.length) {
+        return `<span class="setting-desc">${escapeHtml(emptyText)}</span>`;
+    }
+    return available.map(nm => `<label class="custom-var-check">
+        <input type="checkbox" ${attr}="${field}" value="${escapeAttr(nm)}"${selected.includes(nm) ? ' checked' : ''}${disabled ? ' disabled' : ''}>
+        <span>${escapeHtml(nm)}</span>
+    </label>`).join('');
+}
+
+/* The opt-in sort title of a Plex-built collection: a checkbox, and the Sort
+   Title field it reveals. Shared by the trending and Coming Soon cards. */
+function sortTitleFields(attr, entry, disabled = false) {
+    const editSort = String(entry.edit_sort_title).toLowerCase() === 'true';
+    const off = disabled ? ' disabled' : '';
+    return `<div class="instance-field">
+                <label>Edit Sort Title</label>
+                <label class="custom-var-check">
+                    <input type="checkbox" ${attr}="edit_sort_title"${editSort ? ' checked' : ''}${off} onchange="onEditSortTitleToggle(this)">
+                    <span>Set a custom sort title in Plex</span>
+                </label>
+            </div>
+            <div class="instance-field full-width" data-sort-title-row${editSort ? '' : ' style="display:none"'}>
+                <label>Sort Title</label>
+                <input type="text" ${attr}="sort_title" value="${escapeAttr(entry.sort_title || '')}"${off}>
+            </div>`;
+}
+
+function renderComingSoonCard(idx, c) {
+    const type = c.type === 'tv' ? 'tv' : 'movie';
+    const nameVal = escapeAttr(c.name || '');
+    const libraries = _comingSoonChoices.libraries[type] || [];
+    const instances = _comingSoonChoices.instances[type] || [];
+    const pickedLibraries = Array.isArray(c.libraries) ? c.libraries : [];
+    /* Shown exactly as stored: unticking every instance is a real choice (a TV
+       collection built from the TSSK categories alone). */
+    const pickedInstances = Array.isArray(c.instances) ? c.instances : [];
+    const arrLabel = type === 'tv' ? 'Sonarr' : 'Radarr';
+
+    const tsskFields = type !== 'tv' ? '' : `
+            <div class="instance-field full-width">
+                <label>Also include from TSSK</label>
+                <div class="cs-check-group">
+                    ${[['include_new_season_soon', 'New Season Soon'],
+                       ['include_upcoming_episode', 'Upcoming Episode'],
+                       ['include_upcoming_finale', 'Upcoming Finale']].map(([key, label]) =>
+                        `<label class="custom-var-check">
+                            <input type="checkbox" data-cs-field="${key}"${String(c[key]).toLowerCase() === 'true' ? ' checked' : ''}>
+                            <span>${label}</span>
+                        </label>`).join('')}
+                </div>
+                <span class="setting-desc">Only contributes when TSSK is enabled with the matching category switched on.</span>
+            </div>`;
+
+    return `<div class="instance-card" data-cs-idx="${idx}">
+        <div class="instance-card-header">
+            <span class="instance-card-title">${escapeHtml(c.name || 'New Collection')}</span>
+            <div class="instance-card-actions">
+                <button class="btn-remove-instance" onclick="removeComingSoonCollection(${idx})">Remove</button>
+            </div>
+        </div>
+        <div class="instance-fields">
+            <div class="instance-field">
+                <label>Name</label>
+                <input type="text" data-cs-field="name" value="${nameVal}" placeholder="e.g. ${COMING_SOON_DEFAULT_NAMES[type]}" oninput="updateComingSoonField(${idx}, 'name', this.value); this.closest('.instance-card').querySelector('.instance-card-title').textContent = this.value || 'New Collection';">
+            </div>
+            <div class="instance-field">
+                <label>Type</label>
+                <select data-cs-field="type" onchange="onComingSoonTypeChange(${idx}, this)">
+                    <option value="movie"${type === 'movie' ? ' selected' : ''}>Movies</option>
+                    <option value="tv"${type === 'tv' ? ' selected' : ''}>TV Shows</option>
+                </select>
+            </div>
+            <div class="instance-field full-width">
+                <label>Plex Libraries</label>
+                <div class="cs-check-group">${pickCheckboxes('data-cs-field', 'libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`)}</div>
+            </div>
+            <div class="instance-field full-width">
+                <label>${arrLabel} Instances</label>
+                <div class="cs-check-group">${pickCheckboxes('data-cs-field', 'instances', instances, pickedInstances, `No ${arrLabel} instances configured — add them on the Connections page.`)}</div>
+                ${type === 'tv' ? '<span class="setting-desc">Untick all of them to build this collection from the TSSK categories below only.</span>' : ''}
+            </div>${tsskFields}
+            ${sortTitleFields('data-cs-field', c)}
+        </div>
+    </div>`;
+}
+
+/* Switching type changes which libraries, instances and extra fields apply, so
+   re-render the cards with that type's choices pre-selected. A name the user
+   hasn't touched (still one of the defaults) follows the type. */
+function onComingSoonTypeChange(idx, select) {
+    gatherComingSoonFromDOM();
+    const entry = _comingSoonData[idx];
+    if (entry) {
+        entry.type = select.value === 'tv' ? 'tv' : 'movie';
+        if (Object.values(COMING_SOON_DEFAULT_NAMES).includes((entry.name || '').trim())) {
+            entry.name = COMING_SOON_DEFAULT_NAMES[entry.type];
+        }
+        const libraries = _comingSoonChoices.libraries[entry.type] || [];
+        entry.libraries = libraries.slice(0, 1);
+        entry.instances = (_comingSoonChoices.instances[entry.type] || []).slice();
+    }
+    renderComingSoonCollections();
+    _checkDirty('settings');
+}
+
+function addComingSoonCollection() {
+    gatherComingSoonFromDOM();
+    const libraries = _comingSoonChoices.libraries.movie || [];
+    _comingSoonData.push({
+        name: COMING_SOON_DEFAULT_NAMES.movie, type: 'movie',
+        libraries: libraries.slice(0, 1),
+        instances: (_comingSoonChoices.instances.movie || []).slice(),
+        include_new_season_soon: false, include_upcoming_episode: false,
+        include_upcoming_finale: false,
+        edit_sort_title: false, sort_title: '',
+    });
+    renderComingSoonCollections();
+    _checkDirty('settings');
+}
+
+/* Ticking 'Edit Sort Title' reveals the Sort Title field, seeded with the
+   card's Name when empty; unticking hides it but keeps the value. Works for
+   both the trending and the Coming Soon cards. */
+function onEditSortTitleToggle(checkbox) {
+    const card = checkbox.closest('.instance-card');
+    const row = card.querySelector('[data-sort-title-row]');
+    const input = row.querySelector('input');
+    const nameInput = card.querySelector('[data-trend-field="name"], [data-cs-field="name"]');
+    row.style.display = checkbox.checked ? '' : 'none';
+    if (checkbox.checked && !input.value.trim()) input.value = nameInput ? nameInput.value : '';
+    if (card.dataset.trendIdx !== undefined) gatherTrendingListsFromDOM();
+    else gatherComingSoonFromDOM();
+    _checkDirty('settings');
+}
+
+function removeComingSoonCollection(idx) {
+    const name = _comingSoonData[idx]?.name || 'this collection';
+    if (!confirm(`Remove ${name}?`)) return;
+    gatherComingSoonFromDOM();
+    _comingSoonData.splice(idx, 1);
+    renderComingSoonCollections();
+    _checkDirty('settings');
+}
+
+function updateComingSoonField(idx, field, value) {
+    if (_comingSoonData[idx]) _comingSoonData[idx][field] = value;
+    _checkDirty('settings');
+}
+
+function gatherComingSoonFromDOM() {
+    document.querySelectorAll('.instance-card[data-cs-idx]').forEach(card => {
+        const entry = _comingSoonData[parseInt(card.dataset.csIdx)];
+        if (!entry) return;
+        card.querySelectorAll('[data-cs-field]').forEach(input => {
+            const field = input.dataset.csField;
+            if (field === 'libraries' || field === 'instances') return;  /* handled below */
+            if (input.type === 'checkbox') entry[field] = input.checked;
+            else entry[field] = input.value;
+        });
+        ['libraries', 'instances'].forEach(field => {
+            const boxes = card.querySelectorAll(`[data-cs-field="${field}"]`);
+            if (!boxes.length) return;
+            entry[field] = Array.from(boxes).filter(b => b.checked).map(b => b.value);
+        });
+    });
 }
 
 /* ── Trending list management ─────────────────────────────────────────── */
@@ -2376,14 +2823,13 @@ function renderTrendingListCard(idx, lst) {
     const type = lst.type === 'tv' ? 'tv' : 'movie';
     const method = [0, 1, 2].includes(Number(lst.method)) ? Number(lst.method) : 0;
     const rootPlaceholder = type === 'tv' ? '/umtktv' : '/umtkmovies';
-    const legacyBadge = lst.legacy_filenames
-        ? `<span class="setting-desc" style="margin-right:8px" title="This list writes the classic UMTK trending filenames so existing Kometa configs keep working">classic filenames</span>`
-        : '';
+    const buildInPlex = String(lst.build_in_plex).toLowerCase() === 'true';
+    const libraries = _trendingLibraryChoices[type] || [];
+    const pickedLibraries = Array.isArray(lst.plex_libraries) ? lst.plex_libraries : [];
     return `<div class="instance-card" data-trend-idx="${idx}">
         <div class="instance-card-header">
             <span class="instance-card-title">${escapeHtml(lst.name || 'New Trending List')}</span>
             <div class="instance-card-actions">
-                ${legacyBadge}
                 <button class="test-btn" onclick="testTrendingList(${idx})">Test</button>
                 <span class="test-result" id="test-trending-${idx}"></span>
                 <button class="btn-remove-instance" onclick="removeTrendingList(${idx})">Remove</button>
@@ -2396,7 +2842,7 @@ function renderTrendingListCard(idx, lst) {
             </div>
             <div class="instance-field">
                 <label>Type</label>
-                <select data-trend-field="type">
+                <select data-trend-field="type" onchange="onTrendingTypeChange(${idx}, this)">
                     <option value="movie"${type === 'movie' ? ' selected' : ''}>Movies</option>
                     <option value="tv"${type === 'tv' ? ' selected' : ''}>TV</option>
                 </select>
@@ -2421,8 +2867,53 @@ function renderTrendingListCard(idx, lst) {
                 <label>Root</label>
                 <input type="text" data-trend-field="root" value="${rootVal}" placeholder="${rootPlaceholder}">
             </div>
+            <div class="instance-field">
+                <label>Build in Plex</label>
+                <select data-trend-field="build_in_plex" onchange="onBuildInPlexToggle(${idx}, this)">
+                    <option value="false"${buildInPlex ? '' : ' selected'}>False</option>
+                    <option value="true"${buildInPlex ? ' selected' : ''}>True</option>
+                </select>
+            </div>
+            ${sortTitleFields('data-trend-field', lst, !buildInPlex)}
+            <div class="instance-field full-width">
+                <label>Plex Libraries</label>
+                <div class="cs-check-group">${pickCheckboxes('data-trend-field', 'plex_libraries', libraries, pickedLibraries, `No ${type === 'tv' ? 'TV' : 'Movie'} libraries configured — set them on the Connections page.`, !buildInPlex)}</div>
+            </div>
+            <div class="instance-field full-width">
+                <span class="setting-desc">Let UMTK create and update this collection directly in Plex in rank order.<br>Make sure to remove the collection yml from your Kometa config, and optionally disable sort_title edits</span>
+            </div>
         </div>
     </div>`;
+}
+
+/* Setting 'Build in Plex' to True enables the library checkboxes and the sort
+   title controls, ticking the first configured library of the list's current
+   type when none is picked yet. */
+function onBuildInPlexToggle(idx, select) {
+    const enabled = select.value === 'true';
+    const card = select.closest('.instance-card');
+    card.querySelectorAll('[data-trend-field="plex_libraries"], [data-trend-field="edit_sort_title"], [data-trend-field="sort_title"]')
+        .forEach(el => { el.disabled = !enabled; });
+    if (enabled) {
+        const boxes = [...card.querySelectorAll('[data-trend-field="plex_libraries"]')];
+        if (boxes.length && !boxes.some(b => b.checked)) boxes[0].checked = true;
+    }
+    gatherTrendingListsFromDOM();
+    _checkDirty('settings');
+}
+
+/* Switching type changes which libraries apply, so re-render the cards with
+   that type's first library pre-selected (when the list builds in Plex). */
+function onTrendingTypeChange(idx, select) {
+    gatherTrendingListsFromDOM();
+    const lst = _trendingListsData[idx];
+    if (lst) {
+        lst.type = select.value === 'tv' ? 'tv' : 'movie';
+        const libraries = _trendingLibraryChoices[lst.type] || [];
+        lst.plex_libraries = lst.build_in_plex ? libraries.slice(0, 1) : [];
+    }
+    renderTrendingLists();
+    _checkDirty('settings');
 }
 
 function addTrendingList() {
@@ -2430,10 +2921,12 @@ function addTrendingList() {
     const count = _trendingListsData.length + 1;
     _trendingListsData.push({
         name: `Trending List ${count}`, type: 'movie', method: 0,
-        url: '', limit: 10, root: '', legacy_filenames: false,
+        url: '', limit: 10, root: '', build_in_plex: false, plex_libraries: [],
+        edit_sort_title: false, sort_title: '',
+        legacy_filenames: false,
     });
     renderTrendingLists();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function removeTrendingList(idx) {
@@ -2442,14 +2935,14 @@ function removeTrendingList(idx) {
     gatherTrendingListsFromDOM();
     _trendingListsData.splice(idx, 1);
     renderTrendingLists();
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function updateTrendingListField(idx, field, value) {
     if (_trendingListsData[idx]) {
         _trendingListsData[idx][field] = value;
     }
-    _checkDirty('umtk');
+    _checkDirty('settings');
 }
 
 function gatherTrendingListsFromDOM() {
@@ -2460,10 +2953,15 @@ function gatherTrendingListsFromDOM() {
         if (!lst) return;
         card.querySelectorAll('[data-trend-field]').forEach(input => {
             const field = input.dataset.trendField;
-            if (field === 'method') lst[field] = parseInt(input.value) || 0;
+            if (field === 'plex_libraries') return;  /* handled below */
+            if (input.type === 'checkbox') lst[field] = input.checked;
+            else if (field === 'method') lst[field] = parseInt(input.value) || 0;
             else if (field === 'limit') lst[field] = parseInt(input.value) || 10;
+            else if (field === 'build_in_plex') lst[field] = input.value === 'true';
             else lst[field] = input.value;
         });
+        const boxes = card.querySelectorAll('[data-trend-field="plex_libraries"]');
+        if (boxes.length) lst.plex_libraries = Array.from(boxes).filter(b => b.checked).map(b => b.value);
     });
 }
 
@@ -2474,7 +2972,7 @@ async function testTrendingList(idx) {
     const resultEl = document.getElementById(`test-trending-${idx}`);
     resultEl.className = 'test-result';
     resultEl.textContent = 'Testing...';
-    const apiKeyEl = document.querySelector('#page-umtk [data-key="mdblist_api_key"]');
+    const apiKeyEl = document.querySelector('#page-settings [data-key="mdblist_api_key"]');
     try {
         const res = await apiFetch('/api/test/mdblist', {
             method: 'POST',
@@ -2525,7 +3023,7 @@ const WEBHOOK_PRESETS = {
 };
 
 function setWebhookField(key, value) {
-    const el = document.querySelector(`#umtk-webhook [data-key="${key}"]`);
+    const el = document.querySelector(`#webhook-sections [data-key="${key}"]`);
     if (el) el.value = value;
 }
 
@@ -2547,9 +3045,9 @@ function applyWebhookPreset(preset) {
     Object.entries(def.fields).forEach(([key, value]) => setWebhookField(key, value));
 
     if (def.requiresAuth) {
-        const userEl = document.querySelector('#umtk-webhook [data-key="webhook_auth_user"]');
+        const userEl = document.querySelector('#webhook-sections [data-key="webhook_auth_user"]');
         if (userEl && !userEl.value.trim()) userEl.value = 'admin';
-        const passEl = document.querySelector('#umtk-webhook [data-key="webhook_auth_pass"]');
+        const passEl = document.querySelector('#webhook-sections [data-key="webhook_auth_pass"]');
         if (passEl && !passEl.value.trim()) passEl.placeholder = 'Password required';
     } else {
         // Preset doesn't use Basic Auth — clear any stale credentials a
@@ -2565,7 +3063,7 @@ async function testMdblist() {
     resultEl.textContent = 'Testing...';
 
     gatherTrendingListsFromDOM();
-    const apiKeyEl = document.querySelector('#page-umtk [data-key="mdblist_api_key"]');
+    const apiKeyEl = document.querySelector('#page-settings [data-key="mdblist_api_key"]');
     const data = {
         mdblist_api_key: apiKeyEl ? apiKeyEl.value : '',
         lists: _trendingListsData.map(lst => ({ name: lst.name, url: lst.url })),
@@ -2586,72 +3084,98 @@ async function testMdblist() {
     }
 }
 
-async function saveUmtk() {
-    const scopeEl = document.getElementById('page-umtk');
-    const options = gatherOptionValues(umtkData.options, scopeEl);
-    const blocks = gatherBlocks('umtk');
-    const webhook = gatherOptionValues(umtkData.webhook || [], scopeEl);
+/* ── Saving ────────────────────────────────────────────────────────────── */
+
+/* Reads the first non-ok response and surfaces its error message. */
+async function _reportSaveFailure(responses) {
+    let msg = 'Failed to save';
+    try {
+        const failed = responses.find(r => !r.ok);
+        const err = await failed.json();
+        if (err && err.error) msg = err.error;
+    } catch (e) {}
+    showToast(msg, 'error');
+}
+
+/* The two option POSTs must run sequentially: /api/config/tssk writes config.yml
+   too (enable_tssk lives there) and re-reads it at request time, so firing them
+   in parallel would clobber the UMTK options with a stale read. */
+async function saveSettings() {
+    const scopeEl = document.getElementById('page-settings');
+    const umtkOptions = gatherOptionValues(umtkData.options || [], scopeEl);
+    const tsskOptions = gatherOptionValues(tsskData.options || [], scopeEl);
     gatherTrendingListsFromDOM();
+    gatherComingSoonFromDOM();
     try {
         const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ options, blocks, webhook }),
+            body: JSON.stringify({ options: umtkOptions }),
+        });
+        const tsskRes = await apiFetch('/api/config/tssk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options: tsskOptions }),
         });
         const listsRes = await apiFetch('/api/config/trending_lists', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ trending_lists: _trendingListsData }),
         });
-        if (res.ok && listsRes.ok) {
-            showToast('UMTK settings saved', 'success');
-            _snapshotPage('umtk');
+        const csRes = await apiFetch('/api/config/coming_soon_collections', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coming_soon_collections: _comingSoonData }),
+        });
+        const all = [res, tsskRes, listsRes, csRes];
+        if (all.every(r => r.ok)) {
+            showToast('Settings saved', 'success');
+            _snapshotPage('settings');
         } else {
-            let msg = 'Failed to save';
-            try {
-                const err = await (res.ok ? listsRes : res).json();
-                if (err && err.error) msg = err.error;
-            } catch (e) {}
-            showToast(msg, 'error');
+            await _reportSaveFailure(all);
         }
     } catch (e) { showToast('Failed to save', 'error'); }
 }
 
-/* ── TSSK Settings page ───────────────────────────────────────────────── */
-async function fetchTssk() {
+async function saveYml() {
     try {
-        const res = await apiFetch('/api/config/tssk');
-        if (!res.ok) return;
-        tsskData = await res.json();
-        _tsskLoaded = true;
-        renderTsskSettings();
-        _snapshotPage('tssk');
-        _watchPage('tssk');
-    } catch (e) { showToast('Failed to load TSSK settings', 'error'); }
-}
-
-function renderTsskSettings() {
-    renderOptionSections(tsskData.options, document.getElementById('tssk-sections'), 'enable_tssk');
-    renderBlocks(tsskData.blocks, document.getElementById('tssk-blocks'), 'tssk');
-}
-
-async function saveTssk() {
-    const scopeEl = document.getElementById('page-tssk');
-    const options = gatherOptionValues(tsskData.options, scopeEl);
-    const blocks = gatherBlocks('tssk');
-    try {
-        const res = await apiFetch('/api/config/tssk', {
+        const res = await apiFetch('/api/config/umtk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ options, blocks }),
+            body: JSON.stringify({ blocks: gatherBlocks('umtk') }),
         });
-        if (res.ok) { showToast('TSSK settings saved', 'success'); _snapshotPage('tssk'); }
-        else showToast('Failed to save', 'error');
+        const tsskRes = await apiFetch('/api/config/tssk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blocks: gatherBlocks('tssk') }),
+        });
+        if (res.ok && tsskRes.ok) {
+            showToast('YML configurations saved', 'success');
+            _snapshotPage('yml');
+        } else {
+            await _reportSaveFailure([res, tsskRes]);
+        }
+    } catch (e) { showToast('Failed to save', 'error'); }
+}
+
+async function saveWebhooks() {
+    const scopeEl = document.getElementById('page-webhooks');
+    const webhook = gatherOptionValues(umtkData.webhook || [], scopeEl);
+    try {
+        const res = await apiFetch('/api/config/umtk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ webhook }),
+        });
+        if (res.ok) { showToast('Webhooks saved', 'success'); _snapshotPage('webhooks'); }
+        else await _reportSaveFailure([res]);
     } catch (e) { showToast('Failed to save', 'error'); }
 }
 
 /* ── Shared: Render option sections ────────────────────────────────────── */
-function renderOptionSections(options, container, enableKey, sectionButtons = {}) {
+/* Used by the Webhooks page. The Settings page has its own renderer because it
+   merges two config files into one set of sections. */
+function renderOptionSections(options, container, sectionButtons = {}) {
     const sections = {};
     options.forEach(opt => {
         if (!sections[opt.section]) sections[opt.section] = [];
@@ -2659,63 +3183,22 @@ function renderOptionSections(options, container, enableKey, sectionButtons = {}
     });
 
     let html = '';
-    let isFirst = true;
     for (const [section, opts] of Object.entries(sections)) {
-        const isEnableSection = isFirst && enableKey;
-        const enableOpt = isEnableSection ? opts.find(o => o.key === enableKey) : null;
-        const otherOpts = enableOpt ? opts.filter(o => o.key !== enableKey) : opts;
-
         html += `<div class="settings-section">`;
-
-        if (enableOpt) {
-            html += `<div class="setting-item" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:8px">
-                <div class="setting-info">
-                    <div class="setting-label" style="font-size:16px;font-weight:600">${enableOpt.label}</div>
-                    <div class="setting-desc">${enableOpt.description}</div>
-                </div>
-                <div class="setting-control">${createSettingHTML(enableOpt)}</div>
-            </div>`;
-        }
-
-        const sectionBtnHTML = sectionButtons[section] || '';
-        html += `<h2>${section}${sectionBtnHTML}</h2>`;
-        const sectionId = section.toLowerCase().replace(/\s+/g, '-') + '-' + (enableKey || '');
-        html += `<div id="section-opts-${sectionId}">`;
-        otherOpts.forEach(opt => {
+        html += `<h2>${escapeHtml(section)}${sectionButtons[section] || ''}</h2>`;
+        html += `<div id="section-opts-${sectionSlug(section)}">`;
+        opts.forEach(opt => {
             html += `<div class="setting-item">
                 <div class="setting-info">
-                    <div class="setting-label">${opt.label}</div>
-                    <div class="setting-desc">${opt.description}</div>
+                    <div class="setting-label">${escapeHtml(opt.label)}</div>
+                    <div class="setting-desc">${escapeHtml(opt.description || '')}</div>
                 </div>
                 <div class="setting-control">${createSettingHTML(opt)}</div>
             </div>`;
         });
         html += '</div></div>';
-        isFirst = false;
     }
     container.innerHTML = html;
-
-    /* Wire up enable toggle to disable/enable rest of settings */
-    if (enableKey) {
-        const toggle = container.querySelector(`[data-key="${enableKey}"]`);
-        if (toggle) {
-            const updateDisabled = () => {
-                const enabled = toggle.checked;
-                const allSections = container.querySelectorAll('.settings-section');
-                allSections.forEach((sec, idx) => {
-                    if (idx === 0) {
-                        /* First section: only disable the options below the toggle */
-                        const optsDiv = sec.querySelector('[id^="section-opts-"]');
-                        if (optsDiv) optsDiv.classList.toggle('section-disabled', !enabled);
-                    } else {
-                        sec.classList.toggle('section-disabled', !enabled);
-                    }
-                });
-            };
-            toggle.addEventListener('change', updateDisabled);
-            updateDisabled();
-        }
-    }
 }
 
 /* ── Block editor ──────────────────────────────────────────────────────── */
@@ -2933,7 +3416,9 @@ function toggleBlock(header) {
 }
 
 function removeBlockRow(btn) {
+    const section = btn.closest('.block-section');
     btn.closest('.block-row').remove();
+    _checkDirtyFor(section);
 }
 
 function addCustomVar(blockKey, prefix) {
@@ -2943,8 +3428,15 @@ function addCustomVar(blockKey, prefix) {
     div.innerHTML = `
         <input type="text" placeholder="Key" style="max-width:180px">
         <input type="text" placeholder="Value" style="flex:1">
-        <button class="btn-icon danger" onclick="this.closest('.custom-var-row').remove()" title="Remove">&times;</button>`;
+        <button class="btn-icon danger" onclick="removeCustomVar(this)" title="Remove">&times;</button>`;
     container.appendChild(div);
+    _checkDirtyFor(container);
+}
+
+function removeCustomVar(btn) {
+    const container = btn.closest('.custom-vars');
+    btn.closest('.custom-var-row').remove();
+    _checkDirtyFor(container);
 }
 
 function gatherBlocks(prefix) {
@@ -3277,11 +3769,22 @@ function _initManualDrag() {
 }
 
 const SERVICE_LOGOS = {
-    Plex: '/static/plex_logo.png',
-    Radarr: '/static/radarr_logo.png',
-    Sonarr: '/static/sonarr_logo.png',
-    'yt-dlp': '/static/ytdlp_logo.png'
+    plex: '/static/plex_logo.png',
+    radarr: '/static/radarr_logo.png',
+    sonarr: '/static/sonarr_logo.png',
+    ytdlp: '/static/ytdlp_logo.png'
 };
+
+// Instances can be renamed (e.g. "Radarr-4k"), so resolve the logo by service
+// type and only fall back to matching the display name.
+function serviceLogo(svc) {
+    if (svc.service && SERVICE_LOGOS[svc.service]) return SERVICE_LOGOS[svc.service];
+    const name = (svc.name || '').toLowerCase();
+    for (const key of Object.keys(SERVICE_LOGOS)) {
+        if (name.includes(key)) return SERVICE_LOGOS[key];
+    }
+    return '';
+}
 
 async function updateYtdlp(btn) {
     btn.disabled = true;
@@ -3317,7 +3820,7 @@ function renderServices(services) {
     const container = document.getElementById('services-grid');
     let html = '';
     services.forEach(svc => {
-        const logoSrc = SERVICE_LOGOS[svc.name] || '';
+        const logoSrc = serviceLogo(svc);
 
         if (svc.service === 'ytdlp') {
             const isOnline = svc.online;

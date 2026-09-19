@@ -5,6 +5,7 @@ enable_umtk: false
 enable_tssk: false
 movies: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
 tv: 2 #0 = Don't process, 1 = Download trailers with yt-dlp, 2 = Use placeholder video file
+new_season_placeholders: false # Also create placeholders/trailers for shows you have no episodes of whose next monitored season (not season 1) premieres within TSSK's future_days_new_season. Requires TSSK with New Season Soon enabled.
 method_fallback: true
 preferred_language: original  # original, english, german, french, spanish, italian, japanese, korean, portuguese, russian, chinese
 utc_offset: +1
@@ -67,8 +68,8 @@ plex_token: 'YOUR_PLEX_TOKEN'
 movie_libraries: 'Movies'
 tv_libraries: 'TV Shows'
 plex_library_scan: false
-append_dates_to_sort_titles: true
-add_rank_to_sort_title: true
+append_dates_to_sort_titles: false
+add_rank_to_sort_title: false
 edit_S00E00_episode_title: true
 metadata_retry_limit: 4
 
@@ -92,14 +93,6 @@ future_only_tv: false
 ################################################################################
 label_request_needed: true
 mdblist_api_key: YOUR_MDBLIST_API_KEY
-# Add as many MDBList trending lists as you want. Per list:
-#   name:   Plex collection name (also used in output filenames)
-#   type:   movie | tv
-#   method: 0 = Don't process, 1 = Download trailers, 2 = Placeholder video file
-#   url:    the MDBList list URL
-#   limit:  how many items to pull from the list
-#   root:   root folder for items not in any Radarr/Sonarr library
-#   legacy_filenames: used for backwards compatibility. do not change.
 trending_lists:
   - name: Trending Movies
     type: movie
@@ -107,6 +100,10 @@ trending_lists:
     url: https://mdblist.com/lists/netplexflix/umtk-trending-top20-movies
     limit: 10
     root: /umtkmovies
+    build_in_plex: false
+    plex_libraries: []
+    edit_sort_title: false
+    sort_title: ''
     legacy_filenames: true
   - name: Trending Shows
     type: tv
@@ -114,8 +111,41 @@ trending_lists:
     url: https://mdblist.com/lists/netplexflix/umtk-trending-top20
     limit: 10
     root: /umtktv
+    build_in_plex: false
+    plex_libraries: []
+    edit_sort_title: false
+    sort_title: ''
     legacy_filenames: true
-  
+
+################################################################################
+##########              COMING SOON COLLECTIONS (PLEX):               ##########
+################################################################################
+# Collections UMTK creates and updates directly in Plex, ordered by expected
+# release date (movies) / air date (shows). Add as many as you want. Per entry:
+#   name:      the Plex collection name
+#   type:      movie | tv
+#   libraries: which Plex libraries to build it in
+#   instances: which Radarr/Sonarr instances to draw Coming Soon items from.
+#   include_*: tv only - also add TSSK's New Season Soon / Upcoming Episode /
+#              Upcoming Finale shows to the collection
+#   edit_sort_title / sort_title: optionally set the collection's sort title in Plex
+coming_soon_collections: []
+#  - name: Movies Coming Soon
+#    type: movie
+#    libraries: [Movies]
+#    instances: [Radarr]
+#    edit_sort_title: false
+#    sort_title: ''
+#  - name: TV Shows Coming Soon
+#    type: tv
+#    libraries: [TV Shows]
+#    instances: [Sonarr]
+#    include_new_season_soon: true
+#    include_upcoming_episode: false
+#    include_upcoming_finale: false
+#    edit_sort_title: true
+#    sort_title: '!01 TV Shows Coming Soon'
+
 ################################################################################
 ##########                UPCOMING MOVIES COLLECTION:                 ##########
 ################################################################################
@@ -131,7 +161,7 @@ collection_upcoming_movies:
 ################################################################################  
 backdrop_upcoming_movies_future:
   enable: true
-  name: red_frame
+  name: frame_upcoming_movies_future
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
   group: UMTK_backdrop
   weight: 300
@@ -154,7 +184,7 @@ text_upcoming_movies_future:
 ################################################################################  
 backdrop_upcoming_movies_released:
   enable: true
-  name: red_frame
+  name: frame_upcoming_movies_released
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
   group: UMTK_backdrop
   weight: 100
@@ -185,7 +215,7 @@ collection_upcoming_shows:
 ################################################################################
 backdrop_upcoming_shows:
   enable: true
-  name: red_frame_bottom
+  name: frame_upcoming_show
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
   group: TSSK_backdrop
   weight: 100
@@ -208,7 +238,7 @@ text_upcoming_shows:
 ################################################################################  
 backdrop_upcoming_shows_aired:
   enable: true
-  name: red_frame_bottom
+  name: frame_upcoming_shows_aired
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
   group: TSSK_backdrop
   weight: 100
@@ -276,7 +306,7 @@ collection_trending_movies:
 ################################################################################  
 backdrop_trending_movies_request_needed:
   enable: true
-  name: red_frame
+  name: frame_trending_movies_request_needed
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame.png
   group: UMTK_backdrop
   weight: 200
@@ -297,7 +327,7 @@ text_trending_movies_request_needed:
 ################################################################################
 backdrop_trending_movies_requested:
   enable: true
-  name: red_frame
+  name: frame_trending_movies_requested
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_full.png
   group: UMTK_backdrop
   weight: 100
@@ -329,7 +359,7 @@ collection_trending_shows:
 ################################################################################  
 backdrop_trending_shows_request_needed:
   enable: true
-  name: red_frame_bottom
+  name: frame_bottom_trending_shows_request_needed
   url: https://raw.githubusercontent.com/netplexflix/Upcoming-Movies-TV-Shows-for-Kometa/refs/heads/develop/config/overlays/purple_frame_bottom.png
   group: TSSK_backdrop
   weight: 100
@@ -350,7 +380,7 @@ text_trending_shows_request_needed:
 ################################################################################
 backdrop_trending_shows_requested:
   enable: true
-  name: red_frame_bottom
+  name: frame_trending_shows_requested
   url: https://raw.githubusercontent.com/netplexflix/Overlays/refs/heads/main/UMTK/red_frame_thicker_bottom_full.png
   group: TSSK_backdrop
   weight: 100

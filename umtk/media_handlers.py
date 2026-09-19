@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
 from .utils import (sanitize_filename, get_user_info, get_file_owner, convert_utc_to_local,
-                    show_folder_name, movie_folder_name)
+                    resolve_show_dir, movie_folder_name)
 from .config_loader import get_cookies_path, get_video_folder
 from .sonarr import get_sonarr_episodes
 
@@ -62,14 +62,22 @@ def _title_matches(video_title: str, content_title: str) -> bool:
     return base in vt
 
 
-def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None, preferred_language='original'):
-    """Return the best matching trailer info from YouTube (dict) or None."""
+def search_trailer_on_youtube(content_title, year=None, imdb_id=None, debug=False, skip_channels=None, preferred_language='original', season=None):
+    """Return the best matching trailer info from YouTube (dict) or None.
+
+    'season' targets that season's trailer first (New Season Placeholders); the
+    generic terms stay as fallbacks."""
     search_terms = [
         f"{content_title} {year} official trailer" if year else f"{content_title} official trailer",
         f"{content_title} {year} trailer" if year else f"{content_title} trailer",
         f"{content_title} trailer",
         f"{content_title} teaser",
     ]
+    if season:
+        search_terms = [
+            f"{content_title} season {season} official trailer",
+            f"{content_title} season {season} trailer",
+        ] + search_terms
     # Deduplicate while preserving order
     search_terms = list(dict.fromkeys(search_terms))
 
@@ -227,7 +235,7 @@ def download_trailer_tv(show, trailer_info, debug=False, umtk_root_tv=None):
     
     # Determine the target directory
     if umtk_root_tv:
-        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
+        parent_dir = resolve_show_dir(umtk_root_tv, show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -522,7 +530,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
     show_path = show.get('path')
     
     if umtk_root_tv:
-        parent_dir = Path(umtk_root_tv) / show_folder_name(show)
+        parent_dir = resolve_show_dir(umtk_root_tv, show)
         season_00_path = parent_dir / "Season 00"
     else:
         if not show_path:
@@ -530,7 +538,7 @@ def create_placeholder_tv(show, debug=False, umtk_root_tv=None):
             return False
         parent_dir = Path(show_path)
         season_00_path = parent_dir / "Season 00"
-        
+
     clean_title = "".join(c for c in show['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
     dest_file = season_00_path / f"{clean_title}.S00E00.Coming.Soon{video_extension}"
     

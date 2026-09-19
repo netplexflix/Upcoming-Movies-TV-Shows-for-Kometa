@@ -49,6 +49,7 @@ UMTK_SECTION_HEADERS = {
     'future_days_upcoming_shows': '################################################################################\n##########                         TV SHOWS:                          ##########\n################################################################################',
     'trending_movies': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
     'trending_lists': '################################################################################\n##########                        TRENDING:                           ##########\n################################################################################',
+    'coming_soon_collections': '################################################################################\n##########              COMING SOON COLLECTIONS (PLEX):               ##########\n################################################################################',
     'collection_upcoming_movies': '################################################################################\n##########                UPCOMING MOVIES COLLECTION:                 ##########\n################################################################################',
     'backdrop_upcoming_movies_future': '################################################################################\n##########              UPCOMING MOVIES OVERLAY FUTURE:               ##########\n################################################################################',
     'backdrop_upcoming_movies_released': '################################################################################\n##########             UPCOMING MOVIES OVERLAY RELEASED:              ##########\n################################################################################',
@@ -91,6 +92,7 @@ UMTK_OPTIONS = [
     {"key": "enable_umtk", "type": "bool", "default": True, "label": "Enable UMTK", "description": "Enable Upcoming Movies & TV Shows processing", "section": "General"},
     {"key": "movies", "type": "select", "default": 2, "label": "Movie Method", "description": "Choose how to handle upcoming movies", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "General"},
     {"key": "tv", "type": "select", "default": 2, "label": "TV Method", "description": "Choose how to handle upcoming TV shows", "options": [{"value": 0, "label": "Disabled"}, {"value": 1, "label": "Download trailers"}, {"value": 2, "label": "Placeholder"}], "section": "General"},
+    {"key": "new_season_placeholders", "type": "bool", "default": False, "label": "New Season Placeholders", "description": "Also create a placeholder/trailer for shows you have no episodes of yet when a later season (not season 1) is monitored and premieres within TSSK's Future Days (New Season). Puts TSSK's New Season Soon shows in Plex so they can appear in your Coming Soon collections. Requires TSSK with New Season Soon enabled.", "section": "General"},
     {"key": "method_fallback", "type": "bool", "default": True, "label": "Method Fallback", "description": "Try placeholder if trailer download fails", "section": "General"},
     {"key": "preferred_language", "type": "select", "default": "original", "label": "Preferred Language", "description": "Preferred language for trailer downloads (appends language to YouTube search and boosts matching results)", "section": "General", "options": [
         {"value": "original", "label": "Original"},
@@ -111,23 +113,25 @@ UMTK_OPTIONS = [
     {"key": "simplify_next_week_dates", "type": "bool", "default": True, "label": "Simplify Dates", "description": "Use 'today'/'tomorrow'/weekday names for near dates", "section": "General"},
     {"key": "skip_channels", "type": "string_list", "default": [], "label": "Skip Channels", "description": "YouTube channels to skip when searching trailers", "section": "General"},
     # Movies
-    {"key": "future_days_upcoming_movies", "type": "int", "default": 30, "label": "Future Days (Movies)", "description": "Days ahead to look for upcoming movies", "section": "Movies"},
-    {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies"},
-    {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies"},
-    {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies"},
+    {"key": "future_days_upcoming_movies", "type": "int", "default": 30, "label": "Future Days (Movies)", "description": "Days ahead to look for upcoming movies", "section": "Movies Coming Soon"},
+    {"key": "past_days_upcoming_movies", "type": "int", "default": 0, "label": "Past Days (Movies)", "description": "Days back to include released movies (0=no limit)", "section": "Movies Coming Soon"},
+    {"key": "include_inCinemas", "type": "bool", "default": False, "label": "Include In Cinemas", "description": "Include movies currently in cinemas", "section": "Movies Coming Soon"},
+    {"key": "future_only", "type": "bool", "default": False, "label": "Future Only (Movies)", "description": "Only show movies not yet released", "section": "Movies Coming Soon"},
     # TV Shows
-    {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows"},
-    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days back to look for newly premiered shows", "section": "TV Shows"},
-    {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows"},
+    {"key": "future_days_upcoming_shows", "type": "int", "default": 30, "label": "Future Days (Shows)", "description": "Days ahead to look for upcoming shows", "section": "TV Shows Coming Soon"},
+    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (Newly Premiered Shows)", "description": "Days back to look for newly premiered shows", "section": "TV Shows Coming Soon"},
+    {"key": "future_only_tv", "type": "bool", "default": False, "label": "Future Only (TV)", "description": "Only show TV not yet aired", "section": "TV Shows Coming Soon"},
     # Plex Metadata
-    {"key": "append_dates_to_sort_titles", "type": "bool", "default": True, "label": "Append Dates to Sort Titles", "description": "Add release dates to Plex sort titles", "section": "Plex Metadata"},
-    {"key": "add_rank_to_sort_title", "type": "bool", "default": True, "label": "Add Rank to Sort Title", "description": "Add trending rank to Plex sort titles", "section": "Plex Metadata"},
+    {"key": "append_dates_to_sort_titles", "type": "bool", "default": False, "label": "Append Dates to Sort Titles (Coming Soon)", "description": "Add the expected release/air date to the Plex sort titles of Coming Soon movies and shows.", "section": "Plex Metadata"},
+    {"key": "add_rank_to_sort_title", "type": "bool", "default": False, "label": "Add Rank to Sort Titles (Trending)", "description": "Add the list rank to the Plex sort titles of trending items.", "section": "Plex Metadata"},
     {"key": "edit_S00E00_episode_title", "type": "bool", "default": True, "label": "Edit S00E00 Episode Title", "description": "Update special episode titles in Plex", "section": "Plex Metadata"},
-    {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "Number of API retry attempts for Plex metadata", "section": "Plex Metadata"},
-    # Trending (per-list settings live in trending_lists, managed via
+    {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
+    # Coming Soon collections are a list-of-dicts managed via
+    # /api/config/coming_soon_collections, so they have no flat options here.
+    # MDBList Collections (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
-    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending"},
-    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending", "sensitive": True},
+    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "MDBList Collections"},
+    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "MDBList Collections", "sensitive": True},
 ]
 
 TSSK_OPTIONS = [
@@ -136,29 +140,29 @@ TSSK_OPTIONS = [
     {"key": "skip_unmonitored", "type": "bool", "default": True, "label": "Skip Unmonitored", "description": "Skip unmonitored shows/episodes", "section": "General"},
     {"key": "ignore_finales_tags", "type": "string", "default": "ignorefinales", "label": "Ignore Finales Tags", "description": "Comma-separated Sonarr tags to exclude from finale detection", "section": "General"},
     # Sort title edits
-    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_upcoming_episode", "type": "bool", "default": False, "label": "Upcoming Episode", "description": "Edit sort titles for shows in the Upcoming Episode category.", "section": "Sort Titles"},
-    {"key": "edit_sort_titles_upcoming_finale", "type": "bool", "default": False, "label": "Upcoming Finale", "description": "Edit sort titles for shows in the Upcoming Finale category.", "section": "Sort Titles"},
+    {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles for TV Status Items", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Plex Metadata"},
+    {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
+    {"key": "edit_sort_titles_upcoming_episode", "type": "bool", "default": False, "label": "Upcoming Episode", "description": "Edit sort titles for shows in the Upcoming Episode category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
+    {"key": "edit_sort_titles_upcoming_finale", "type": "bool", "default": False, "label": "Upcoming Finale", "description": "Edit sort titles for shows in the Upcoming Finale category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},
     # Process flags
-    {"key": "process_new_shows", "type": "bool", "default": True, "label": "New Shows", "description": "Process recently added new shows", "section": "Process Categories"},
-    {"key": "process_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Process shows with upcoming new seasons", "section": "Process Categories"},
-    {"key": "process_new_season_started", "type": "bool", "default": True, "label": "New Season Started", "description": "Process shows with recently started seasons", "section": "Process Categories"},
-    {"key": "process_upcoming_episode", "type": "bool", "default": True, "label": "Upcoming Episode", "description": "Process upcoming regular episodes", "section": "Process Categories"},
-    {"key": "process_upcoming_finale", "type": "bool", "default": True, "label": "Upcoming Finale", "description": "Process upcoming season finales", "section": "Process Categories"},
-    {"key": "process_season_finale", "type": "bool", "default": True, "label": "Season Finale", "description": "Process recently aired season finales", "section": "Process Categories"},
-    {"key": "process_final_episode", "type": "bool", "default": True, "label": "Final Episode", "description": "Process recently aired final episodes", "section": "Process Categories"},
-    {"key": "process_returning_shows", "type": "bool", "default": True, "label": "Returning Shows", "description": "Process returning (continuing) shows", "section": "Process Categories"},
-    {"key": "process_ended_shows", "type": "bool", "default": True, "label": "Ended Shows", "description": "Process ended shows", "section": "Process Categories"},
-    {"key": "process_canceled_shows", "type": "bool", "default": True, "label": "Canceled Shows", "description": "Process canceled shows", "section": "Process Categories"},
+    {"key": "process_new_shows", "type": "bool", "default": True, "label": "New Shows", "description": "Process recently added new shows", "section": "Process TV Show Categories"},
+    {"key": "process_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Process shows with upcoming new seasons", "section": "Process TV Show Categories"},
+    {"key": "process_new_season_started", "type": "bool", "default": True, "label": "New Season Started", "description": "Process shows with recently started seasons", "section": "Process TV Show Categories"},
+    {"key": "process_upcoming_episode", "type": "bool", "default": True, "label": "Upcoming Episode", "description": "Process upcoming regular episodes", "section": "Process TV Show Categories"},
+    {"key": "process_upcoming_finale", "type": "bool", "default": True, "label": "Upcoming Finale", "description": "Process upcoming season finales", "section": "Process TV Show Categories"},
+    {"key": "process_season_finale", "type": "bool", "default": True, "label": "Season Finale", "description": "Process recently aired season finales", "section": "Process TV Show Categories"},
+    {"key": "process_final_episode", "type": "bool", "default": True, "label": "Final Episode", "description": "Process recently aired final episodes", "section": "Process TV Show Categories"},
+    {"key": "process_returning_shows", "type": "bool", "default": True, "label": "Returning Shows", "description": "Process returning (continuing) shows", "section": "Process TV Show Categories"},
+    {"key": "process_ended_shows", "type": "bool", "default": True, "label": "Ended Shows", "description": "Process ended shows", "section": "Process TV Show Categories"},
+    {"key": "process_canceled_shows", "type": "bool", "default": True, "label": "Canceled Shows", "description": "Process canceled shows", "section": "Process TV Show Categories"},
     # Timeframes
-    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days to look back for new shows", "section": "Timeframes"},
-    {"key": "future_days_new_season", "type": "int", "default": 31, "label": "Future Days (New Season)", "description": "Days ahead for upcoming new seasons", "section": "Timeframes"},
-    {"key": "recent_days_new_season_started", "type": "int", "default": 7, "label": "Recent Days (Season Started)", "description": "Days to look back for started seasons", "section": "Timeframes"},
-    {"key": "future_days_upcoming_episode", "type": "int", "default": 31, "label": "Future Days (Episode)", "description": "Days ahead for upcoming episodes", "section": "Timeframes"},
-    {"key": "future_days_upcoming_finale", "type": "int", "default": 31, "label": "Future Days (Finale)", "description": "Days ahead for upcoming finales", "section": "Timeframes"},
-    {"key": "recent_days_season_finale", "type": "int", "default": 7, "label": "Recent Days (Season Finale)", "description": "Days to look back for season finales", "section": "Timeframes"},
-    {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "Timeframes"},
+    {"key": "recent_days_new_show", "type": "int", "default": 7, "label": "Recent Days (New Show)", "description": "Days to look back for new shows", "section": "TV Show Timeframes"},
+    {"key": "future_days_new_season", "type": "int", "default": 31, "label": "Future Days (New Season)", "description": "Days ahead for upcoming new seasons", "section": "TV Show Timeframes"},
+    {"key": "recent_days_new_season_started", "type": "int", "default": 7, "label": "Recent Days (Season Started)", "description": "Days to look back for started seasons", "section": "TV Show Timeframes"},
+    {"key": "future_days_upcoming_episode", "type": "int", "default": 31, "label": "Future Days (Episode)", "description": "Days ahead for upcoming episodes", "section": "TV Show Timeframes"},
+    {"key": "future_days_upcoming_finale", "type": "int", "default": 31, "label": "Future Days (Finale)", "description": "Days ahead for upcoming finales", "section": "TV Show Timeframes"},
+    {"key": "recent_days_season_finale", "type": "int", "default": 7, "label": "Recent Days (Season Finale)", "description": "Days to look back for season finales", "section": "TV Show Timeframes"},
+    {"key": "recent_days_final_episode", "type": "int", "default": 7, "label": "Recent Days (Final Episode)", "description": "Days to look back for final episodes", "section": "TV Show Timeframes"},
 ]
 
 # ── Webhook (fire after a new placeholder/trailer is created) ───────────────
@@ -249,6 +253,15 @@ def _get_config_value(config, key, default=None):
     val = config.get(key)
     if val is None:
         return default
+    return val
+
+
+def _option_value(config, opt):
+    val = _get_config_value(config, opt["key"], opt["default"])
+    if opt.get("type") == "select" and isinstance(val, bool):
+        choices = [o.get("value") for o in opt.get("options", [])]
+        if all(isinstance(c, str) for c in choices) and choices:
+            return str(val).lower()
     return val
 
 
@@ -541,7 +554,7 @@ def register_routes(app):
         ensure_trending_requested_blocks(config)
         result = {"options": [], "blocks": {}, "webhook": []}
         for opt in UMTK_OPTIONS:
-            val = _get_config_value(config, opt["key"], opt["default"])
+            val = _option_value(config, opt)
             if opt.get("sensitive") and val:
                 val = MASKED_VALUE
             result["options"].append({**opt, "value": val})
@@ -701,13 +714,35 @@ def register_routes(app):
         return jsonify({"ok": True})
 
     # ── Config: Trending lists ────────────────────────────────────────
+    def _library_names(value):
+        """Every entry of a comma-separated Plex library setting."""
+        return [n.strip() for n in str(value or '').split(',') if n.strip()]
+
+    def _available_libraries(config):
+        """The configured Plex libraries per media type, as the card editors offer them."""
+        return {
+            'movie': _library_names(config.get('movie_libraries')),
+            'tv': _library_names(config.get('tv_libraries')),
+        }
+
+    def _picked(values, available):
+        """Keep the submitted names that still exist, in configured order."""
+        wanted = {str(v).strip() for v in values if str(v).strip()} \
+            if isinstance(values, (list, tuple)) else set()
+        return [name for name in available if name in wanted]
+
     @app.route("/api/config/trending_lists")
     def api_config_trending_lists():
         config = _load_yaml(webui._config_path)
         # Apply normalization to handle the legacy flat trending format
         from umtk.config_loader import normalize_instances, normalize_trending
         config = normalize_trending(normalize_instances(config))
-        return jsonify({"trending_lists": config.get('trending_lists', [])})
+        # The card editor's library checkboxes come from here so the page doesn't
+        # depend on the Connections page having been loaded.
+        return jsonify({
+            "trending_lists": config.get('trending_lists', []),
+            "libraries": _available_libraries(config),
+        })
 
     @app.route("/api/config/trending_lists", methods=["POST"])
     def api_save_trending_lists():
@@ -720,6 +755,7 @@ def register_routes(app):
         if not isinstance(new_lists, list):
             return jsonify({"ok": False, "error": "trending_lists must be a list"}), 400
 
+        available_libraries = _available_libraries(config)
         names_seen = set()
         legacy_seen = set()
         cleaned = []
@@ -758,6 +794,18 @@ def register_routes(app):
             if method > 0 and not url:
                 return jsonify({"ok": False, "error": f"Trending list '{name}' is missing an MDBList URL"}), 400
 
+            build_in_plex = str(lst.get('build_in_plex', False)).lower() == 'true'
+            plex_libraries = _picked(lst.get('plex_libraries'), available_libraries[list_type])
+            if build_in_plex and not plex_libraries:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': select at least one Plex library to build the collection in"}), 400
+
+            # The sort title only matters for collections UMTK builds itself, so
+            # like plex_libraries it is only checked when build_in_plex is on.
+            edit_sort_title = str(lst.get('edit_sort_title', False)).lower() == 'true'
+            sort_title = (lst.get('sort_title') or '').strip()
+            if build_in_plex and edit_sort_title and not sort_title:
+                return jsonify({"ok": False, "error": f"Trending list '{name}': enter a sort title or untick 'Edit Sort Title'"}), 400
+
             legacy = bool(lst.get('legacy_filenames'))
             if legacy:
                 if list_type in legacy_seen:
@@ -771,6 +819,10 @@ def register_routes(app):
                 'url': url,
                 'limit': limit,
                 'root': (lst.get('root') or '').strip(),
+                'build_in_plex': build_in_plex,
+                'plex_libraries': plex_libraries,
+                'edit_sort_title': edit_sort_title,
+                'sort_title': sort_title,
                 'legacy_filenames': legacy,
             })
 
@@ -778,6 +830,108 @@ def register_routes(app):
 
         # Remove legacy flat keys if present (migrated to trending_lists)
         for old_key in LEGACY_TRENDING_KEYS:
+            config.pop(old_key, None)
+
+        _save_yaml(webui._config_path, config)
+        return jsonify({"ok": True})
+
+    # ── Config: Coming Soon collections ───────────────────────────────
+    def _instance_names(config, key):
+        return [str(i.get('name') or '').strip()
+                for i in (config.get(key) or []) if isinstance(i, dict)
+                and str(i.get('name') or '').strip()]
+
+    @app.route("/api/config/coming_soon_collections")
+    def api_config_coming_soon_collections():
+        from umtk.config_loader import normalize_instances, normalize_coming_soon
+
+        config = normalize_coming_soon(normalize_instances(_load_yaml(webui._config_path)))
+        # The UMTK page can't assume the Connections page has been loaded, so the
+        # card editor gets its library/instance choices from here.
+        return jsonify({
+            "coming_soon_collections": config.get('coming_soon_collections', []),
+            "libraries": _available_libraries(config),
+            "instances": {
+                "movie": _instance_names(config, 'radarr_instances'),
+                "tv": _instance_names(config, 'sonarr_instances'),
+            },
+        })
+
+    @app.route("/api/config/coming_soon_collections", methods=["POST"])
+    def api_save_coming_soon_collections():
+        from umtk.config_loader import (normalize_instances, LEGACY_COMING_SOON_KEYS)
+
+        config = _load_yaml(webui._config_path)
+        data = request.get_json() or {}
+        new_collections = data.get('coming_soon_collections', [])
+        if not isinstance(new_collections, list):
+            return jsonify({"ok": False, "error": "coming_soon_collections must be a list"}), 400
+
+        normalized = normalize_instances(dict(config))
+        available_libraries = _available_libraries(config)
+        available_instances = {
+            'movie': _instance_names(normalized, 'radarr_instances'),
+            'tv': _instance_names(normalized, 'sonarr_instances'),
+        }
+
+        seen_targets = set()
+        cleaned = []
+        for entry in new_collections:
+            if not isinstance(entry, dict):
+                return jsonify({"ok": False, "error": "Each collection must be an object"}), 400
+
+            name = (entry.get('name') or '').strip()
+            if not name:
+                return jsonify({"ok": False, "error": "All collections must have a name"}), 400
+
+            coll_type = entry.get('type')
+            if coll_type not in ('movie', 'tv'):
+                return jsonify({"ok": False, "error": f"Collection '{name}' has an invalid type"}), 400
+
+            libraries = _picked(entry.get('libraries'), available_libraries[coll_type])
+            if not libraries:
+                return jsonify({"ok": False, "error": f"Collection '{name}': select at least one Plex library"}), 400
+
+            # The same name in two libraries is fine (one collection each); the
+            # same name twice in one library would be two entries fighting over it.
+            for library in libraries:
+                target = (library, name.lower())
+                if target in seen_targets:
+                    return jsonify({"ok": False, "error": f"Two collections named '{name}' target the Plex library '{library}'"}), 400
+                seen_targets.add(target)
+
+            instances = _picked(entry.get('instances'), available_instances[coll_type])
+
+            edit_sort_title = str(entry.get('edit_sort_title', False)).lower() == 'true'
+            sort_title = (entry.get('sort_title') or '').strip()
+            if edit_sort_title and not sort_title:
+                return jsonify({"ok": False, "error": f"Collection '{name}': enter a sort title or untick 'Edit Sort Title'"}), 400
+
+            cleaned_entry = {
+                'name': name,
+                'type': coll_type,
+                'libraries': libraries,
+                'instances': instances,
+                'edit_sort_title': edit_sort_title,
+                'sort_title': sort_title,
+            }
+            if coll_type == 'tv':
+                for flag in ('new_season_soon', 'upcoming_episode', 'upcoming_finale'):
+                    key = f'include_{flag}'
+                    cleaned_entry[key] = str(entry.get(key, False)).lower() == 'true'
+
+            if not instances and not any(cleaned_entry.get(f'include_{f}') for f in
+                                         ('new_season_soon', 'upcoming_episode', 'upcoming_finale')):
+                arr = 'Sonarr' if coll_type == 'tv' else 'Radarr'
+                extra = ' or a TSSK category' if coll_type == 'tv' else ''
+                return jsonify({"ok": False, "error": f"Collection '{name}': select at least one {arr} instance{extra}"}), 400
+
+            cleaned.append(cleaned_entry)
+
+        config['coming_soon_collections'] = cleaned
+
+        # Remove legacy flat keys if present (migrated to coming_soon_collections)
+        for old_key in LEGACY_COMING_SOON_KEYS:
             config.pop(old_key, None)
 
         _save_yaml(webui._config_path, config)
@@ -1080,9 +1234,9 @@ def register_routes(app):
         plex_token = config.get('plex_token', '')
         if plex_url and plex_token:
             ok, msg, ms = _test_connection(plex_url, token=plex_token, timeout=5)
-            services.append({'name': 'Plex', 'online': ok, 'message': msg, 'responseTime': ms})
+            services.append({'name': 'Plex', 'service': 'plex', 'online': ok, 'message': msg, 'responseTime': ms})
         else:
-            services.append({'name': 'Plex', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Plex', 'service': 'plex', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         radarr_instances = config.get('radarr_instances', [])
         if radarr_instances:
@@ -1092,11 +1246,11 @@ def register_routes(app):
                 inst_name = instance.get('name', 'Radarr')
                 if inst_url and inst_key:
                     ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
-                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                    services.append({'name': inst_name, 'service': 'radarr', 'online': ok, 'message': msg, 'responseTime': ms})
                 else:
-                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
+                    services.append({'name': inst_name, 'service': 'radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
-            services.append({'name': 'Radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Radarr', 'service': 'radarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         sonarr_instances = config.get('sonarr_instances', [])
         if sonarr_instances:
@@ -1106,11 +1260,11 @@ def register_routes(app):
                 inst_name = instance.get('name', 'Sonarr')
                 if inst_url and inst_key:
                     ok, msg, ms = _test_connection(inst_url, api_key=inst_key, timeout=5)
-                    services.append({'name': inst_name, 'online': ok, 'message': msg, 'responseTime': ms})
+                    services.append({'name': inst_name, 'service': 'sonarr', 'online': ok, 'message': msg, 'responseTime': ms})
                 else:
-                    services.append({'name': inst_name, 'online': False, 'message': 'Not configured', 'responseTime': 0})
+                    services.append({'name': inst_name, 'service': 'sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
         else:
-            services.append({'name': 'Sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
+            services.append({'name': 'Sonarr', 'service': 'sonarr', 'online': False, 'message': 'Not configured', 'responseTime': 0})
 
         services.append(_get_ytdlp_info())
 

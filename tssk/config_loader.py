@@ -148,6 +148,14 @@ def load_localization(file_path='config/localization.yml'):
     return default_localization
 
 
+def get_future_days_new_season(config):
+    """The New Season Soon window in days, with the same fallbacks run_tssk uses.
+
+    Shared with UMTK's New Season Placeholders so both look the same distance ahead.
+    """
+    return config.get('future_days_new_season', config.get('future_days', 14))
+
+
 def get_config_section(config, primary_key, fallback_keys=None):
     """Get a configuration section with fallback support"""
     if fallback_keys is None:

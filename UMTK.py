@@ -136,11 +136,32 @@ def _run_inner():
     umtk_warnings = []
     tssk_warnings = []
 
+    collector = {}
+
+    # TSSK's config is needed before UMTK runs: New Season Placeholders use
+    # TSSK's New Season Soon window, and only make sense when TSSK will also
+    # produce that category (its overlays/collection mark the placed shows).
+    tssk_config = None
+    if enable_tssk:
+        try:
+            from tssk.config_loader import load_tssk_config
+            tssk_config = load_tssk_config()
+        except Exception as e:
+            print(f"{RED}Could not load tssk_config.yml: {e}{RESET}")
+
+    if str(config.get('new_season_placeholders', 'false')).lower() == 'true':
+        tssk_new_season_on = (tssk_config is not None and
+                              str(tssk_config.get('process_new_season_soon', 'true')).lower() == 'true')
+        if tssk_new_season_on:
+            from tssk.config_loader import get_future_days_new_season
+            config['future_days_new_season'] = get_future_days_new_season(tssk_config)
+        # Left unset otherwise: umtk.main reports the option as skipped.
+
     # ---- Run UMTK ----
     if enable_umtk:
         try:
             from umtk.main import main as umtk_main
-            umtk_warnings = umtk_main(config, localization) or []
+            umtk_warnings = umtk_main(config, localization, collector) or []
         except Exception as e:
             print(f"\n{RED}UMTK failed: {e}{RESET}")
             umtk_success = False
@@ -154,10 +175,8 @@ def _run_inner():
         print(f"{BLUE}{'=' * 50}{RESET}")
 
         try:
-            from tssk.config_loader import load_tssk_config
             from tssk.main import run_tssk
 
-            tssk_config = load_tssk_config()
             if tssk_config is None:
                 print(f"{RED}TSSK skipped: could not load tssk_config.yml{RESET}")
                 tssk_success = False
@@ -176,12 +195,33 @@ def _run_inner():
                     tssk_config['sonarr_instances'] = config['sonarr_instances']
                 tssk_config['instance_output_mode'] = config.get('instance_output_mode', 'combined')
 
-                tssk_warnings = run_tssk(tssk_config, localization) or []
+                tssk_warnings = run_tssk(tssk_config, localization, collector) or []
         except Exception as e:
             print(f"\n{RED}TSSK failed: {e}{RESET}")
             tssk_success = False
     else:
         print(f"\n{ORANGE}TSSK is disabled (enable_tssk: false){RESET}")
+
+    # ---- Coming Soon collections in Plex ----
+    # Runs last so it can merge UMTK's upcoming items with TSSK's categories.
+    if enable_umtk and umtk_success and config.get('plex_url') and config.get('plex_token'):
+        try:
+            from umtk.plex_collections import sync_upcoming_collections
+            debug = str(config.get('debug', 'false')).lower() == 'true'
+            sync_upcoming_collections(config['plex_url'], config['plex_token'],
+                                      config, collector, debug,
+                                      wait_for_items=bool(collector.get('new_files_written')))
+        except Exception as e:
+            print(f"\n{RED}Building the Coming Soon collections in Plex failed: {e}{RESET}")
+
+    # ---- Overlay block key audit ----
+    # Runs after both modules so it sees every generated overlay file.
+    try:
+        from umtk.config_loader import get_kometa_folder
+        from umtk.utils import audit_overlay_block_keys
+        audit_overlay_block_keys(get_kometa_folder())
+    except Exception as e:
+        print(f"{ORANGE}Could not audit overlay block keys: {e}{RESET}")
 
     # Summary
     def _module_status(success, warnings):

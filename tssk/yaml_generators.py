@@ -174,8 +174,14 @@ def create_collection_yaml(output_file, shows, config):
         print(f"{RED}Error writing file {output_file_path}: {str(e)}{RESET}")
 
 
-def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_block_name="backdrop", localization=None):
-    """Create an overlay YAML file"""
+def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_block_name,
+                        localization=None, block_scope="text"):
+    """Create an overlay YAML file
+
+    block_scope identifies the category (and, in split mode, the Sonarr instance) and is
+    baked into every text block key so keys stay unique across the overlay files Kometa
+    merges into a single TV library.
+    """
     # Get the output directory
     output_dir = get_output_directory()
     try:
@@ -281,7 +287,7 @@ def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_bl
                     tvdb_ids_for_season = sorted(tvdb_id for tvdb_id in season_to_tvdb_ids[season_num] if tvdb_id)
                     tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_season)
                     
-                    block_key = f"TSSK_S{season_num}"
+                    block_key = f"TSSK_{block_scope}_S{season_num}"
                     overlays_dict[block_key] = {
                         "overlay": sub_overlay_config,
                         "tvdb_show": tvdb_ids_str
@@ -295,13 +301,9 @@ def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_bl
                     sub_overlay_config["name"] = f"text({use_text})"
                 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
-                
-                # Determine block key based on category
-                if is_new_season_started:
-                    block_key = "TSSK_new_season_started"
-                else:  # is_season_finale
-                    block_key = "TSSK_season_finale"
-                
+
+                block_key = f"TSSK_{block_scope}"
+
                 overlays_dict[block_key] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
@@ -325,7 +327,7 @@ def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_bl
                         tvdb_ids_for_date_season = sorted(tvdb_id for tvdb_id in date_season_to_tvdb_ids[date_str][season_num] if tvdb_id)
                         tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_date_season)
                         
-                        block_key = f"TSSK_{formatted_date}_S{season_num}"
+                        block_key = f"TSSK_{block_scope}_{formatted_date}_S{season_num}"
                         overlays_dict[block_key] = {
                             "overlay": sub_overlay_config,
                             "tvdb_show": tvdb_ids_str
@@ -343,7 +345,7 @@ def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_bl
                     tvdb_ids_for_date = sorted(tvdb_id for tvdb_id in date_to_tvdb_ids[date_str] if tvdb_id)
                     tvdb_ids_str = ", ".join(str(i) for i in tvdb_ids_for_date)
                     
-                    block_key = f"TSSK_{formatted_date}"
+                    block_key = f"TSSK_{block_scope}_{formatted_date}"
                     overlays_dict[block_key] = {
                         "overlay": sub_overlay_config,
                         "tvdb_show": tvdb_ids_str
@@ -357,19 +359,9 @@ def create_overlay_yaml(output_file, shows, config_sections, config, backdrop_bl
                     sub_overlay_config["name"] = f"text({use_text})"
                 
                 tvdb_ids_str = ", ".join(str(i) for i in sorted(all_tvdb_ids) if i)
-                
-                # Extract category name from filename
-                if is_new_season_started:
-                    block_key = "TSSK_new_season_started"
-                elif is_season_finale:
-                    block_key = "TSSK_season_finale"
-                elif "FINAL_EPISODE" in output_file:
-                    block_key = "TSSK_final_episode"
-                elif is_upcoming_finale:
-                    block_key = "TSSK_upcoming_finale"
-                else:
-                    block_key = "TSSK_text"  # fallback
-                
+
+                block_key = f"TSSK_{block_scope}"
+
                 overlays_dict[block_key] = {
                     "overlay": sub_overlay_config,
                     "tvdb_show": tvdb_ids_str
@@ -521,7 +513,7 @@ def create_new_show_overlay_yaml(output_file, config_sections, recent_days, conf
             if "name" not in text_config:
                 text_config["name"] = f"text({use_text})"
             
-            overlays_dict["new_show"] = {
+            overlays_dict["TSSK_new_show"] = {
                 "plex_all": True,
                 "filters": {
                     "added": recent_days,
@@ -697,7 +689,7 @@ def create_returning_show_overlay_yaml(output_file, config_sections, use_tvdb=Fa
             text_filters = {status_filter: status_value}
             text_filters.update(text_additional_filters)
             
-            overlays_dict["returning_show"] = {
+            overlays_dict["TSSK_returning_show"] = {
                 "plex_all": True,
                 "filters": text_filters,
                 "overlay": text_config
@@ -869,7 +861,7 @@ def create_ended_show_overlay_yaml(output_file, config_sections, use_tvdb=False,
             text_filters = {status_filter: "ended"}
             text_filters.update(text_additional_filters)
             
-            overlays_dict["ended_show"] = {
+            overlays_dict["TSSK_ended_show"] = {
                 "plex_all": True,
                 "filters": text_filters,
                 "overlay": text_config
@@ -1041,7 +1033,7 @@ def create_canceled_show_overlay_yaml(output_file, config_sections, use_tvdb=Fal
             text_filters = {status_filter: "canceled"}
             text_filters.update(text_additional_filters)
             
-            overlays_dict["canceled_show"] = {
+            overlays_dict["TSSK_canceled_show"] = {
                 "plex_all": True,
                 "filters": text_filters,
                 "overlay": text_config
