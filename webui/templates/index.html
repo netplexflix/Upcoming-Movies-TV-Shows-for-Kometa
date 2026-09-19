@@ -1564,7 +1564,7 @@ const SETTINGS_SECTION_ORDER = [
     'TV Shows Coming Soon',
     'Process TV Show Categories',
     'TV Show Timeframes',
-    'Trending Collections',
+    'MDBList Collections',
     'Coming Soon Collections',
     'Plex Metadata',
 ];
@@ -1593,13 +1593,14 @@ const SETTINGS_KEY_ORDER = [
 
 /* Intro text rendered directly under a section's <h2>. */
 const SECTION_DESCRIPTIONS = {
-    'Coming Soon Collections': 'Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date. Make sure to remove the matching collection yml from your Kometa config, and optionally disable sort_title edits.',
+    'MDBList Collections': 'Let UMTK create and update collections directly in Plex based on your chosen MDBLists, in list order. Can be used for Trending lists, Seasonal collections, Your personal recommendations, etc. Placeholders will be created for items on these lists that are currently missing. List rank overlays are generated for each item which can be optionally processed by Kometa.',
+    'Coming Soon Collections': 'Let UMTK create and update Coming Soon collections directly in Plex, ordered by expected release/air date.',
     'Plex Metadata': 'If you let UMTK directly create your collections, these edits are not necessary and should be turned off.',
 };
 
 /* Extra controls rendered inside a section's <h2>. */
 const SECTION_BUTTONS = {
-    'Trending Collections': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`,
+    'MDBList Collections': `<button class="test-btn" style="margin-left:12px" onclick="testMdblist()">Test MDBList</button><span class="test-result" id="test-mdblist"></span>`,
 };
 
 /* Default names for new Coming Soon collections (twin of COMING_SOON_DEFAULT_NAMES
@@ -2538,8 +2539,8 @@ function renderSettingsPage() {
     }
     container.innerHTML = html;
 
-    /* Trending list cards live below the universal Trending Collections options */
-    const trendingOpts = document.getElementById('section-opts-trending-collections');
+    /* Trending list cards live below the universal MDBList Collections options */
+    const trendingOpts = document.getElementById('section-opts-mdblist-collections');
     if (trendingOpts) {
         const wrap = document.createElement('div');
         wrap.className = 'instance-section';

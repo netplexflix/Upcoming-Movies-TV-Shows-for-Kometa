@@ -128,10 +128,10 @@ UMTK_OPTIONS = [
     {"key": "metadata_retry_limit", "type": "int", "default": 4, "label": "Metadata Retry Limit", "description": "How many times to retry (a minute apart) when items UMTK just created aren't in Plex yet. Used for the metadata edits and for collections UMTK builds directly in Plex.", "section": "Plex Metadata"},
     # Coming Soon collections are a list-of-dicts managed via
     # /api/config/coming_soon_collections, so they have no flat options here.
-    # Trending Collections (per-list settings live in trending_lists, managed via
+    # MDBList Collections (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
-    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "Trending Collections"},
-    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "Trending Collections", "sensitive": True},
+    {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "MDBList Collections"},
+    {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "MDBList Collections", "sensitive": True},
 ]
 
 TSSK_OPTIONS = [
