@@ -92,6 +92,7 @@ future_only_tv: false
 ##########                        TRENDING:                           ##########
 ################################################################################
 label_request_needed: true
+always_show_dates_on_requested: false
 mdblist_api_key: YOUR_MDBLIST_API_KEY
 trending_lists:
   - name: Trending Movies

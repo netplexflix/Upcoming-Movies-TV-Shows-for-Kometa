@@ -219,6 +219,7 @@ def main(config=None, localization=None, collector=None):
     utc_offset = float(config.get('utc_offset', 0))
     debug = str(config.get("debug", "false")).lower() == "true"
     cleanup = str(config.get("cleanup", "true")).lower() == "true"
+    always_show_dates_on_requested = str(config.get("always_show_dates_on_requested", "false")).lower() == "true"
     skip_channels = config.get("skip_channels", [])
     
     if isinstance(skip_channels, str):
@@ -568,14 +569,17 @@ def main(config=None, localization=None, collector=None):
                     ]
 
                     trending_tv_monitored, trending_tv_request_needed = process_trending_tv(
-                        mdblist_tv_items, sonarr_instances_data, debug
+                        mdblist_tv_items, sonarr_instances_data, debug, utc_offset
                     )
 
                     if trending_tv_monitored:
                         print(f"\n{GREEN}Found {len(trending_tv_monitored)} trending shows that are monitored but not available:{RESET}")
                         for show in trending_tv_monitored:
                             owner_name = show.get('owner', {}).get('name', '?')
-                            print(f"- {show['title']}" + (f" ({show['year']})" if show.get('year') else "") + f"  [owner: {owner_name}]")
+                            date_info = ""
+                            if always_show_dates_on_requested and show.get('trendingAirDate'):
+                                date_info = f" - Next episode: {show['trendingAirDate']}"
+                            print(f"- {show['title']}" + (f" ({show['year']})" if show.get('year') else "") + f"  [owner: {owner_name}]" + date_info)
                     else:
                         print(f"{ORANGE}No trending shows found that are monitored but not available.{RESET}")
 
@@ -1159,14 +1163,18 @@ def main(config=None, localization=None, collector=None):
                     print(f"{BLUE}{'=' * 50}{RESET}")
 
                     trending_movies_monitored, trending_movies_request_needed = process_trending_movies(
-                        mdblist_movies_items, radarr_instances_data, debug
+                        mdblist_movies_items, radarr_instances_data, debug,
+                        utc_offset, include_inCinemas
                     )
 
                     if trending_movies_monitored:
                         print(f"\n{GREEN}Found {len(trending_movies_monitored)} trending movies that are monitored but not available:{RESET}")
                         for movie in trending_movies_monitored:
                             owner_name = movie.get('owner', {}).get('name', '?')
-                            print(f"- {movie['title']}" + (f" ({movie['year']})" if movie.get('year') else "") + f"  [owner: {owner_name}]")
+                            date_info = ""
+                            if always_show_dates_on_requested and movie.get('trendingReleaseDate'):
+                                date_info = f" - {movie['trendingReleaseType']} Release: {movie['trendingReleaseDate']}"
+                            print(f"- {movie['title']}" + (f" ({movie['year']})" if movie.get('year') else "") + f"  [owner: {owner_name}]" + date_info)
                     else:
                         print(f"{ORANGE}No trending movies found that are monitored but not available.{RESET}")
 

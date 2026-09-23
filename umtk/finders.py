@@ -23,6 +23,61 @@ def _show_dict(series, air_date):
     }
 
 
+def _movie_release_date(movie, include_inCinemas):
+    """The release date UMTK judges a movie by: (date_str, release_type).
+
+    Digital is preferred, then physical. With include_inCinemas the cinema date
+    joins the candidates and the earliest of the three wins. Returns
+    (None, None) when Radarr knows none of them.
+    """
+    if include_inCinemas:
+        dates_to_check = [
+            (movie.get('digitalRelease'), 'Digital'),
+            (movie.get('physicalRelease'), 'Physical'),
+            (movie.get('inCinemas'), 'Cinema')
+        ]
+
+        valid_dates = [(date_str, rel_type) for date_str, rel_type in dates_to_check if date_str]
+
+        if valid_dates:
+            valid_dates.sort(key=lambda x: x[0])
+            return valid_dates[0]
+        return None, None
+
+    if movie.get('digitalRelease'):
+        return movie['digitalRelease'], 'Digital'
+    if movie.get('physicalRelease'):
+        return movie['physicalRelease'], 'Physical'
+    return None, None
+
+
+def _next_unaired_episode(episodes, now_local, utc_offset, monitored_only=False):
+    """The earliest non-special episode airing after now_local: (ep, air_date).
+
+    Returns (None, None) when there is none. With monitored_only, unmonitored
+    episodes are ignored - a show whose remaining episodes Sonarr isn't watching
+    has no date worth showing.
+    """
+    future_episodes = []
+    for ep in episodes:
+        if ep.get('seasonNumber', 0) == 0:  # Skip specials
+            continue
+        if monitored_only and not ep.get('monitored', False):
+            continue
+        air_date_str = ep.get('airDateUtc')
+        if not air_date_str:
+            continue
+        air_date = convert_utc_to_local(air_date_str, utc_offset)
+        if air_date > now_local:
+            future_episodes.append((ep, air_date))
+
+    if not future_episodes:
+        return None, None
+
+    future_episodes.sort(key=lambda x: x[1])
+    return future_episodes[0]
+
+
 def _premiere_bucket(series, episodes, cutoff_date, now_local, utc_offset, future_only_tv, debug=False):
     """Classify a show by its S01E01: ('future' | 'aired', show_dict) or (None, None)."""
     # Find S01E01 specifically
@@ -95,22 +150,10 @@ def _new_season_premiere(series, episodes, cutoff_date, now_local, utc_offset,
             print(f"{ORANGE}[DEBUG] {series['title']} has downloaded episodes - no new season placeholder{RESET}")
         return None
 
-    future_episodes = []
-    for ep in episodes:
-        if ep.get('seasonNumber', 0) == 0:  # Skip specials
-            continue
-        air_date_str = ep.get('airDateUtc')
-        if not air_date_str:
-            continue
-        air_date = convert_utc_to_local(air_date_str, utc_offset)
-        if air_date > now_local:
-            future_episodes.append((ep, air_date))
-
-    if not future_episodes:
+    next_episode, air_date = _next_unaired_episode(episodes, now_local, utc_offset)
+    if not next_episode:
         return None
 
-    future_episodes.sort(key=lambda x: x[1])
-    next_episode, air_date = future_episodes[0]
     season_number = next_episode.get('seasonNumber', 0)
 
     if not (season_number > 1 and next_episode.get('episodeNumber') == 1 and air_date <= cutoff_date):
@@ -332,29 +375,8 @@ def find_upcoming_movies(all_movies, radarr_url, api_key, future_days_upcoming_m
                     print(f"{ORANGE}[DEBUG] Skipping movie with excluded tags: {movie['title']}{RESET}")
                 continue
         
-        release_date_str = None
-        release_type = None
-        
-        if include_inCinemas:
-            dates_to_check = [
-                (movie.get('digitalRelease'), 'Digital'),
-                (movie.get('physicalRelease'), 'Physical'),
-                (movie.get('inCinemas'), 'Cinema')
-            ]
-            
-            valid_dates = [(date_str, rel_type) for date_str, rel_type in dates_to_check if date_str]
-            
-            if valid_dates:
-                valid_dates.sort(key=lambda x: x[0])
-                release_date_str, release_type = valid_dates[0]
-        else:
-            if movie.get('digitalRelease'):
-                release_date_str = movie['digitalRelease']
-                release_type = 'Digital'
-            elif movie.get('physicalRelease'):
-                release_date_str = movie['physicalRelease']
-                release_type = 'Physical'
-        
+        release_date_str, release_type = _movie_release_date(movie, include_inCinemas)
+
         if not release_date_str:
             if debug:
                 print(f"{ORANGE}[DEBUG] No suitable release date found for {movie['title']}{RESET}")
@@ -526,7 +548,7 @@ def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
     return unresolved_count
 
 
-def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
+def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False, utc_offset=0):
     """
     Process trending TV shows from MDBList against ALL Sonarr instances combined.
 
@@ -537,9 +559,16 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
     Each item in monitored_not_available carries an 'owner' key:
         {'name', 'url', 'api_key', 'timeout'} identifying the instance whose
         path + Sonarr API to use for placeholder creation.
+
+    A monitored item also carries 'trendingAirDate' when its owner instance has
+    a monitored episode still to air - the date the always_show_dates_on_requested
+    overlay uses. It is deliberately kept apart from 'airDate', which the Plex
+    sort title logic keys on.
     """
     monitored_not_available = []
     not_found_or_unmonitored = []
+
+    now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
 
     if debug:
         print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending TV shows across {len(sonarr_instances_data)} Sonarr instance(s){RESET}")
@@ -592,6 +621,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
         downloaded_anywhere = False
         owner_lookup = None
         owner_series = None
+        owner_episodes = None
 
         for lookup, series in matches:
             inst = lookup['instance']
@@ -610,6 +640,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 if any(ep.get('monitored', False) for ep in episodes):
                     owner_lookup = lookup
                     owner_series = series
+                    owner_episodes = episodes
 
         if downloaded_anywhere:
             continue
@@ -618,6 +649,20 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
             inst = owner_lookup['instance']
             if debug:
                 print(f"{BLUE}[DEBUG] Monitored in instance '{inst.get('name')}' - adding to monitored_not_available{RESET}")
+
+            # The next episode Sonarr is still waiting on - the only date worth
+            # putting on a trending show that isn't available yet.
+            next_episode, next_air_date = _next_unaired_episode(
+                owner_episodes, now_local, utc_offset, monitored_only=True)
+            trending_air_date = next_air_date.date().isoformat() if next_air_date else None
+            if debug:
+                if next_episode:
+                    print(f"{BLUE}[DEBUG] Next unaired monitored episode for {owner_series['title']}: "
+                          f"S{next_episode.get('seasonNumber', 0):02d}E{next_episode.get('episodeNumber', 0):02d} "
+                          f"on {trending_air_date}{RESET}")
+                else:
+                    print(f"{BLUE}[DEBUG] No unaired monitored episode for {owner_series['title']} - no trending date{RESET}")
+
             monitored_not_available.append({
                 'title': owner_series['title'],
                 'tvdbId': owner_series.get('tvdbId'),
@@ -626,6 +671,7 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
                 'imdbId': owner_series.get('imdbId', ''),
                 'year': owner_series.get('year', None),
                 'airDate': None,
+                'trendingAirDate': trending_air_date,
                 'rank': rank,
                 'source_list': item.get('source_list'),
                 'owner': {
@@ -655,7 +701,8 @@ def process_trending_tv(mdblist_items, sonarr_instances_data, debug=False):
     return monitored_not_available, not_found_or_unmonitored
 
 
-def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
+def process_trending_movies(mdblist_items, radarr_instances_data, debug=False,
+                            utc_offset=0, include_inCinemas=False):
     """
     Process trending movies from MDBList against ALL Radarr instances combined.
 
@@ -666,9 +713,16 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
     Each item in monitored_not_available carries an 'owner' key:
         {'name', 'url', 'api_key', 'timeout'} identifying the instance whose
         path + Radarr API to use for placeholder creation.
+
+    A monitored item also carries 'trendingReleaseDate'/'trendingReleaseType'
+    when Radarr knows a release date that is still ahead - the date the
+    always_show_dates_on_requested overlay uses. They are deliberately kept
+    apart from 'releaseDate', which the Plex sort title logic keys on.
     """
     monitored_not_available = []
     not_found_or_unmonitored = []
+
+    now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
 
     if debug:
         print(f"{BLUE}[DEBUG] Processing {len(mdblist_items)} trending movies across {len(radarr_instances_data)} Radarr instance(s){RESET}")
@@ -748,6 +802,23 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
             inst = owner_lookup['instance']
             if debug:
                 print(f"{BLUE}[DEBUG] Monitored in instance '{inst.get('name')}' - adding to monitored_not_available{RESET}")
+            # Radarr's own release date, but only when it is still ahead: a date
+            # that has already passed would read as "Coming Soon" for something
+            # that should have landed already.
+            trending_release_date = None
+            trending_release_type = None
+            release_date_str, release_type = _movie_release_date(owner_movie, include_inCinemas)
+            if release_date_str:
+                release_date = convert_utc_to_local(release_date_str, utc_offset)
+                if release_date >= now_local:
+                    trending_release_date = release_date.date().isoformat()
+                    trending_release_type = release_type
+                elif debug:
+                    print(f"{BLUE}[DEBUG] {owner_movie['title']} {release_type} release "
+                          f"{release_date.date().isoformat()} is in the past - no trending date{RESET}")
+            elif debug:
+                print(f"{BLUE}[DEBUG] No release date known for {owner_movie['title']} - no trending date{RESET}")
+
             monitored_not_available.append({
                 'title': owner_movie['title'],
                 'tmdbId': owner_movie.get('tmdbId'),
@@ -757,6 +828,8 @@ def process_trending_movies(mdblist_items, radarr_instances_data, debug=False):
                 'year': owner_movie.get('year', None),
                 'releaseDate': None,
                 'releaseType': 'Trending',
+                'trendingReleaseDate': trending_release_date,
+                'trendingReleaseType': trending_release_type,
                 'rank': rank,
                 'source_list': item.get('source_list'),
                 'owner': {

@@ -64,7 +64,7 @@ This example uses the Kabeb template + TV Show Status overlays.
     - [TV Shows Coming Soon](#tv-show-settings)
     - [Process TV Show Categories](#tssk-configuration-tv-show-status)
     - [TV Show Timeframes](#tv-show-timeframes)
-    - [Trending Collections](#trending)
+    - [MDBList Collections](#mdblist-collections)
     - [Coming Soon Collections](#plex-collections)
     - [Plex Metadata](#plex-metadata)
   - [YML Configurations](#overlay--collection-settings)
@@ -463,10 +463,11 @@ For each TSSK category, you can change the relevant timeframe:
 - **recent_days_season_finale:** How many days in the past for aired season finales (default: `7`)
 - **recent_days_final_episode:** How many days in the past for aired final episodes (default: `7`)
 
-<a id="trending"></a>
-#### Trending Collections:
+<a id="mdblist-collections"></a><a id="trending"></a>
+#### MDBList Collections:
 
 - **label_request_needed:** will add an additional `RequestNeeded` label to trending items not yet monitored in the Arrs
+- **always_show_dates_on_requested:** (default: `false`) A trending item that *is* monitored in Radarr/Sonarr but isn't available yet normally gets the `Requested` overlay, unless its release date happens to fall within your Coming Soon timeframe (`future_days_upcoming_movies` / `future_days_upcoming_shows`). Enable this to give such an item the `Coming Soon` overlay with its known date instead, **even when that date lies outside the set timeframe**.
 - **mdblist_api_key:** Can be found at https://mdblist.com/preferences/
 - **trending_lists:** a list of MDBList lists to process — add as many as you want. Each entry has:
   - **name:** the Plex collection name for this list (also used in the output filenames)
@@ -581,7 +582,7 @@ The remaining settings customize the output .yml files for Kometa. Coming Soon, 
 > [!NOTE]
 > **Trending overlays:** Missing trending items get one of three overlays so users know they aren't actually available yet:
 > - **Request Needed** (`backdrop/text_trending_movies_request_needed`, `backdrop/text_trending_shows_request_needed`) — the item is not in any Radarr/Sonarr library, so a request is required.
-> - **Coming Soon** — the item IS monitored in Radarr/Sonarr *and* releases/airs within your upcoming day range, so it reuses the regular upcoming overlay.
+> - **Coming Soon** — the item IS monitored in Radarr/Sonarr *and* releases/airs within your upcoming day range, so it reuses the regular upcoming overlay. With `always_show_dates_on_requested` enabled, any monitored item with a known future date gets this overlay too, no matter how far out that date is.
 > - **Requested** (`backdrop/text_trending_movies_requested`, `backdrop/text_trending_shows_requested`) — the item IS monitored but its release/air date is outside the day range or not yet known. 
 
 > [!TIP]
