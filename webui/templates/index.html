@@ -3374,6 +3374,24 @@ function renderBlocks(blocks, container, prefix) {
     container.innerHTML = html;
 }
 
+function _colorPickerHex(val) {
+    const m = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(String(val || '').trim());
+    if (!m) return '#000000';
+    let hex = m[1];
+    if (hex.length <= 4) hex = hex.split('').map(c => c + c).join('');
+    return '#' + hex.substring(0, 6).toLowerCase();
+}
+
+/* Picker -> text field, keeping any alpha suffix the text value already had. */
+function _syncColorText(picker) {
+    const textEl = picker.nextElementSibling;
+    const cur = textEl.value.trim();
+    let alpha = '';
+    if (/^#[0-9a-f]{8}$/i.test(cur)) alpha = cur.substring(7, 9);
+    else if (/^#[0-9a-f]{4}$/i.test(cur)) alpha = cur[4] + cur[4];
+    textEl.value = picker.value.toUpperCase() + alpha;
+}
+
 function renderBlockRow(blockKey, key, value, prefix) {
     const typeSpec = BLOCK_KEY_TYPES[key];
     let control = '';
@@ -3386,11 +3404,10 @@ function renderBlockRow(blockKey, key, value, prefix) {
         </label>`;
     } else if (typeSpec === 'color') {
         const colorVal = String(value || '#000000');
-        const hexVal = colorVal.startsWith('#') ? colorVal : '#000000';
-        control = `<input type="color" data-block="${blockKey}" data-bkey="${key}" value="${hexVal}">
+        control = `<input type="color" data-block="${blockKey}" data-bkey="${key}" value="${_colorPickerHex(colorVal)}"
+                   oninput="_syncColorText(this)">
                    <input type="text" data-block="${blockKey}" data-bkey="${key}-text" value="${escapeAttr(colorVal)}" style="width:100px"
-                   oninput="this.previousElementSibling.value=this.value"
-                   onchange="this.previousElementSibling.value=this.value">`;
+                   oninput="this.previousElementSibling.value=_colorPickerHex(this.value)">`;
     } else if (typeSpec === 'number') {
         control = `<input type="number" data-block="${blockKey}" data-bkey="${key}" value="${value != null ? value : ''}">`;
     } else if (typeSpec && typeSpec.startsWith('select:')) {
