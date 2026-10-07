@@ -20,6 +20,7 @@ import webui
 from umtk.constants import VERSION
 from umtk.updater import get_update_status
 from umtk.config_loader import ensure_trending_requested_blocks
+from umtk.mdblist import MDBLIST_HEADERS
 
 
 class _QuotedDumper(yaml.SafeDumper):
@@ -131,6 +132,7 @@ UMTK_OPTIONS = [
     # MDBList Collections (per-list settings live in trending_lists, managed via
     # /api/config/trending_lists — only the universal options remain here)
     {"key": "label_request_needed", "type": "bool", "default": True, "label": "Label Request Needed", "description": "Label trending items not in library as 'Request Needed'", "section": "MDBList Collections"},
+    {"key": "always_show_dates_on_requested", "type": "bool", "default": False, "label": "Always Show Dates On Requested", "description": "Trending items that are monitored in Radarr/Sonarr normally get the 'Requested' overlay unless they fall inside your Coming Soon timeframe. Enable this to give them the Coming Soon overlay with their known date instead, even when that date is outside the set timeframe. Movies use the digital/physical release date (cinema too if Include inCinemas is on), shows use the next unaired monitored episode. Items with no known date, or only a date in the past, keep the 'Requested' overlay", "section": "MDBList Collections"},
     {"key": "mdblist_api_key", "type": "string", "default": "", "label": "MDBList API Key", "description": "Your MDBList API key for trending lists", "section": "MDBList Collections", "sensitive": True},
 ]
 
@@ -1017,6 +1019,7 @@ def register_routes(app):
             resp = requests.get(
                 "https://api.mdblist.com/user",
                 params={"apikey": api_key},
+                headers=MDBLIST_HEADERS,
                 timeout=10
             )
             elapsed = int((time.time() - start) * 1000)
@@ -1045,6 +1048,7 @@ def register_routes(app):
                     r = requests.get(
                         f"https://api.mdblist.com/lists/{username}/{list_id}/items",
                         params={"apikey": api_key, "limit": 1},
+                        headers=MDBLIST_HEADERS,
                         timeout=10
                     )
                     if r.status_code == 200:

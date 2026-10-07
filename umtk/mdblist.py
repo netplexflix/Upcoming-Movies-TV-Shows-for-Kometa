@@ -4,7 +4,14 @@ MDBList API integration for UMTK
 
 import requests
 
-from .constants import GREEN, ORANGE, RED, BLUE, RESET
+from .constants import GREEN, ORANGE, RED, BLUE, RESET, VERSION
+
+# MDBList asks callers to identify themselves with X-App-Name; without it our
+# requests show up in their stats as the bare 'python-requests' default.
+MDBLIST_HEADERS = {
+    "X-App-Name": "UMTK",
+    "User-Agent": f"UMTK/{VERSION}",
+}
 
 
 def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
@@ -30,7 +37,7 @@ def fetch_mdblist_items(mdblist_url, api_key, limit=None, debug=False):
             print(f"{BLUE}[DEBUG] Fetching from MDBList API: {api_url}{RESET}")
             print(f"{BLUE}[DEBUG] Params: {safe_params}{RESET}")
         
-        response = requests.get(api_url, params=params, timeout=30)
+        response = requests.get(api_url, params=params, headers=MDBLIST_HEADERS, timeout=30)
         response.raise_for_status()
         
         data = response.json()

@@ -30,6 +30,51 @@ yaml.add_representer(QuotedString, _quoted_str_presenter, Dumper=yaml.SafeDumper
 yaml.add_representer(OrderedDict, _represent_ordereddict, Dumper=yaml.SafeDumper)
 
 
+def _promote_dated_trending(future_items, current_items, trending_monitored, config,
+                            id_key, trending_date_key, date_key):
+    """Move dated trending items into the Coming Soon bucket when asked to.
+
+    A trending item that is monitored in the Arrs but releases beyond the
+    configured Coming Soon window is normally labelled 'Requested', because it
+    never reaches future_items. With always_show_dates_on_requested on, any such
+    item whose date the finders did work out is treated as a future item instead,
+    so it picks up the regular Coming Soon backdrop and dated text overlay.
+
+    Returns new (future_items, trending_monitored) lists - the caller's lists and
+    dicts are left untouched, because the date must not leak into the Plex sort
+    title logic, which keys on date_key.
+    """
+    if str(config.get("always_show_dates_on_requested", "false")).lower() != "true":
+        return future_items, trending_monitored
+
+    if not trending_monitored:
+        return future_items, trending_monitored
+
+    # Anything already handled by the regular Coming Soon pass keeps its overlay.
+    regular_ids = {i[id_key] for i in (future_items + current_items) if i.get(id_key)}
+
+    promoted = []
+    promoted_ids = set()
+    for item in trending_monitored:
+        if not item.get(trending_date_key):
+            continue
+        # The Coming Soon blocks only address items by id_key (tvdb_show /
+        # tmdb_movie), so an item without one would be promoted into silence.
+        if not item.get(id_key):
+            continue
+        if item[id_key] in regular_ids:
+            continue
+        promoted.append({**item, date_key: item[trending_date_key]})
+        promoted_ids.add(id(item))
+
+    if not promoted:
+        return future_items, trending_monitored
+
+    # Identity, not equality: two trending entries can compare equal.
+    return (future_items + promoted,
+            [i for i in trending_monitored if id(i) not in promoted_ids])
+
+
 def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_monitored,
                            trending_request_needed, config_sections, config, localization=None,
                            instance_suffix=""):
@@ -47,7 +92,11 @@ def create_overlay_yaml_tv(output_file, future_shows, aired_shows, trending_moni
     # Get global settings
     simplify_next_week = config.get("simplify_next_week_dates", False)
     utc_offset = float(config.get('utc_offset', 0))
-    
+
+    future_shows, trending_monitored = _promote_dated_trending(
+        future_shows, aired_shows, trending_monitored,
+        config, 'tvdbId', 'trendingAirDate', 'airDate')
+
     # Process future shows (haven't aired yet)
     if future_shows:
         date_to_tvdb_ids = defaultdict(list)
@@ -592,7 +641,11 @@ def create_overlay_yaml_movies(output_file, future_movies, released_movies, tren
     # Get global settings
     simplify_next_week = config.get("simplify_next_week_dates", False)
     utc_offset = float(config.get('utc_offset', 0))
-    
+
+    future_movies, trending_monitored = _promote_dated_trending(
+        future_movies, released_movies, trending_monitored,
+        config, 'tmdbId', 'trendingReleaseDate', 'releaseDate')
+
     # Process future movies (upcoming releases)
     if future_movies:
         date_to_tmdb_ids = defaultdict(list)
