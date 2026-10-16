@@ -141,6 +141,7 @@ TSSK_OPTIONS = [
     {"key": "use_tvdb", "type": "bool", "default": False, "label": "Use TVDB", "description": "Use TheTVDB instead of TMDB for Tv Show status", "section": "General"},
     {"key": "skip_unmonitored", "type": "bool", "default": True, "label": "Skip Unmonitored", "description": "Skip unmonitored shows/episodes", "section": "General"},
     {"key": "ignore_finales_tags", "type": "string", "default": "ignorefinales", "label": "Ignore Finales Tags", "description": "Comma-separated Sonarr tags to exclude from finale detection", "section": "General"},
+    {"key": "ignore_binge_started_and_finales", "type": "bool", "default": False, "label": "Ignore Binge Releases (New Season Started / Season Finale / Final Episode)", "description": "Ignore shows that premiere the entire season/show at once (e.g. Netflix) for the \"New Season Started\", \"Season Finale\" and \"Final Episode\" categories. Such a show will then fall back to the 'Returning' or 'Ended' status", "section": "General"},
     # Sort title edits
     {"key": "edit_sort_titles", "type": "bool", "default": True, "label": "Edit Sort Titles for TV Status Items", "description": "Add air date in front of sort titles for chronological sorting (requires Plex connection).", "section": "Plex Metadata"},
     {"key": "edit_sort_titles_new_season_soon", "type": "bool", "default": True, "label": "New Season Soon", "description": "Edit sort titles for shows in the New Season Soon category.", "section": "Plex Metadata", "indent_under": "edit_sort_titles"},

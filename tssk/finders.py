@@ -7,6 +7,23 @@ from .utils import convert_utc_to_local
 from .sonarr import get_sonarr_episodes, has_ignore_finale_tag
 
 
+def is_binge_release(season_eps, utc_offset=0):
+    """True when every known episode of a season aired on the same local day (and there's more than one)"""
+    # A single known episode could still be followed by more, so it's never treated as a binge release
+    if len(season_eps) < 2:
+        return False
+
+    air_days = set()
+    for ep in season_eps:
+        air_date_str = ep.get('airDateUtc')
+        # Episodes without an air date are still to come, so the season wasn't released all at once
+        if not air_date_str:
+            return False
+        air_days.add(convert_utc_to_local(air_date_str, utc_offset).date())
+
+    return len(air_days) == 1
+
+
 def find_new_season_shows(sonarr_url, api_key, all_series, tag_mapping, future_days_new_season, utc_offset=0, skip_unmonitored=False):
     """Find shows with a new season starting within the specified days"""
     cutoff_date = datetime.now(timezone.utc) + timedelta(days=future_days_new_season)
@@ -291,7 +308,7 @@ def find_upcoming_finales(sonarr_url, api_key, all_series, future_days_upcoming_
     return matched_shows, skipped_shows
 
 
-def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_season_finale, utc_offset=0, skip_unmonitored=False, ignore_finales_tags=None, tag_mapping=None):
+def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_season_finale, utc_offset=0, skip_unmonitored=False, ignore_finales_tags=None, tag_mapping=None, ignore_binge_started_and_finales=False):
     """Find shows with status 'continuing' that had a season finale air within the specified days or have a future finale that's already downloaded"""
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     cutoff_date = now_local - timedelta(days=recent_days_season_finale)
@@ -346,7 +363,7 @@ def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_seas
             
             if not finale_episode:
                 continue
-                
+
             # Skip if the season is unmonitored and skip_unmonitored is True
             if skip_unmonitored:
                 season_monitored = True
@@ -372,6 +389,11 @@ def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_seas
             # 1. It aired within the recent period, OR
             # 2. It has a future air date but has already been downloaded
             if (air_date <= now_local and air_date >= cutoff_date) or (air_date > now_local and finale_episode.get('hasFile', False)):
+                # Skip seasons that were released all at once (if enabled)
+                if ignore_binge_started_and_finales and is_binge_release(seasons[season_num], utc_offset):
+                    print(f"Skipping {series['title']} (Season {season_num}) for Season Finale: all episodes released on the same day")
+                    continue
+
                 tvdb_id = series.get('tvdbId')
                 
                 # If it's a future episode that's already downloaded, use today's date instead
@@ -394,7 +416,7 @@ def find_recent_season_finales(sonarr_url, api_key, all_series, recent_days_seas
     return matched_shows
 
 
-def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_final_episode, utc_offset=0, skip_unmonitored=False, ignore_finales_tags=None, tag_mapping=None):
+def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_final_episode, utc_offset=0, skip_unmonitored=False, ignore_finales_tags=None, tag_mapping=None, ignore_binge_started_and_finales=False):
     """Find shows with status 'ended' that had their final episode air within the specified days or have a future final episode that's already downloaded"""
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     cutoff_date = now_local - timedelta(days=recent_days_final_episode)
@@ -436,7 +458,7 @@ def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_fina
         # Skip if no valid seasons found
         if max_season == 0:
             continue
-            
+
         # Find the highest episode number in the highest season
         max_episode_num = max(ep.get('episodeNumber', 0) for ep in downloaded_episodes[max_season])
         
@@ -494,6 +516,11 @@ def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_fina
         # 1. It aired within the recent period, OR
         # 2. It has a future air date but has already been downloaded
         if (air_date <= now_local and air_date >= cutoff_date) or (air_date > now_local and final_episode.get('hasFile', False)):
+            # Skip seasons that were released all at once (if enabled)
+            if ignore_binge_started_and_finales and is_binge_release(seasons[max_season], utc_offset):
+                print(f"Skipping {series['title']} (Season {max_season}) for Final Episode: all episodes released on the same day")
+                continue
+
             tvdb_id = series.get('tvdbId')
             
             # If it's a future episode that's already downloaded, use today's date instead
@@ -516,7 +543,7 @@ def find_recent_final_episodes(sonarr_url, api_key, all_series, recent_days_fina
     return matched_shows
 
 
-def find_new_season_started(sonarr_url, api_key, all_series, recent_days_new_season_started, utc_offset=0, skip_unmonitored=False):
+def find_new_season_started(sonarr_url, api_key, all_series, recent_days_new_season_started, utc_offset=0, skip_unmonitored=False, ignore_binge_started_and_finales=False):
     """Find shows where a new season (not season 1) has been downloaded within the specified days"""
     now_local = datetime.now(timezone.utc) + timedelta(hours=utc_offset)
     cutoff_date = now_local - timedelta(days=recent_days_new_season_started)
@@ -558,7 +585,7 @@ def find_new_season_started(sonarr_url, api_key, all_series, recent_days_new_sea
         has_previous_season_downloads = any(season < max_season_with_downloads for season in downloaded_episodes.keys())
         if not has_previous_season_downloads:
             continue
-        
+
         # Find the first episode of the highest season that was downloaded
         season_episodes = downloaded_episodes[max_season_with_downloads]
         first_episode = min(season_episodes, key=lambda ep: ep.get('episodeNumber', 999))
@@ -587,6 +614,11 @@ def find_new_season_started(sonarr_url, api_key, all_series, recent_days_new_sea
         
         # Include if it aired within the recent period (assuming download happened around air date)
         if air_date >= cutoff_date and air_date <= now_local:
+            # Skip seasons that were released all at once (if enabled)
+            if ignore_binge_started_and_finales and is_binge_release(seasons[max_season_with_downloads], utc_offset):
+                print(f"Skipping {series['title']} (Season {max_season_with_downloads}) for New Season Started: all episodes released on the same day")
+                continue
+
             tvdb_id = series.get('tvdbId')
             air_date_str_yyyy_mm_dd = air_date.date().isoformat()
             

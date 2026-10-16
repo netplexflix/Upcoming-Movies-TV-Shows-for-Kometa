@@ -90,6 +90,7 @@ def run_tssk(config, localization=None, collector=None):
 
     utc_offset = float(config.get('utc_offset', 0))
     skip_unmonitored = str(config.get("skip_unmonitored", "false")).lower() == "true"
+    ignore_binge_started_and_finales = str(config.get('ignore_binge_started_and_finales', 'false')).lower() == 'true'
 
     # Get process flags for each category (default to True if not specified)
     process_new_shows = str(config.get('process_new_shows', 'true')).lower() == 'true'
@@ -112,7 +113,8 @@ def run_tssk(config, localization=None, collector=None):
     print(f"recent_days_final_episode: {recent_days_final_episode}")
     print(f"recent_days_new_show: {recent_days_new_show}")
     print(f"skip_unmonitored: {skip_unmonitored}")
-    print(f"ignore_finales_tags: {ignore_finales_tags}\n")
+    print(f"ignore_finales_tags: {ignore_finales_tags}")
+    print(f"ignore_binge_started_and_finales: {ignore_binge_started_and_finales}\n")
     print(f"UTC offset: {utc_offset} hours\n")
 
     # Plex configuration
@@ -192,7 +194,8 @@ def run_tssk(config, localization=None, collector=None):
         # ---- New Season Started ----
         if process_new_season_started:
             new_season_started_shows = find_new_season_started(
-                sonarr_url, sonarr_api_key, all_series, recent_days_new_season_started, utc_offset, skip_unmonitored
+                sonarr_url, sonarr_api_key, all_series, recent_days_new_season_started, utc_offset, skip_unmonitored,
+                ignore_binge_started_and_finales=ignore_binge_started_and_finales
             )
 
             if new_season_started_shows:
@@ -225,7 +228,8 @@ def run_tssk(config, localization=None, collector=None):
         # ---- Recent Season Finales ----
         if process_season_finale:
             season_finale_shows = find_recent_season_finales(
-                sonarr_url, sonarr_api_key, all_series, recent_days_season_finale, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping
+                sonarr_url, sonarr_api_key, all_series, recent_days_season_finale, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping,
+                ignore_binge_started_and_finales=ignore_binge_started_and_finales
             )
 
             if season_finale_shows:
@@ -236,7 +240,8 @@ def run_tssk(config, localization=None, collector=None):
         # ---- Recent Final Episodes ----
         if process_final_episode:
             final_episode_shows = find_recent_final_episodes(
-                sonarr_url, sonarr_api_key, all_series, recent_days_final_episode, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping
+                sonarr_url, sonarr_api_key, all_series, recent_days_final_episode, utc_offset, skip_unmonitored, ignore_finales_tags, tag_mapping,
+                ignore_binge_started_and_finales=ignore_binge_started_and_finales
             )
 
             if final_episode_shows:

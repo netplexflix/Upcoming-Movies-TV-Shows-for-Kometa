@@ -404,6 +404,7 @@ radarr_instances:
 - **use_tvdb:** (TSSK) Change to `true` if you prefer TheTVDB statuses for returning and ended. (Note: TheTVDB does not have the 'canceled' status)
 - **skip_unmonitored:** (TSSK) Default `true` will skip a show if the upcoming season/episode is unmonitored.
 - **ignore_finales_tags:** (TSSK) Shows with these Sonarr tags will be ignored when checking for finales.
+- **ignore_binge_started_and_finales:** (TSSK) Only affects `New Season Started`, `Season Finale` and `Final Episode`. Default `false`. When `true`, shows that premiere the entire season/show at once (e.g. Netflix) are ignored for these 3 categories, so they fall back to the `Returning` or `Ended` status instead of getting e.g. a 'Season 1 Finale' overlay on the day they premiere. A season only counts as released at once when all of its episodes aired on the same day and there is more than 1 episode, so a season with only its first episode known in Sonarr is never ignored. All other categories are not affected.
 - **utc_offset:** Set your [UTC timezone](https://en.wikipedia.org/wiki/List_of_UTC_offsets) offset
   - Examples: LA: `-8`, New York: `-5`, Amsterdam: `+1`, Tokyo: `+9`
 - **simplify_next_week_dates:** Set to `true` to simplify dates to `today`, `tomorrow`, `friday` etc if the air date is within the coming week.
