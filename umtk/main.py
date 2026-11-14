@@ -693,16 +693,12 @@ def main(config=None, localization=None, collector=None):
                         print(f"Failed: {failed}")
 
                     # Distribute trending into per-instance results so split-mode YMLs include them.
-                    # Monitored items go to their owner's instance bucket; request_needed items have
-                    # no instance owner so they go into every instance bucket.
-                    inst_results_by_name = {r['name']: r for r in tv_instance_results}
-                    for show in trending_tv_monitored:
-                        owner_name = show.get('owner', {}).get('name')
-                        if owner_name and owner_name in inst_results_by_name:
-                            inst_results_by_name[owner_name]['trending_tv_monitored'].append(show)
-                    for show in trending_tv_request_needed:
-                        for r in tv_instance_results:
-                            r['trending_tv_request_needed'].append(show)
+                    # Trending is global: a placeholder for a monitored item can sit in any
+                    # instance's library (not just the owner's), and Kometa only applies an
+                    # overlay to items in the library, so every bucket gets every item.
+                    for r in tv_instance_results:
+                        r['trending_tv_monitored'].extend(trending_tv_monitored)
+                        r['trending_tv_request_needed'].extend(trending_tv_request_needed)
                 else:
                     trending_tv_monitored = []
                     trending_tv_request_needed = []
@@ -1292,14 +1288,12 @@ def main(config=None, localization=None, collector=None):
                         print(f"Failed: {failed}")
 
                     # Distribute trending into per-instance results so split-mode YMLs include them.
-                    inst_results_by_name = {r['name']: r for r in movie_instance_results}
-                    for movie in trending_movies_monitored:
-                        owner_name = movie.get('owner', {}).get('name')
-                        if owner_name and owner_name in inst_results_by_name:
-                            inst_results_by_name[owner_name]['trending_movies_monitored'].append(movie)
-                    for movie in trending_movies_request_needed:
-                        for r in movie_instance_results:
-                            r['trending_movies_request_needed'].append(movie)
+                    # Trending is global: a placeholder for a monitored item can sit in any
+                    # instance's library (not just the owner's), and Kometa only applies an
+                    # overlay to items in the library, so every bucket gets every item.
+                    for r in movie_instance_results:
+                        r['trending_movies_monitored'].extend(trending_movies_monitored)
+                        r['trending_movies_request_needed'].extend(trending_movies_request_needed)
                 else:
                     trending_movies_monitored = []
                     trending_movies_request_needed = []
