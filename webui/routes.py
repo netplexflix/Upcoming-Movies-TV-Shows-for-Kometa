@@ -86,6 +86,7 @@ CONNECTION_OPTIONS = [
     {"key": "schedule_type", "type": "select", "default": "cron", "label": "Schedule Type", "description": "", "section": "Scheduler", "options": [{"value": "hours", "label": "Every X hours"}, {"value": "cron", "label": "Cron expression"}]},
     {"key": "schedule_hours", "type": "int", "default": 24, "label": "Hours Interval", "description": "Run every X hours", "section": "Scheduler"},
     {"key": "schedule_cron", "type": "string", "default": "0 2 * * *", "label": "Cron Expression", "description": "Standard 5-field cron expression. For help: crontab.guru", "description_html": 'Standard 5-field cron expression. For help: <a href="https://crontab.guru/" target="_blank" rel="noopener">crontab.guru</a>', "section": "Scheduler"},
+    {"key": "run_on_start", "type": "bool", "default": True, "label": "Run on Startup", "description": "Run once whenever the container (re)starts. Turn off to only run on the schedule. Takes effect on the next restart.", "section": "Scheduler"},
 ]
 
 UMTK_OPTIONS = [
@@ -506,6 +507,7 @@ def register_routes(app):
         config = _load_yaml(webui._config_path)
         data = request.get_json()
         sensitive_keys = {o["key"] for o in CONNECTION_OPTIONS if o.get("sensitive")}
+        had_run_on_start = "run_on_start" in config
         for key, value in data.items():
             if key not in _ALLOWED_CONNECTION_KEYS:
                 continue
@@ -526,6 +528,17 @@ def register_routes(app):
                     return jsonify({"ok": False, "error": "Hours Interval must be >= 1"}), 400
             config[key] = value
 
+        # A newly added run_on_start would otherwise be appended to the end of
+        # the file; keep it inside the SCHEDULER block, after schedule_cron.
+        if not had_run_on_start and "run_on_start" in config and "schedule_cron" in config:
+            run_on_start = config.pop("run_on_start")
+            reordered = {}
+            for k, v in config.items():
+                reordered[k] = v
+                if k == "schedule_cron":
+                    reordered["run_on_start"] = run_on_start
+            config = reordered
+
         # Validate the schedule before persisting so an invalid cron expression
         # never reaches disk.
         sched_type = (config.get("schedule_type") or "cron").strip().lower()
@@ -542,11 +555,19 @@ def register_routes(app):
         _save_yaml(webui._config_path, config)
 
         # Push the new schedule into the live scheduler so the next run is
-        # recomputed without a container restart.
+        # recomputed without a container restart. Only when it actually
+        # changed: re-pushing an unchanged hours interval would restart its
+        # countdown on every unrelated Connections save.
         if webui._scheduler_state is not None:
-            ok, err = webui._scheduler_state.update_schedule(sched_type, int(sched_hours), sched_cron)
-            if not ok:
-                return jsonify({"ok": False, "error": err}), 400
+            cur_type, cur_hours, cur_cron = webui._scheduler_state.get_schedule()
+            if sched_type == "hours":
+                changed = cur_type != "hours" or cur_hours != int(sched_hours)
+            else:
+                changed = cur_type != sched_type or cur_cron != sched_cron
+            if changed:
+                ok, err = webui._scheduler_state.update_schedule(sched_type, int(sched_hours), sched_cron)
+                if not ok:
+                    return jsonify({"ok": False, "error": err}), 400
 
         return jsonify({"ok": True})
 

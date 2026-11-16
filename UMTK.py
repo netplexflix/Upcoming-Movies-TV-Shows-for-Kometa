@@ -290,9 +290,9 @@ if __name__ == "__main__":
 
         if server_mode:
             # Seed schedule from config.yml (or env vars on first launch)
-            _load_initial_schedule(sched_state, config_path)
+            run_on_start = _load_initial_schedule(sched_state, config_path)
             # Enters the scheduler loop and never returns.
-            run_on_schedule(run, state=sched_state)
+            run_on_schedule(run, state=sched_state, run_on_start=run_on_start)
         else:
             # Single run mode for local/manual execution
             sched_state.set_status("running")
