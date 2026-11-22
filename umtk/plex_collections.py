@@ -273,25 +273,27 @@ def _first_library_name(value):
 
 
 def _build_id_index(plex_items):
-    """Map every TMDB/TVDB id a library's items carry to their ratingKey."""
-    by_tmdb = {}
-    by_tvdb = {}
+    """Map every TVDB/TMDB/IMDb id a library's items carry to their ratingKey.
+
+    Returns {'tvdb': {...}, 'tmdb': {...}, 'imdb': {...}}.
+    """
+    index = {'tvdb': {}, 'tmdb': {}, 'imdb': {}}
     for plex_item in plex_items:
         rating_key = plex_item.get('ratingKey')
         if not rating_key:
             continue
-        for tmdb_id in _plex_item_ids(plex_item, 'tmdbIds', 'tmdbId'):
-            by_tmdb.setdefault(tmdb_id, str(rating_key))
-        for tvdb_id in _plex_item_ids(plex_item, 'tvdbIds', 'tvdbId'):
-            by_tvdb.setdefault(tvdb_id, str(rating_key))
-    return by_tmdb, by_tvdb
+        for kind in index:
+            for id_value in _plex_item_ids(plex_item, f'{kind}Ids', f'{kind}Id'):
+                index[kind].setdefault(id_value, str(rating_key))
+    return index
 
 
-def _resolve_items(lst, by_tmdb, by_tvdb):
+def _resolve_items(lst, index):
     """Map a list's MDBList items to Plex ratingKeys, preserving rank order.
 
-    Returns (rating_keys, missing_titles). TV prefers TVDB and falls back to
-    TMDB, mirroring how create_trending_collection_yaml_tv picks its ids.
+    Returns (rating_keys, missing_titles). TV prefers TVDB, mirroring how
+    create_trending_collection_yaml_tv picks its ids, then falls back to TMDB
+    and IMDb - all a show has once Plex drops TVDB metadata.
     """
     is_tv = lst.get('type') == 'tv'
     rating_keys = []
@@ -306,12 +308,15 @@ def _resolve_items(lst, by_tmdb, by_tvdb):
         rating_key = None
 
         if is_tv:
-            if item.get('tvdb_id'):
-                rating_key = by_tvdb.get(str(item['tvdb_id']))
-            if not rating_key and tmdb_id:
-                rating_key = by_tmdb.get(str(tmdb_id))
+            for kind, id_value in (('tvdb', item.get('tvdb_id')),
+                                   ('tmdb', tmdb_id),
+                                   ('imdb', item.get('imdb_id'))):
+                if id_value:
+                    rating_key = index[kind].get(str(id_value))
+                if rating_key:
+                    break
         elif tmdb_id:
-            rating_key = by_tmdb.get(str(tmdb_id))
+            rating_key = index['tmdb'].get(str(tmdb_id))
 
         if not rating_key:
             missing.append(_missing_label(item, ('tvdb_id', 'tmdb_id') if is_tv else ('tmdb_id',)))
@@ -533,8 +538,8 @@ def _sync_specs(plex_url, plex_token, machine_id, libraries, config, specs,
         for target in targets:
             plex_items = _library_items(plex_url, plex_token, target['library']['key'],
                                         library_items_cache, debug)
-            by_tmdb, by_tvdb = _build_id_index(plex_items)
-            target['desired'], target['missing'] = target['spec']['resolve'](by_tmdb, by_tvdb)
+            index = _build_id_index(plex_items)
+            target['desired'], target['missing'] = target['spec']['resolve'](index)
 
         missing = [(t['spec']['label'](t['library_name']), title)
                    for t in targets for title in t['missing']]
@@ -606,7 +611,7 @@ def _trending_spec(lst, config):
         # No library picked -> _resolve_library falls back to the first configured one.
         'library_names': _name_list(lst.get('plex_libraries')) or [None],
         'label': lambda _library_name, n=list_name: f"Trending list '{n}'",
-        'resolve': lambda by_tmdb, by_tvdb, l=lst: _resolve_items(l, by_tmdb, by_tvdb),
+        'resolve': lambda index, l=lst: _resolve_items(l, index),
         'sort_title': _custom_sort_title(lst),
     }
 
@@ -675,8 +680,8 @@ def _resolve_by_ids(items, lookups):
     """Map date-sorted item dicts to Plex ratingKeys, preserving order.
 
     'lookups' is an ordered list of (item_key, index) pairs; the first index
-    that knows the item's id wins. TV passes TVDB first and TMDB second so a
-    show Plex only linked to TMDB (no tvdb:// GUID) is still found.
+    that knows the item's id wins. TV passes TVDB, then TMDB, then IMDb so a
+    show without a tvdb:// GUID (Plex is dropping TVDB metadata) is still found.
     """
     rating_keys = []
     seen = set()
@@ -787,12 +792,13 @@ def _coming_soon_spec(entry, config, collector, debug=False):
               f"skipping collection{RESET}")
         return None
 
-    def resolve(by_tmdb, by_tvdb):
+    def resolve(index):
         # ratingKeys are per library, so this runs once per target library.
         if expected_type == 'show':
-            lookups = [('tvdbId', by_tvdb), ('tmdbId', by_tmdb)]
+            lookups = [('tvdbId', index['tvdb']), ('tmdbId', index['tmdb']),
+                       ('imdbId', index['imdb'])]
         else:
-            lookups = [('tmdbId', by_tmdb)]
+            lookups = [('tmdbId', index['tmdb'])]
         return _resolve_by_ids(items, lookups)
 
     return {

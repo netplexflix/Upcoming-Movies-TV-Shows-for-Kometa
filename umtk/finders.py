@@ -438,6 +438,16 @@ def _build_sonarr_series_lookups(sonarr_instances_data):
     return per_instance_lookups
 
 
+def _backfill_ids(item, series):
+    """Fill the TMDB / IMDb ids an MDBList item lacks from the Sonarr record it
+    resolved to. Plex matching and the {tmdb-} folder tag lean on them once
+    Plex drops TVDB metadata; ids MDBList did give are left alone."""
+    if not item.get('tmdb_id') and series.get('tmdbId'):
+        item['tmdb_id'] = series['tmdbId']
+    if not item.get('imdb_id') and series.get('imdbId'):
+        item['imdb_id'] = series['imdbId']
+
+
 def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
     """Anchor each trending TV item to an authoritative TVDB ID.
 
@@ -490,7 +500,10 @@ def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
             title = item.get('title', 'Unknown')
 
             # Already known to one of the libraries -> authoritative.
-            if tvdb_id and any(tvdb_id in lk['by_tvdb'] for lk in per_instance_lookups):
+            known = next((lk['by_tvdb'][tvdb_id] for lk in per_instance_lookups
+                          if tvdb_id and tvdb_id in lk['by_tvdb']), None)
+            if known:
+                _backfill_ids(item, known)
                 continue
 
             cache_key = (tvdb_id, tmdb_id, imdb_id)
@@ -536,6 +549,7 @@ def resolve_trending_tv_ids(trending_lists, sonarr_instances_data, debug=False):
                     item['year'] = resolved['year']
                 if resolved.get('imdbId'):
                     item['imdb_id'] = resolved['imdbId']
+                _backfill_ids(item, resolved)
                 item.pop('_id_unresolved', None)
             else:
                 item['_id_unresolved'] = True
