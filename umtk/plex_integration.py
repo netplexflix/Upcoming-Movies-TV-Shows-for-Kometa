@@ -7,7 +7,7 @@ import time
 import requests
 
 from .constants import GREEN, ORANGE, RED, BLUE, RESET
-from .utils import sanitize_sort_title, request_with_retry, tmdb_to_tvdb_aliases
+from .utils import sanitize_sort_title, request_with_retry, tvdb_aliases, aliased_tvdb_ids
 
 
 def trigger_plex_library_scan(plex_url, plex_token, library_names_csv, expected_type, debug=False):
@@ -191,7 +191,7 @@ def _plex_item_ids(plex_item, list_key, scalar_key):
     return ids
 
 
-def _resolve_plex_item_id(plex_item, list_key, scalar_key, *target_sets, tmdb_to_tvdb=None):
+def _resolve_plex_item_id(plex_item, list_key, scalar_key, *target_sets, aliases=None):
     """Pick which of a Plex item's IDs to match on.
 
     An item can carry several GUIDs of the same type (a show matched to two TVDB
@@ -199,19 +199,18 @@ def _resolve_plex_item_id(plex_item, list_key, scalar_key, *target_sets, tmdb_to
     isn't treated as unknown just because Plex listed the other ID first; fall
     back to the first ID when none of them are targeted.
 
-    'tmdb_to_tvdb' (see tmdb_to_tvdb_aliases) lets a show Plex only linked to
-    TMDB - no tvdb:// GUID at all - still resolve to the TVDB id it is targeted
-    by, through its TMDB GUID.
+    'aliases' (see tvdb_aliases) lets a show without a tvdb:// GUID - Plex is
+    dropping TVDB metadata - still resolve to the TVDB id it is targeted by,
+    through its TMDB or IMDb GUID.
     """
     ids = _plex_item_ids(plex_item, list_key, scalar_key)
     for candidate in ids:
         for target in target_sets:
             if candidate in target:
                 return candidate
-    if tmdb_to_tvdb:
-        for tmdb_id in _plex_item_ids(plex_item, 'tmdbIds', 'tmdbId'):
-            alias = tmdb_to_tvdb.get(tmdb_id)
-            if alias and any(alias in target for target in target_sets):
+    if aliases:
+        for alias in aliased_tvdb_ids(plex_item, aliases):
+            if any(alias in target for target in target_sets):
                 return alias
     return ids[0] if ids else None
 
@@ -451,12 +450,12 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
                     and not show.get('new_season')):
                 valid_date_tvdb_ids.add(tvdb_id_str)
     
-    # A show Plex only linked to TMDB (no tvdb:// GUID) is matched through the
-    # TMDB id Sonarr / MDBList carry alongside the TVDB id we key on.
-    tmdb_to_tvdb = tmdb_to_tvdb_aliases(all_shows_with_content)
-    tmdb_to_tvdb.update(tmdb_to_tvdb_aliases(
+    # A show without a tvdb:// GUID (Plex is dropping TVDB metadata) is matched
+    # through the TMDB / IMDb id Sonarr / MDBList carry alongside the TVDB id we key on.
+    aliases = tvdb_aliases(all_shows_with_content)
+    aliases.update(tvdb_aliases(
         [i for i in (mdblist_tv_items or []) if not i.get('_id_unresolved')],
-        tmdb_key='tmdb_id', tvdb_key='tvdb_id'))
+        tmdb_key='tmdb_id', imdb_key='imdb_id', tvdb_key='tvdb_id'))
 
     if debug:
         print(f"{BLUE}[DEBUG] Shows with content TVDB IDs: {list(shows_with_content.keys())}{RESET}")
@@ -468,10 +467,8 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
         # show Plex matched to several TVDB entries is findable by any of them.
         for tvdb_id in _plex_item_ids(plex_item, 'tvdbIds', 'tvdbId'):
             plex_items_by_tvdb.setdefault(tvdb_id, plex_item)
-        for tmdb_id in _plex_item_ids(plex_item, 'tmdbIds', 'tmdbId'):
-            alias = tmdb_to_tvdb.get(tmdb_id)
-            if alias:
-                plex_items_by_tvdb.setdefault(alias, plex_item)
+        for alias in aliased_tvdb_ids(plex_item, aliases):
+            plex_items_by_tvdb.setdefault(alias, plex_item)
 
     missing_items = []
     all_target_tvdb_ids = set(valid_date_tvdb_ids) | set(valid_rank_tvdb_ids.keys()) | set(shows_with_content.keys())
@@ -504,7 +501,7 @@ def update_plex_tv_metadata(plex_url, plex_token, tv_libraries, all_shows_with_c
     for plex_item in all_plex_items:
         tvdb_id = _resolve_plex_item_id(plex_item, 'tvdbIds', 'tvdbId',
                                         valid_rank_tvdb_ids, valid_date_tvdb_ids,
-                                        shows_with_content, tmdb_to_tvdb=tmdb_to_tvdb)
+                                        shows_with_content, aliases=aliases)
         rating_key = plex_item.get('ratingKey')
         current_sort_title = plex_item.get('titleSort', '')
         original_title = plex_item.get('title', '')

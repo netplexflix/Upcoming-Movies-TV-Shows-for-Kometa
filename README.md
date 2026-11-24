@@ -269,7 +269,7 @@ UMTK_SERVER=true python UMTK.py
 $env:UMTK_SERVER='true'; python UMTK.py
 ```
 
-In server mode UMTK performs an initial run, then waits and re-runs on the configured schedule (edit it live from the Web UI), keeping `http://localhost:2120` available the whole time. The schedule is seeded from `config.yml` (or the `CRON` / `SCHEDULE_HOURS` env vars / a 24h default on first launch), exactly like Docker.
+In server mode UMTK performs an initial run (unless Run on Startup is off), then waits and re-runs on the configured schedule (edit it live from the Web UI), keeping `http://localhost:2120` available the whole time. The schedule is seeded from `config.yml` (or the `CRON` / `SCHEDULE_HOURS` env vars / a 24h default on first launch), exactly like Docker.
 
 > [!TIP]
 > On Linux you can run UMTK as a **systemd service** so it starts on boot and stays alive:
@@ -340,6 +340,7 @@ The sections below follow the Web UI tabs and their order, so you can read along
 - **schedule_type:** `hours` (run every X hours) or `cron` (cron expression). Default: `cron`
 - **schedule_hours:** Interval in hours when `schedule_type` is `hours` (default: `24`)
 - **schedule_cron:** Standard 5-field cron expression when `schedule_type` is `cron` (default: `0 2 * * *`). See [Scheduling (Docker)](#scheduling-with-cron-docker) for details and examples.
+- **run_on_start:** Run once whenever the container (re)starts (default: `true`). Set to `false` to only run on the schedule. Takes effect on the next restart.
 
 <a id="radarrsonarr-instances"></a>
 #### Radarr / Sonarr Instances:
@@ -841,6 +842,8 @@ The default cron is `0 2 * * *` (2 AM daily). Common alternatives:
 - `0 4 * * 1,4` - Monday and Thursday at 4 AM
 
 Use [crontab.guru](https://crontab.guru/) to create custom schedules, or switch to "Every X hours" mode in the Web UI if you prefer interval scheduling.
+
+UMTK also runs once every time the container (re)starts. Turn off **Run on Startup** (`run_on_start`) to only run on the schedule.
 
 <a id="prevent-request-platforms"></a>
 ### Prevent Request Platforms from marking coming soon items as available

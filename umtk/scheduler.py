@@ -5,6 +5,9 @@ Schedule source-of-truth order:
 
 On first launch, env-var values are persisted back to config.yml so the
 Web UI can render them and the user can edit them live without a restart.
+
+run_on_start (config.yml, default true) controls whether UMTK runs once
+immediately when the container / server mode starts.
 """
 
 import os
@@ -21,19 +24,22 @@ def format_wait(seconds: float) -> str:
     return f"{m}m"
 
 
-def _load_initial_schedule(state, config_path: str) -> None:
+def _load_initial_schedule(state, config_path: str) -> bool:
     """Seed the scheduler state from config.yml, falling back to env vars.
 
     Precedence: config.yml > env vars (CRON / CRON_SCHEDULE / SCHEDULE_HOURS)
     > default (hours=24). When a schedule was resolved from env vars, it is
     persisted back to config.yml so the Web UI always has values to render
     and future restarts use config (not env).
+
+    Returns run_on_start: whether to run once immediately on startup
+    (config key ``run_on_start``, default true).
     """
     try:
         from croniter import croniter
     except ImportError:
         print("croniter package not installed — scheduling disabled.")
-        return
+        return True
 
     import yaml  # lazy: only needed in scheduled mode
 
@@ -95,6 +101,7 @@ def _load_initial_schedule(state, config_path: str) -> None:
             config["schedule_type"] = schedule_type
             config["schedule_hours"] = schedule_hours
             config["schedule_cron"] = cron_expr
+            config.setdefault("run_on_start", True)
             from webui.routes import _save_yaml
             _save_yaml(config_path, config)
         except Exception as e:
@@ -111,10 +118,13 @@ def _load_initial_schedule(state, config_path: str) -> None:
         # initial seeding is not a "live edit" — the loop hasn't started yet.
         state.clear_schedule_changed()
 
+    return str(config.get("run_on_start", "true")).lower() == "true"
 
-def run_on_schedule(run_fn: Callable, state=None) -> None:
+
+def run_on_schedule(run_fn: Callable, state=None, run_on_start: bool = True) -> None:
     """
-    Execute run_fn immediately, then re-execute on the configured schedule.
+    Execute run_fn immediately (unless *run_on_start* is False), then
+    re-execute on the configured schedule.
     Blocks forever (designed for Docker entrypoint use).
 
     The active schedule (hours-interval or cron) is pulled fresh from *state*
@@ -123,24 +133,29 @@ def run_on_schedule(run_fn: Callable, state=None) -> None:
     """
     from croniter import croniter
 
-    # Run immediately on start
-    print("=" * 60)
-    print("UMTK – Initial run on container start")
-    print("=" * 60)
-    if state is not None:
-        state.set_status("running")
-    try:
-        run_fn()
+    if run_on_start:
+        # Run immediately on start
+        print("=" * 60)
+        print("UMTK – Initial run on container start")
+        print("=" * 60)
         if state is not None:
-            state.set_last_run(datetime.now())
-            if state.status != "error":
-                state.set_status("idle")
-    except Exception as e:
-        print(f"Initial run failed: {e}")
-        print("The Web UI remains available — fix your config and trigger a new run.")
-        if state is not None:
-            state.set_status("error", str(e))
-            state.set_last_run(datetime.now())
+            state.set_status("running")
+        try:
+            run_fn()
+            if state is not None:
+                state.set_last_run(datetime.now())
+                if state.status != "error":
+                    state.set_status("idle")
+        except Exception as e:
+            print(f"Initial run failed: {e}")
+            print("The Web UI remains available — fix your config and trigger a new run.")
+            if state is not None:
+                state.set_status("error", str(e))
+                state.set_last_run(datetime.now())
+    else:
+        print("=" * 60)
+        print("UMTK – Run on startup disabled, waiting for the next scheduled run")
+        print("=" * 60)
 
     # Schedule loop
     while True:

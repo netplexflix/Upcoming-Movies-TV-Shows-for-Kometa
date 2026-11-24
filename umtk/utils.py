@@ -54,20 +54,37 @@ def dedupe_by_key(items_lists, key):
     return result
 
 
-def tmdb_to_tvdb_aliases(shows, tmdb_key='tmdbId', tvdb_key='tvdbId'):
-    """{str(tmdb): str(tvdb)} for every show dict carrying both ids.
+def tvdb_aliases(shows, tmdb_key='tmdbId', imdb_key='imdbId', tvdb_key='tvdbId'):
+    """{('tmdb' | 'imdb', str(id)): str(tvdb)} for every show carrying a TVDB id.
 
-    Lets a Plex show that only has a tmdb:// GUID (no tvdb://) be matched to
-    the TVDB id Sonarr knows it by. Keys default to the Sonarr spelling; pass
-    'tmdb_id'/'tvdb_id' for MDBList items.
+    Lets a Plex show without a tvdb:// GUID (Plex is dropping TVDB metadata)
+    be matched to the TVDB id Sonarr knows it by, through its tmdb:// GUID or,
+    when Sonarr has no TMDB id for the show, its imdb:// GUID. Keys default to
+    the Sonarr spelling; pass 'tmdb_id'/'imdb_id'/'tvdb_id' for MDBList items.
     """
     aliases = {}
     for show in shows or []:
-        tmdb_id = show.get(tmdb_key)
         tvdb_id = show.get(tvdb_key)
-        if tmdb_id and tvdb_id:
-            aliases.setdefault(str(tmdb_id), str(tvdb_id))
+        if not tvdb_id:
+            continue
+        for kind, key in (('tmdb', tmdb_key), ('imdb', imdb_key)):
+            if show.get(key):
+                aliases.setdefault((kind, str(show[key])), str(tvdb_id))
     return aliases
+
+
+def aliased_tvdb_ids(plex_item, aliases):
+    """TVDB ids a Plex item maps to through its TMDB / IMDb GUIDs (see tvdb_aliases)."""
+    found = []
+    for kind, list_key, scalar_key in (('tmdb', 'tmdbIds', 'tmdbId'),
+                                       ('imdb', 'imdbIds', 'imdbId')):
+        ids = plex_item.get(list_key) or (
+            [plex_item[scalar_key]] if plex_item.get(scalar_key) else [])
+        for value in ids:
+            alias = aliases.get((kind, str(value)))
+            if alias and alias not in found:
+                found.append(alias)
+    return found
 
 
 def sanitize_instance_name(name):
@@ -224,32 +241,55 @@ def legacy_show_folder_name(show):
     return sanitize_filename(show_title)
 
 
-def show_id_tag(show):
-    """'{tvdb-123}' style folder tag for a show, or '' when it has no ID.
+def show_id_tags(show):
+    """'{tmdb-123}' style folder tags for every ID a show has, best first.
 
-    TVDB first: it's Sonarr's native ID and every show UMTK handles has been
-    resolved to one, so the tag stays consistent across folders.
+    TMDB first: Plex is dropping TVDB metadata, so a {tvdb-} hint will stop
+    matching. IMDb covers the shows Sonarr has no TMDB id for (it reports
+    tmdbId 0 for those, often brand-new shows); TVDB is the last resort.
     """
-    for key, prefix in (('tvdbId', 'tvdb'), ('tmdbId', 'tmdb'), ('imdbId', 'imdb')):
+    tags = []
+    for key, prefix in (('tmdbId', 'tmdb'), ('imdbId', 'imdb'), ('tvdbId', 'tvdb')):
         if show.get(key):
-            return f"{{{prefix}-{show[key]}}}"
-    return ''
+            tags.append(f"{{{prefix}-{show[key]}}}")
+    return tags
+
+
+def show_folder_names(show):
+    """Every folder name that holds a show's content, best first.
+
+    Index 0 is the name a new folder gets: the legacy name stripped of any ID
+    tag Sonarr's folder carries, plus the best ID tag, e.g.
+    "Show (2025) {tmdb-123456}". Single source of truth so content creation
+    and cleanup can never disagree about which folder belongs to a show (a
+    mismatch used to leave stale duplicates behind when a year changed).
+
+    The rest are names earlier releases created - tagged with another of the
+    show's IDs ({tvdb-} before the switch to TMDB) or untagged - which are
+    reused rather than recreated, so they phase out once the show stops
+    qualifying instead of being replaced on the first run.
+    """
+    legacy = legacy_show_folder_name(show)
+    # Only rework a name that actually carries a tag, so an untagged one keeps
+    # its exact spelling and still lines up with the folders built from it.
+    base = strip_folder_ids(legacy) if FOLDER_ID_RE.search(legacy) else legacy
+    names = [f"{base} {tag}" for tag in show_id_tags(show)]
+    names.append(legacy)
+    return list(dict.fromkeys(names))
 
 
 def show_folder_name(show):
-    """Folder name for a show's placeholder/trailer content.
+    """Folder name new placeholder/trailer content for a show gets."""
+    return show_folder_names(show)[0]
 
-    The legacy name plus an ID tag so Plex matches the right show, e.g.
-    "Show (2025) {tvdb-123456}". Single source of truth so content creation
-    and cleanup can never disagree about which folder belongs to a show (a
-    mismatch used to leave stale duplicates behind when a year changed).
-    A Sonarr folder that already carries a tag is used as is.
-    """
-    base = legacy_show_folder_name(show)
-    if FOLDER_ID_RE.search(base):
-        return base
-    tag = show_id_tag(show)
-    return f"{base} {tag}" if tag else base
+
+def outranked_folder_exists(parent, names, folder_name):
+    """True when a better name for the same show (see show_folder_names)
+    already exists in parent - folder_name is then a superseded duplicate."""
+    if folder_name not in names:
+        return False
+    parent = Path(parent)
+    return any((parent / name).exists() for name in names[:names.index(folder_name)])
 
 
 def parse_folder_ids(folder_name):
@@ -265,16 +305,17 @@ def strip_folder_ids(folder_name):
 def resolve_show_dir(umtk_root_tv, show):
     """Folder under umtk_root_tv that holds (or will hold) a show's content.
 
-    New folders get the ID-tagged name. A folder created by a release before
-    the tag existed is reused as is, so updating never leaves a show with two
-    folders; cleanup retires the legacy folder once the show stops qualifying.
+    New folders get the best ID-tagged name. A folder an earlier release
+    created ({tvdb-} tagged, or from before the tag existed) is reused as is,
+    so updating never leaves a show with two folders; cleanup retires the old
+    folder once the show stops qualifying.
     """
     root = Path(umtk_root_tv)
-    new_dir = root / show_folder_name(show)
-    legacy_dir = root / legacy_show_folder_name(show)
-    if legacy_dir != new_dir and legacy_dir.exists() and not new_dir.exists():
-        return legacy_dir
-    return new_dir
+    names = show_folder_names(show)
+    for name in names:
+        if (root / name).exists():
+            return root / name
+    return root / names[0]
 
 
 def movie_folder_name(movie, edition_tag):
