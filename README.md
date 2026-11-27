@@ -323,7 +323,7 @@ The sections below follow the Web UI tabs and their order, so you can read along
 <a id="webui"></a>
 #### WebUI:
 
-- **webui_auth_enabled:** Require a password to access the Web UI (default: `true`). The password is set on first launch and can be changed with the **Change Password** button.
+- **webui_auth_enabled:** Require a password to access the Web UI (default: `true`). The password is set on first launch and can be changed with the **Change Password** button on the **Connections** page (WebUI section). Forgot it? See [Troubleshooting](#-troubleshooting-common-issues).
 
 <a id="plex-configuration-for-metadata-edits"></a>
 #### Plex:
@@ -874,6 +874,13 @@ NOTE: You'll have to instruct your users to 'pin' these new libraries. Otherwise
 ### ❌ "No config.yml found":
 - Make sure you renamed `config.sample.yml` to `config.yml`
 - Check that the `config` folder is properly mounted
+
+### ❌ Forgot your WebUI password:
+- Open `config.yml` in your `config` folder (the mounted config folder if you use Docker) with a text editor.
+- Delete the line that starts with `AUTH_PASSWORD_HASH:`. Leave `AUTH_SECRET_KEY` as it is.
+- Save the file and reload the WebUI. No restart is needed. You'll be asked to set a new password, just like on first launch.
+- Set the new password right away: until you do, anyone who can reach the WebUI can set it.
+- To change a password you still know, use the **Change Password** button on the **Connections** page (WebUI section).
 
 ### ❌ yt-dlp fails to download Trailers:
 - There is a constant 'battle' between YouTube and projects like yt-dlp which sporadically 'breaks' the functionality of yt-dlp. An update of yt-dlp may be required. If you manually run the script, you can try updating yt-dlp. Report the issue so the requirements can be updated in the Docker image if needed.

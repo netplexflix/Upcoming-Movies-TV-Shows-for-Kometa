@@ -7,6 +7,7 @@
 use_tvdb: false
 skip_unmonitored: true
 ignore_finales_tags: ignorefinales
+ignore_binge_started_and_finales: false
 
 process_new_shows: true
 process_new_season_soon: true
