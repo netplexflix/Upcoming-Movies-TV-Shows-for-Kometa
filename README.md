@@ -85,6 +85,7 @@ This example uses the Kabeb template + TV Show Status overlays.
   - [❌ "Connection refused" to Sonarr/Radarr](#-connection-refused-to-sonarrradarr)
   - [❌ "Permission denied" errors](#-permission-denied-errors)
   - [❌ "No config.yml found"](#-no-configyml-found)
+  - [❌ Forgot your WebUI password](#-forgot-your-webui-password)
   - [❌ yt-dlp fails to download Trailers](#-yt-dlp-fails-to-download-trailers)
   - [❌ A bunch of old movies/shows are being added as Coming Soon](#-a-bunch-of-old-moviesshows-are-being-added-as-coming-soon)
   - [❌ Plex Error: label: RequestNeeded not found / Plex Error: label: Coming Soon not found](#plex-error-label-not-found)
